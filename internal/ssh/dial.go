@@ -24,9 +24,7 @@ func Dial(s *config.Server, opts BuildOpts) (*Client, error) {
 	}
 	c, err := gssh.Dial("tcp", Address(s), cfg)
 	if err != nil {
-		if closer != nil {
-			closer.Close()
-		}
+		closer.Close() // nopCloser unless an ssh-agent socket was opened
 		return nil, fmt.Errorf("dial %s: %w", Address(s), err)
 	}
 	return &Client{server: s, conn: c, closers: []io.Closer{closer}}, nil

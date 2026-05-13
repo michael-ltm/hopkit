@@ -40,6 +40,8 @@ func (c *Client) Exec(ctx context.Context, cmd string) (*ExecResult, error) {
 	select {
 	case <-ctx.Done():
 		_ = sess.Signal(gssh.SIGKILL)
+		_ = sess.Close() // accelerate teardown so sess.Run unblocks
+		<-done           // drain goroutine before touching buffers
 		return &ExecResult{Stdout: stdout.String(), Stderr: stderr.String(), ExitCode: -1}, ctx.Err()
 	case err := <-done:
 		exit := 0
@@ -63,7 +65,7 @@ func (c *Client) StreamExec(ctx context.Context, cmd string, stdout, stderr io.W
 	}
 	sess, err := c.conn.NewSession()
 	if err != nil {
-		return -1, err
+		return -1, fmt.Errorf("new session: %w", err)
 	}
 	defer sess.Close()
 	sess.Stdout = stdout
@@ -74,6 +76,8 @@ func (c *Client) StreamExec(ctx context.Context, cmd string, stdout, stderr io.W
 	select {
 	case <-ctx.Done():
 		_ = sess.Signal(gssh.SIGKILL)
+		_ = sess.Close() // accelerate teardown so sess.Run unblocks
+		<-done           // drain goroutine before returning
 		return -1, ctx.Err()
 	case err := <-done:
 		if err != nil {

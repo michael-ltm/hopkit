@@ -2,8 +2,8 @@ package ssh
 
 import (
 	"context"
+	"io"
 	"testing"
-	"time"
 
 	"github.com/stretchr/testify/require"
 )
@@ -17,5 +17,11 @@ func TestExec_NoClientReturnsError(t *testing.T) {
 
 func TestExec_RespectsContextDeadline(t *testing.T) {
 	t.Skip("integration — covered by Task 8 against Dockerized sshd")
-	_ = time.Millisecond
+}
+
+func TestStreamExec_NoClientReturnsError(t *testing.T) {
+	c := &Client{}
+	_, err := c.StreamExec(context.Background(), "echo hi", io.Discard, io.Discard)
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "not connected")
 }
