@@ -43,6 +43,22 @@ func TestConfigDir_UsesAppDataOnWindows(t *testing.T) {
 	require.Equal(t, filepath.Join(tmp, "sshm"), got)
 }
 
-func TestConfigPath_AppendsConfigToml(t *testing.T) {
-	require.Equal(t, filepath.Join(ConfigDir(), "config.toml"), ConfigPath())
+func TestConfigPath_AppendsConfigTomlToConfigDir(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("unix only")
+	}
+	tmp := t.TempDir()
+	t.Setenv("XDG_CONFIG_HOME", tmp)
+
+	require.Equal(t, filepath.Join(tmp, "sshm", "config.toml"), ConfigPath())
+}
+
+func TestAuditPath_AppendsAuditLogToConfigDir(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("unix only")
+	}
+	tmp := t.TempDir()
+	t.Setenv("XDG_CONFIG_HOME", tmp)
+
+	require.Equal(t, filepath.Join(tmp, "sshm", "audit.log"), AuditPath())
 }

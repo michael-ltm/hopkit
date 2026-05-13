@@ -11,6 +11,8 @@ import (
 // Resolution order:
 //   - Windows: %APPDATA%/sshm
 //   - Unix:    $XDG_CONFIG_HOME/sshm (if set) else ~/.config/sshm
+//
+// If APPDATA is unset on Windows the code falls through to the XDG/home rules above.
 func ConfigDir() string {
 	if runtime.GOOS == "windows" {
 		if v := os.Getenv("APPDATA"); v != "" {
