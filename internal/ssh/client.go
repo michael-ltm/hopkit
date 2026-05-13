@@ -1,0 +1,127 @@
+// Package ssh wraps golang.org/x/crypto/ssh with sshm-specific construction
+// helpers and a small Client that owns one connection.
+package ssh
+
+import (
+	"errors"
+	"fmt"
+	"net"
+	"os"
+	"path/filepath"
+	"strconv"
+	"strings"
+	"time"
+
+	"github.com/michael-ltm/sshm/internal/config"
+	gssh "golang.org/x/crypto/ssh"
+	"golang.org/x/crypto/ssh/knownhosts"
+)
+
+// BuildOpts is non-persistent input gathered at connect time (e.g. password
+// prompted from TTY). Never write the contents of BuildOpts to disk.
+type BuildOpts struct {
+	Password      string
+	HostKeyVerify bool          // when true, use knownhosts file from ~/.ssh
+	Timeout       time.Duration // 0 → default 10s
+}
+
+// BuildClientConfig produces a *ssh.ClientConfig from a Server entry.
+func BuildClientConfig(s *config.Server, opts BuildOpts) (*gssh.ClientConfig, error) {
+	if strings.TrimSpace(s.User) == "" {
+		return nil, errors.New("user is required")
+	}
+	timeout := opts.Timeout
+	if timeout == 0 {
+		timeout = 10 * time.Second
+	}
+
+	authMethods, err := buildAuth(s, opts)
+	if err != nil {
+		return nil, err
+	}
+
+	hostKey, err := hostKeyCallback(opts.HostKeyVerify)
+	if err != nil {
+		return nil, err
+	}
+
+	return &gssh.ClientConfig{
+		User:            s.User,
+		Auth:            authMethods,
+		HostKeyCallback: hostKey,
+		Timeout:         timeout,
+	}, nil
+}
+
+// Address joins host and port with default 22.
+func Address(s *config.Server) string {
+	port := s.Port
+	if port == 0 {
+		port = 22
+	}
+	return net.JoinHostPort(s.Host, strconv.Itoa(port))
+}
+
+func buildAuth(s *config.Server, opts BuildOpts) ([]gssh.AuthMethod, error) {
+	switch s.Auth {
+	case config.AuthKey:
+		key, err := loadPrivateKey(s.KeyPath)
+		if err != nil {
+			return nil, err
+		}
+		return []gssh.AuthMethod{gssh.PublicKeys(key)}, nil
+	case config.AuthPassword:
+		if opts.Password == "" {
+			return nil, errors.New("password not provided for auth=password (use --ask-password or keychain)")
+		}
+		return []gssh.AuthMethod{gssh.Password(opts.Password)}, nil
+	case config.AuthAgent:
+		ag, err := agentAuth()
+		if err != nil {
+			return nil, err
+		}
+		return []gssh.AuthMethod{ag}, nil
+	default:
+		return nil, fmt.Errorf("unsupported auth %q (want one of key/password/agent)", s.Auth)
+	}
+}
+
+func loadPrivateKey(path string) (gssh.Signer, error) {
+	exp, err := expandHome(path)
+	if err != nil {
+		return nil, err
+	}
+	data, err := os.ReadFile(exp)
+	if err != nil {
+		return nil, fmt.Errorf("read key %s: %w", exp, err)
+	}
+	signer, err := gssh.ParsePrivateKey(data)
+	if err != nil {
+		return nil, fmt.Errorf("parse key %s: %w", exp, err)
+	}
+	return signer, nil
+}
+
+func expandHome(p string) (string, error) {
+	if !strings.HasPrefix(p, "~") {
+		return p, nil
+	}
+	h, err := os.UserHomeDir()
+	if err != nil {
+		return "", err
+	}
+	return filepath.Join(h, p[1:]), nil
+}
+
+func hostKeyCallback(verify bool) (gssh.HostKeyCallback, error) {
+	if !verify {
+		// v0.1: tolerate first-use to keep onboarding simple. v0.2 will
+		// introduce strict known_hosts checking with TOFU.
+		return gssh.InsecureIgnoreHostKey(), nil //nolint:gosec
+	}
+	home, err := os.UserHomeDir()
+	if err != nil {
+		return nil, err
+	}
+	return knownhosts.New(filepath.Join(home, ".ssh", "known_hosts"))
+}
