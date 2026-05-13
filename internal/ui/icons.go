@@ -1,6 +1,7 @@
 // Package ui holds rendering primitives — icons, color styles, and table
-// formatting — used by CLI commands. It must not import internal/ssh or
-// any package that performs I/O.
+// formatting — used by CLI commands. It must not import internal/ssh,
+// perform network or file I/O, or write to stdout. Calls to os.Getenv
+// and isatty for capability probing are allowed.
 package ui
 
 import (
@@ -38,7 +39,9 @@ func ASCIIIcons() IconSet {
 }
 
 // ResolveIcons honors an explicit user choice; otherwise picks unicode on
-// modern terminals and falls back to ascii on Windows non-Terminal hosts.
+// modern terminals and falls back to ascii on Windows non-Terminal hosts
+// or when stdout is not a TTY. Any pref value other than "unicode" or
+// "ascii" (including empty string) triggers auto-detection.
 func ResolveIcons(pref string) IconSet {
 	switch pref {
 	case "unicode":

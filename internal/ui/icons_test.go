@@ -14,6 +14,7 @@ func TestIcons_Unicode(t *testing.T) {
 	require.Equal(t, "—", ic.None)
 	require.Equal(t, "🔒", ic.AuthKey)
 	require.Equal(t, "🔑", ic.AuthPassword)
+	require.Equal(t, "🤝", ic.AuthAgent)
 }
 
 func TestIcons_ASCII(t *testing.T) {
@@ -24,6 +25,7 @@ func TestIcons_ASCII(t *testing.T) {
 	require.Equal(t, "[--]", ic.None)
 	require.Equal(t, "[K]", ic.AuthKey)
 	require.Equal(t, "[P]", ic.AuthPassword)
+	require.Equal(t, "[A]", ic.AuthAgent)
 }
 
 func TestResolveIcons_ExplicitASCII(t *testing.T) {
