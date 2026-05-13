@@ -53,10 +53,13 @@ func Save(path string, cfg *Config) error {
 		return fmt.Errorf("encode toml: %w", err)
 	}
 	if err := tmp.Close(); err != nil {
-		return err
+		return fmt.Errorf("close temp: %w", err)
 	}
 	if err := os.Chmod(tmp.Name(), 0o600); err != nil {
-		return err
+		return fmt.Errorf("chmod config: %w", err)
 	}
-	return os.Rename(tmp.Name(), path)
+	if err := os.Rename(tmp.Name(), path); err != nil {
+		return fmt.Errorf("rename config: %w", err)
+	}
+	return nil
 }
