@@ -26,11 +26,11 @@ func RenderServerTable(servers map[string]*config.Server, ic IconSet, color bool
 	rows := [][]string{{"ID", "STATUS", "HOST", "USER", "AUTH", "TAGS", "LAST SEEN"}}
 	for _, a := range aliases {
 		s := servers[a]
-		statusIcon, statusStyle := statusGlyph(s.LastStatus, ic)
+		statusIcon, statusLabel, statusStyle := statusGlyph(s.LastStatus, ic)
 		authIcon := authGlyph(s.Auth, ic)
 		row := []string{
 			a,
-			renderCell(statusIcon+" "+s.LastStatus, statusStyle, color),
+			renderCell(statusIcon+" "+statusLabel, statusStyle, color),
 			s.Host,
 			s.User,
 			authIcon,
@@ -43,16 +43,16 @@ func RenderServerTable(servers map[string]*config.Server, ic IconSet, color bool
 	return formatTable(rows, color)
 }
 
-func statusGlyph(s string, ic IconSet) (string, lipgloss.Style) {
+func statusGlyph(s string, ic IconSet) (icon, label string, style lipgloss.Style) {
 	switch s {
 	case config.StatusOnline:
-		return ic.Online, StyleOnline
+		return ic.Online, "on", StyleOnline
 	case config.StatusOffline:
-		return ic.Offline, StyleOffline
+		return ic.Offline, "off", StyleOffline
 	case config.StatusUnknown, "":
-		return ic.Unknown, StyleUnknown
+		return ic.Unknown, "???", StyleUnknown
 	default:
-		return ic.None, StyleNone
+		return ic.None, "—", StyleNone
 	}
 }
 
@@ -74,6 +74,9 @@ func humanizeSince(t time.Time) string {
 		return "—"
 	}
 	d := time.Since(t)
+	if d < 0 {
+		return "—"
+	}
 	switch {
 	case d < time.Minute:
 		return fmt.Sprintf("%ds ago", int(d.Seconds()))

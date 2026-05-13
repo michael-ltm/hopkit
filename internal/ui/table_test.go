@@ -23,7 +23,7 @@ func TestRenderServerTable_IncludesAllExpectedColumns(t *testing.T) {
 	}
 	out := RenderServerTable(servers, ASCIIIcons(), false /* no color */)
 
-	for _, want := range []string{"ID", "STATUS", "HOST", "USER", "AUTH", "prod-web", "staging", "[OK]", "[X]"} {
+	for _, want := range []string{"ID", "STATUS", "HOST", "USER", "AUTH", "prod-web", "staging", "[OK] on", "[X] off"} {
 		require.Contains(t, out, want, "table missing %q", want)
 	}
 	// Aliases sorted alphabetically.
