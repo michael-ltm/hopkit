@@ -4,7 +4,9 @@ package ssh
 
 import (
 	"context"
+	"net"
 	"os"
+	"strconv"
 	"testing"
 	"time"
 
@@ -38,14 +40,13 @@ func TestIntegration_DialExec(t *testing.T) {
 }
 
 func splitHostPort(s string) (string, int) {
-	for i := len(s) - 1; i >= 0; i-- {
-		if s[i] == ':' {
-			p := 0
-			for _, c := range s[i+1:] {
-				p = p*10 + int(c-'0')
-			}
-			return s[:i], p
-		}
+	host, portStr, err := net.SplitHostPort(s)
+	if err != nil {
+		return s, 22
 	}
-	return s, 22
+	port, err := strconv.Atoi(portStr)
+	if err != nil || port < 1 || port > 65535 {
+		return host, 22
+	}
+	return host, port
 }
