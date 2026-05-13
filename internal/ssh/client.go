@@ -5,6 +5,7 @@ package ssh
 import (
 	"errors"
 	"fmt"
+	"io"
 	"net"
 	"os"
 	"path/filepath"
@@ -17,6 +18,11 @@ import (
 	"golang.org/x/crypto/ssh/knownhosts"
 )
 
+// nopCloser is returned when no resource needs closing.
+type nopCloser struct{}
+
+func (nopCloser) Close() error { return nil }
+
 // BuildOpts is non-persistent input gathered at connect time (e.g. password
 // prompted from TTY). Never write the contents of BuildOpts to disk.
 type BuildOpts struct {
@@ -26,31 +32,36 @@ type BuildOpts struct {
 }
 
 // BuildClientConfig produces a *ssh.ClientConfig from a Server entry.
-func BuildClientConfig(s *config.Server, opts BuildOpts) (*gssh.ClientConfig, error) {
+// It also returns an io.Closer that the caller must close when done
+// (releases the ssh-agent unix socket when agent auth is used).
+func BuildClientConfig(s *config.Server, opts BuildOpts) (*gssh.ClientConfig, io.Closer, error) {
 	if strings.TrimSpace(s.User) == "" {
-		return nil, errors.New("user is required")
+		return nil, nil, errors.New("user is required")
 	}
 	timeout := opts.Timeout
 	if timeout == 0 {
 		timeout = 10 * time.Second
 	}
 
-	authMethods, err := buildAuth(s, opts)
+	authMethods, closer, err := buildAuth(s, opts)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 
 	hostKey, err := hostKeyCallback(opts.HostKeyVerify)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 
+	if closer == nil {
+		closer = nopCloser{}
+	}
 	return &gssh.ClientConfig{
 		User:            s.User,
 		Auth:            authMethods,
 		HostKeyCallback: hostKey,
 		Timeout:         timeout,
-	}, nil
+	}, closer, nil
 }
 
 // Address joins host and port with default 22.
@@ -62,27 +73,27 @@ func Address(s *config.Server) string {
 	return net.JoinHostPort(s.Host, strconv.Itoa(port))
 }
 
-func buildAuth(s *config.Server, opts BuildOpts) ([]gssh.AuthMethod, error) {
+func buildAuth(s *config.Server, opts BuildOpts) ([]gssh.AuthMethod, io.Closer, error) {
 	switch s.Auth {
 	case config.AuthKey:
 		key, err := loadPrivateKey(s.KeyPath)
 		if err != nil {
-			return nil, err
+			return nil, nil, err
 		}
-		return []gssh.AuthMethod{gssh.PublicKeys(key)}, nil
+		return []gssh.AuthMethod{gssh.PublicKeys(key)}, nil, nil
 	case config.AuthPassword:
 		if opts.Password == "" {
-			return nil, errors.New("password not provided for auth=password (use --ask-password or keychain)")
+			return nil, nil, errors.New("password not provided for auth=password (use --ask-password or keychain)")
 		}
-		return []gssh.AuthMethod{gssh.Password(opts.Password)}, nil
+		return []gssh.AuthMethod{gssh.Password(opts.Password)}, nil, nil
 	case config.AuthAgent:
-		ag, err := agentAuth()
+		method, closer, err := agentAuth()
 		if err != nil {
-			return nil, err
+			return nil, nil, err
 		}
-		return []gssh.AuthMethod{ag}, nil
+		return []gssh.AuthMethod{method}, closer, nil
 	default:
-		return nil, fmt.Errorf("unsupported auth %q (want one of key/password/agent)", s.Auth)
+		return nil, nil, fmt.Errorf("unsupported auth %q (want one of key/password/agent)", s.Auth)
 	}
 }
 
@@ -108,7 +119,7 @@ func expandHome(p string) (string, error) {
 	}
 	h, err := os.UserHomeDir()
 	if err != nil {
-		return "", err
+		return "", fmt.Errorf("expand path %q: %w", p, err)
 	}
 	return filepath.Join(h, p[1:]), nil
 }
