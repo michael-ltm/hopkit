@@ -1,7 +1,15 @@
 package main
 
-import "fmt"
+import (
+	"fmt"
+	"os"
+
+	"github.com/michael-ltm/sshm/internal/commands"
+)
 
 func main() {
-	fmt.Println("sshm v0.1.0-dev")
+	if err := commands.NewRoot().Execute(); err != nil {
+		fmt.Fprintln(os.Stderr, "error:", err)
+		os.Exit(1)
+	}
 }
