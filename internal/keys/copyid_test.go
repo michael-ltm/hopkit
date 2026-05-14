@@ -31,3 +31,11 @@ func TestBuildCopyIDCommand_QuotesProperly(t *testing.T) {
 	require.NotContains(t, cmd, "''")
 	require.True(t, strings.Contains(cmd, "<<'EOF'") || strings.Contains(cmd, `<<EOF`))
 }
+
+func TestBuildCopyIDCommand_MetacharactersNotExpanded(t *testing.T) {
+	key := "ssh-ed25519 AAAA $HOME `id` user@h"
+	cmd := BuildCopyIDCommand(key)
+	// The key must appear verbatim — <<'EOF' prevents shell expansion.
+	require.Contains(t, cmd, key)
+	require.Contains(t, cmd, "<<'EOF'")
+}

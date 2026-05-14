@@ -18,6 +18,8 @@ import (
 // Panics on empty input or input containing a newline (security guard;
 // callers must validate UI input first).
 func BuildCopyIDCommand(pubKey string) string {
+	// Trim trailing newline so the interpolated heredoc body is exactly
+	// one line — the raw-string literal already supplies the EOF terminator.
 	pubKey = strings.TrimRight(pubKey, "\n")
 	if pubKey == "" {
 		panic("BuildCopyIDCommand: empty key")
@@ -30,7 +32,7 @@ func BuildCopyIDCommand(pubKey string) string {
 	return fmt.Sprintf(`mkdir -p ~/.ssh && chmod 700 ~/.ssh && touch ~/.ssh/authorized_keys && chmod 600 ~/.ssh/authorized_keys && cat >> ~/.ssh/authorized_keys <<'EOF'
 %s
 EOF
-awk '!seen[$0]++' ~/.ssh/authorized_keys > ~/.ssh/authorized_keys.tmp && mv ~/.ssh/authorized_keys.tmp ~/.ssh/authorized_keys && chmod 600 ~/.ssh/authorized_keys`, pubKey)
+trap 'rm -f ~/.ssh/authorized_keys.tmp' EXIT && awk '!seen[$0]++' ~/.ssh/authorized_keys > ~/.ssh/authorized_keys.tmp && mv ~/.ssh/authorized_keys.tmp ~/.ssh/authorized_keys && chmod 600 ~/.ssh/authorized_keys`, pubKey)
 }
 
 // CopyID reads the local public key (keyPath + ".pub") and installs it on
@@ -55,14 +57,18 @@ func CopyID(ctx context.Context, srv *config.Server, password, keyPath string) e
 	}
 	defer cli.Close()
 
-	cmd := BuildCopyIDCommand(string(pubData))
+	key := strings.TrimSpace(string(pubData))
+	if strings.ContainsAny(key, "\n\r") {
+		return fmt.Errorf("public key file %s contains unexpected line breaks", pubPath)
+	}
+	cmd := BuildCopyIDCommand(key)
 	res, err := cli.Exec(ctx, cmd)
 	if err != nil {
 		stderr := ""
 		if res != nil {
 			stderr = res.Stderr
 		}
-		return fmt.Errorf("install pubkey: %w (stderr: %s)", err, stderr)
+		return fmt.Errorf("install pubkey: %w; remote stderr: %s", err, stderr)
 	}
 	if res.ExitCode != 0 {
 		return fmt.Errorf("install pubkey exited %d: %s", res.ExitCode, res.Stderr)
