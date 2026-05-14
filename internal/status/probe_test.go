@@ -2,6 +2,7 @@ package status
 
 import (
 	"context"
+	"fmt"
 	"net"
 	"testing"
 	"time"
@@ -37,4 +38,44 @@ func TestProbe_TCPOnlyMode_ReachableLocalListener(t *testing.T) {
 	require.True(t, r.Reachable)
 	require.Empty(t, r.Error)
 	require.True(t, r.Latency > 0)
+}
+
+func TestProbeMany_AllReachable(t *testing.T) {
+	servers := map[string]*config.Server{}
+	var listeners []net.Listener
+	for i := 0; i < 3; i++ {
+		l, err := net.Listen("tcp", "127.0.0.1:0")
+		require.NoError(t, err)
+		listeners = append(listeners, l)
+		addr := l.Addr().(*net.TCPAddr)
+		servers[fmt.Sprintf("srv%d", i)] = &config.Server{Host: addr.IP.String(), Port: addr.Port}
+	}
+	defer func() {
+		for _, l := range listeners {
+			l.Close()
+		}
+	}()
+
+	results := ProbeMany(context.Background(), servers, 500*time.Millisecond)
+	require.Len(t, results, 3)
+	for alias, r := range results {
+		require.True(t, r.Reachable, "%s should be reachable", alias)
+	}
+}
+
+func TestProbeMany_EmptyMapReturnsEmpty(t *testing.T) {
+	results := ProbeMany(context.Background(), map[string]*config.Server{}, 500*time.Millisecond)
+	require.Empty(t, results)
+}
+
+func TestProbeMany_CancelledContext(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel() // cancel before calling
+
+	servers := map[string]*config.Server{
+		"a": {Host: "127.0.0.1", Port: 1}, // port 1 — refused/unreachable
+	}
+	results := ProbeMany(ctx, servers, 500*time.Millisecond)
+	require.Len(t, results, 1)
+	require.False(t, results["a"].Reachable)
 }

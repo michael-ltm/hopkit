@@ -6,7 +6,6 @@ package status
 
 import (
 	"context"
-	"fmt"
 	"net"
 	"time"
 
@@ -14,17 +13,22 @@ import (
 	sshpkg "github.com/michael-ltm/sshm/internal/ssh"
 )
 
+// defaultProbeTimeout is the TCP-connect deadline used when the caller
+// passes a non-positive timeout. It is deliberately shorter than the SSH
+// handshake timeout in internal/ssh — a probe only checks port reachability.
+const defaultProbeTimeout = 3 * time.Second
+
 // Result is a single probe outcome.
 type Result struct {
 	Reachable bool
-	Latency   time.Duration
-	Error     string
+	Latency   time.Duration // zero when Reachable is false
+	Error     string        // empty when Reachable is true
 }
 
 // Probe attempts a TCP connect to the server within timeout.
 func Probe(ctx context.Context, s *config.Server, timeout time.Duration) Result {
 	if timeout <= 0 {
-		timeout = 3 * time.Second
+		timeout = defaultProbeTimeout
 	}
 	ctx, cancel := context.WithTimeout(ctx, timeout)
 	defer cancel()
@@ -33,7 +37,7 @@ func Probe(ctx context.Context, s *config.Server, timeout time.Duration) Result 
 	d := net.Dialer{}
 	conn, err := d.DialContext(ctx, "tcp", sshpkg.Address(s))
 	if err != nil {
-		return Result{Reachable: false, Error: fmt.Sprintf("%v", err)}
+		return Result{Reachable: false, Error: err.Error()}
 	}
 	_ = conn.Close()
 	return Result{Reachable: true, Latency: time.Since(start)}
