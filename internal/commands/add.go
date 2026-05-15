@@ -55,6 +55,12 @@ func addQuick(cmd *cobra.Command, cfg *config.Config, alias, user, host string, 
 	if user == "" || host == "" {
 		return fmt.Errorf("--user and --host required with --quick")
 	}
+	if err := wizard.ValidateHost(host); err != nil {
+		return err
+	}
+	if err := wizard.ValidatePort(strconv.Itoa(port)); err != nil {
+		return err
+	}
 	srv := &config.Server{
 		Host: host, Port: port, User: user, Auth: config.AuthKey, KeyPath: keyPath,
 	}
@@ -65,7 +71,9 @@ func addQuick(cmd *cobra.Command, cfg *config.Config, alias, user, host string, 
 	if err := saveConfig(cfg); err != nil {
 		return err
 	}
-	fmt.Fprintf(cmd.OutOrStdout(), "added %q\n", alias)
+	if _, err := fmt.Fprintf(cmd.OutOrStdout(), "added %q\n", alias); err != nil {
+		return err
+	}
 	return nil
 }
 
@@ -110,7 +118,9 @@ func addWizard(cmd *cobra.Command, cfg *config.Config) error {
 	if err := saveConfig(cfg); err != nil {
 		return err
 	}
-	fmt.Fprintf(cmd.OutOrStdout(), "added %q\n", in.Alias)
+	if _, err := fmt.Fprintf(cmd.OutOrStdout(), "added %q\n", in.Alias); err != nil {
+		return err
+	}
 
 	if in.TestAfter {
 		r := status.Probe(context.Background(), srv, 0)

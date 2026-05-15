@@ -8,6 +8,8 @@ import (
 
 func TestValidateAlias(t *testing.T) {
 	require.NoError(t, ValidateAlias("my-host"))
+	require.NoError(t, ValidateAlias("a"))
+	require.NoError(t, ValidateAlias("1"))
 	require.Error(t, ValidateAlias(""))
 	require.Error(t, ValidateAlias("has space"))
 	require.Error(t, ValidateAlias("CAPS"))
