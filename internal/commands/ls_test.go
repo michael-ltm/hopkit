@@ -37,7 +37,7 @@ func TestLs_JSONOutput(t *testing.T) {
 	require.NoError(t, config.Save(cfgPath, cfg))
 	flagConfigPath = cfgPath
 	flagJSON = true
-	t.Cleanup(func() { flagConfigPath = ""; flagJSON = false })
+	t.Cleanup(func() { flagConfigPath = ""; flagJSON = false; flagNoColor = false })
 
 	cmd := newLsCmd()
 	var out bytes.Buffer
@@ -49,4 +49,20 @@ func TestLs_JSONOutput(t *testing.T) {
 	}
 	require.NoError(t, json.Unmarshal(out.Bytes(), &got))
 	require.Contains(t, got.Servers, "aliyun")
+}
+
+func TestLs_EmptyServers(t *testing.T) {
+	dir := t.TempDir()
+	cfgPath := filepath.Join(dir, "config.toml")
+	require.NoError(t, config.Save(cfgPath, config.New()))
+	flagConfigPath = cfgPath
+	flagJSON = false
+	flagNoColor = true
+	t.Cleanup(func() { flagConfigPath = ""; flagJSON = false; flagNoColor = false })
+
+	cmd := newLsCmd()
+	var out bytes.Buffer
+	cmd.SetOut(&out)
+	require.NoError(t, cmd.RunE(cmd, nil))
+	require.Contains(t, out.String(), "No servers yet")
 }

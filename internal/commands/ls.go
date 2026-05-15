@@ -1,6 +1,8 @@
 package commands
 
 import (
+	"fmt"
+
 	"github.com/michael-ltm/sshm/internal/config"
 	"github.com/michael-ltm/sshm/internal/ui"
 	"github.com/spf13/cobra"
@@ -24,7 +26,9 @@ func newLsCmd() *cobra.Command {
 			}
 			icons := ui.ResolveIcons(cfg.UI.Icons)
 			color := !flagNoColor
-			cmd.OutOrStdout().Write([]byte(ui.RenderServerTable(cfg.Servers, icons, color)))
+			if _, err := fmt.Fprint(cmd.OutOrStdout(), ui.RenderServerTable(cfg.Servers, icons, color)); err != nil {
+				return err
+			}
 			return nil
 		},
 	}
