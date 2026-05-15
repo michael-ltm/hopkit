@@ -26,40 +26,47 @@ func newShowCmd() *cobra.Command {
 			if flagJSON {
 				return writeJSON(cmd.OutOrStdout(), map[string]any{args[0]: s})
 			}
-			renderServerDetail(cmd.OutOrStdout(), args[0], s)
+			if err := renderServerDetail(cmd.OutOrStdout(), args[0], s); err != nil {
+				return err
+			}
 			return nil
 		},
 	}
 }
 
-func renderServerDetail(w io.Writer, alias string, s *config.Server) {
-	fmt.Fprintf(w, "Alias        %s\n", alias)
-	fmt.Fprintf(w, "Label        %s\n", s.Label)
-	fmt.Fprintf(w, "Host         %s\n", s.Host)
-	fmt.Fprintf(w, "Port         %d\n", defaultInt(s.Port, 22))
-	fmt.Fprintf(w, "User         %s\n", s.User)
-	fmt.Fprintf(w, "Auth         %s\n", s.Auth)
-	if s.KeyPath != "" {
-		fmt.Fprintf(w, "Key          %s\n", s.KeyPath)
+func renderServerDetail(w io.Writer, alias string, s *config.Server) error {
+	lines := []struct {
+		label string
+		val   string
+		show  bool
+	}{
+		{"Alias", alias, true},
+		{"Label", s.Label, true},
+		{"Host", s.Host, true},
+		{"Port", fmt.Sprintf("%d", defaultInt(s.Port, 22)), true},
+		{"User", s.User, true},
+		{"Auth", s.Auth, true},
+		{"Key", s.KeyPath, s.KeyPath != ""},
+		{"Tags", strings.Join(s.Tags, ", "), len(s.Tags) > 0},
+		{"Group", s.Group, s.Group != ""},
+		{"Notes", s.Notes, s.Notes != ""},
+		{"Init state", s.InitState, s.InitState != ""},
+		{"Last status", s.LastStatus, s.LastStatus != ""},
 	}
-	if len(s.Tags) > 0 {
-		fmt.Fprintf(w, "Tags         %s\n", strings.Join(s.Tags, ", "))
-	}
-	if s.Group != "" {
-		fmt.Fprintf(w, "Group        %s\n", s.Group)
-	}
-	if s.Notes != "" {
-		fmt.Fprintf(w, "Notes        %s\n", s.Notes)
-	}
-	if s.InitState != "" {
-		fmt.Fprintf(w, "Init state   %s\n", s.InitState)
-	}
-	if s.LastStatus != "" {
-		fmt.Fprintf(w, "Last status  %s\n", s.LastStatus)
+	for _, l := range lines {
+		if !l.show {
+			continue
+		}
+		if _, err := fmt.Fprintf(w, "%-12s %s\n", l.label, l.val); err != nil {
+			return err
+		}
 	}
 	if !s.LastSeen.IsZero() {
-		fmt.Fprintf(w, "Last seen    %s\n", s.LastSeen.Format("2006-01-02 15:04:05 MST"))
+		if _, err := fmt.Fprintf(w, "%-12s %s\n", "Last seen", s.LastSeen.Format("2006-01-02 15:04:05 MST")); err != nil {
+			return err
+		}
 	}
+	return nil
 }
 
 func defaultInt(v, d int) int {
