@@ -3,7 +3,6 @@ package commands
 import (
 	"bufio"
 	"fmt"
-	"os"
 	"strings"
 
 	"github.com/spf13/cobra"
@@ -26,7 +25,7 @@ func newRmCmd() *cobra.Command {
 			}
 			if !yes {
 				fmt.Fprintf(cmd.OutOrStdout(), "Remove %q? [y/N]: ", alias)
-				r := bufio.NewReader(os.Stdin)
+				r := bufio.NewReader(cmd.InOrStdin())
 				line, _ := r.ReadString('\n')
 				if !strings.HasPrefix(strings.ToLower(strings.TrimSpace(line)), "y") {
 					fmt.Fprintln(cmd.OutOrStdout(), "aborted")
@@ -40,7 +39,9 @@ func newRmCmd() *cobra.Command {
 			if err := saveConfig(cfg); err != nil {
 				return err
 			}
-			fmt.Fprintf(cmd.OutOrStdout(), "removed %q\n", alias)
+			if _, err := fmt.Fprintf(cmd.OutOrStdout(), "removed %q\n", alias); err != nil {
+				return err
+			}
 			return nil
 		},
 	}
