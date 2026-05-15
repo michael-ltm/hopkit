@@ -3,9 +3,11 @@ package commands
 import (
 	"context"
 	"fmt"
+	"sort"
 	"time"
 
 	"github.com/michael-ltm/sshm/internal/status"
+	"github.com/michael-ltm/sshm/internal/ui"
 	"github.com/spf13/cobra"
 )
 
@@ -25,13 +27,21 @@ func newTestCmd() *cobra.Command {
 			}
 			to := time.Duration(timeout) * time.Second
 			ctx := context.Background()
+			icons := ui.ResolveIcons(cfg.UI.Icons)
 			if all || len(args) == 0 {
 				res := status.ProbeMany(ctx, cfg.Servers, to)
 				if flagJSON {
 					return writeJSON(cmd.OutOrStdout(), res)
 				}
-				for alias, r := range res {
-					printProbe(cmd, alias, r)
+				aliases := make([]string, 0, len(res))
+				for a := range res {
+					aliases = append(aliases, a)
+				}
+				sort.Strings(aliases)
+				for _, alias := range aliases {
+					if err := printProbe(cmd, alias, res[alias], icons); err != nil {
+						return err
+					}
 				}
 				return nil
 			}
@@ -43,8 +53,7 @@ func newTestCmd() *cobra.Command {
 			if flagJSON {
 				return writeJSON(cmd.OutOrStdout(), map[string]status.Result{args[0]: r})
 			}
-			printProbe(cmd, args[0], r)
-			return nil
+			return printProbe(cmd, args[0], r, icons)
 		},
 	}
 	c.Flags().BoolVar(&all, "all", false, "test every configured server in parallel")
@@ -52,14 +61,17 @@ func newTestCmd() *cobra.Command {
 	return c
 }
 
-func printProbe(cmd *cobra.Command, alias string, r status.Result) {
-	icon := "✓"
+func printProbe(cmd *cobra.Command, alias string, r status.Result, ic ui.IconSet) error {
+	icon := ic.Online
 	if !r.Reachable {
-		icon = "✗"
+		icon = ic.Offline
+		if _, err := fmt.Fprintf(cmd.OutOrStdout(), "%s %-20s offline — %s\n", icon, alias, r.Error); err != nil {
+			return err
+		}
+		return nil
 	}
-	if !r.Reachable {
-		fmt.Fprintf(cmd.OutOrStdout(), "%s %-20s offline — %s\n", icon, alias, r.Error)
-		return
+	if _, err := fmt.Fprintf(cmd.OutOrStdout(), "%s %-20s online  (%s)\n", icon, alias, r.Latency); err != nil {
+		return err
 	}
-	fmt.Fprintf(cmd.OutOrStdout(), "%s %-20s online  (%s)\n", icon, alias, r.Latency)
+	return nil
 }
