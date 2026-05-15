@@ -28,7 +28,7 @@ func NewRoot() *cobra.Command {
 	root.AddCommand(
 		newVersionCmd(),
 		newCompletionCmd(),
-		// later tasks attach: ls, add, edit, rm, show, connect, exec, test, copy-id, gen-key
+		newLsCmd(),
 	)
 	return root
 }
