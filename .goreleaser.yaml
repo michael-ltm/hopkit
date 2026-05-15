@@ -1,0 +1,66 @@
+version: 2
+
+project_name: sshm
+
+builds:
+  - id: sshm
+    main: ./cmd/sshm
+    binary: sshm
+    env: [CGO_ENABLED=0]
+    goos: [linux, darwin, windows]
+    goarch: [amd64, arm64]
+    ldflags:
+      - -s -w
+      - -X github.com/michael-ltm/sshm/internal/commands.Version={{.Version}}
+
+archives:
+  - id: default
+    formats: [tar.gz]
+    name_template: "{{ .ProjectName }}_{{ .Os }}_{{ .Arch }}"
+    format_overrides:
+      - goos: windows
+        formats: [zip]
+    files:
+      - LICENSE
+      - README.md
+      - CHANGELOG.md
+
+checksum:
+  name_template: "checksums.txt"
+
+snapshot:
+  version_template: "{{ .Tag }}-next"
+
+changelog:
+  use: github
+  sort: asc
+  filters:
+    exclude: ["^docs:", "^test:", "^ci:", "^chore:"]
+
+brews:
+  - name: sshm
+    repository:
+      owner: michael-ltm
+      name: homebrew-tap
+    homepage: "https://github.com/michael-ltm/sshm"
+    description: "A pretty, AI-friendly SSH connection manager"
+    license: MIT
+    install: |
+      bin.install "sshm"
+    test: |
+      system "#{bin}/sshm", "version"
+
+scoops:
+  - repository:
+      owner: michael-ltm
+      name: scoop-bucket
+    homepage: "https://github.com/michael-ltm/sshm"
+    description: "A pretty, AI-friendly SSH connection manager"
+    license: MIT
+
+release:
+  github:
+    owner: michael-ltm
+    name: sshm
+  draft: false
+  prerelease: auto
