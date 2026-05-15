@@ -15,9 +15,16 @@ import (
 func newExecCmd() *cobra.Command {
 	var timeoutSec int
 	c := &cobra.Command{
-		Use:                "exec <alias> <command...>",
-		Short:              "Run a command on a server",
-		DisableFlagParsing: false,
+		Use:   "exec <alias> <command...>",
+		Short: "Run a command on a server",
+		Long: `Run a single command on the remote server.
+
+The command and its arguments are joined with spaces and run through the
+remote shell. For commands containing quoted strings, escape your local
+shell or wrap in 'sh -c "..."', e.g.:
+
+    sshm exec myhost sh -c 'grep -r "hello world" /tmp'
+`,
 		Args: func(cmd *cobra.Command, args []string) error {
 			if len(args) < 1 {
 				return fmt.Errorf("requires alias")
@@ -63,12 +70,12 @@ func execOnce(ctx context.Context, cmd *cobra.Command, s *config.Server, remoteC
 		}
 		return writeJSON(cmd.OutOrStdout(), res)
 	}
-	exit, err := cli.StreamExec(ctx, remoteCmd, cmd.OutOrStdout(), os.Stderr)
+	exit, err := cli.StreamExec(ctx, remoteCmd, cmd.OutOrStdout(), cmd.ErrOrStderr())
 	if err != nil {
 		return err
 	}
 	if exit != 0 {
-		fmt.Fprintf(os.Stderr, "exit code: %d\n", exit)
+		fmt.Fprintf(cmd.ErrOrStderr(), "exit code: %d\n", exit)
 		os.Exit(exit)
 	}
 	return nil
