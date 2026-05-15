@@ -33,6 +33,7 @@ func NewRoot() *cobra.Command {
 		newRmCmd(),
 		newAddCmd(),
 		newEditCmd(),
+		newConnectCmd(),
 	)
 	return root
 }
