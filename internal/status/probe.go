@@ -20,9 +20,9 @@ const defaultProbeTimeout = 3 * time.Second
 
 // Result is a single probe outcome.
 type Result struct {
-	Reachable bool
-	Latency   time.Duration // zero when Reachable is false
-	Error     string        // empty when Reachable is true
+	Reachable bool          `json:"reachable"`
+	Latency   time.Duration `json:"latency_ns,omitempty"` // zero when Reachable is false
+	Error     string        `json:"error,omitempty"`      // empty when Reachable is true
 }
 
 // Probe attempts a TCP connect to the server within timeout.
