@@ -98,7 +98,7 @@ func buildAuth(s *config.Server, opts BuildOpts) ([]gssh.AuthMethod, io.Closer, 
 }
 
 func loadPrivateKey(path string) (gssh.Signer, error) {
-	exp, err := expandHome(path)
+	exp, err := ExpandHome(path)
 	if err != nil {
 		return nil, err
 	}
@@ -113,7 +113,8 @@ func loadPrivateKey(path string) (gssh.Signer, error) {
 	return signer, nil
 }
 
-func expandHome(p string) (string, error) {
+// ExpandHome expands a leading ~ to the current user's home directory.
+func ExpandHome(p string) (string, error) {
 	if !strings.HasPrefix(p, "~") {
 		return p, nil
 	}
