@@ -24,6 +24,9 @@ func newEditCmd() *cobra.Command {
 			if err != nil {
 				return err
 			}
+			if len(sets) == 0 {
+				return fmt.Errorf("at least one --set field=value is required (e.g., --set user=ubuntu)")
+			}
 			for _, kv := range sets {
 				k, v, ok := strings.Cut(kv, "=")
 				if !ok {
@@ -53,13 +56,22 @@ func applyField(srv *config.Server, field, val string) error {
 	case "port":
 		n, err := strconv.Atoi(val)
 		if err != nil {
-			return fmt.Errorf("port must be int")
+			return fmt.Errorf("port: %q is not a valid integer: %w", val, err)
+		}
+		if n < 1 || n > 65535 {
+			return fmt.Errorf("port: %d out of range (1..65535)", n)
 		}
 		srv.Port = n
 	case "user":
 		srv.User = val
 	case "auth":
-		srv.Auth = val
+		switch val {
+		case config.AuthKey, config.AuthPassword, config.AuthAgent:
+			srv.Auth = val
+		default:
+			return fmt.Errorf("auth: %q is not one of %q/%q/%q", val,
+				config.AuthKey, config.AuthPassword, config.AuthAgent)
+		}
 	case "key_path":
 		srv.KeyPath = val
 	case "label":
