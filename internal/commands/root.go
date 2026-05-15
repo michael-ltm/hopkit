@@ -37,6 +37,7 @@ func NewRoot() *cobra.Command {
 		newExecCmd(),
 		newTestCmd(),
 		newCopyIDCmd(),
+		newGenKeyCmd(),
 	)
 	return root
 }
