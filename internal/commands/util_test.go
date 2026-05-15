@@ -8,7 +8,7 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-func TestLoadConfigOrDie_UsesOverride(t *testing.T) {
+func TestLoadConfig_UsesOverride(t *testing.T) {
 	dir := t.TempDir()
 	path := filepath.Join(dir, "x.toml")
 	flagConfigPath = path
@@ -34,4 +34,11 @@ func TestResolveServer_UsesDefaultWhenAliasEmpty(t *testing.T) {
 	srv, err := resolveServer(cfg, "")
 	require.NoError(t, err)
 	require.Equal(t, "1.1.1.1", srv.Host)
+}
+
+func TestResolveServer_ErrorsWhenAliasEmptyAndNoDefault(t *testing.T) {
+	cfg := config.New() // cfg.Default == ""
+	_, err := resolveServer(cfg, "")
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "no alias given")
 }

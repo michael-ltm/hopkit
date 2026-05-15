@@ -8,23 +8,25 @@ import (
 	"github.com/michael-ltm/sshm/internal/config"
 )
 
+// configPath returns the active config path: --config override wins,
+// otherwise the platform default.
+func configPath() string {
+	if flagConfigPath != "" {
+		return flagConfigPath
+	}
+	return config.ConfigPath()
+}
+
 // loadConfig honors --config override, otherwise uses ConfigPath().
 func loadConfig() (*config.Config, string, error) {
-	path := flagConfigPath
-	if path == "" {
-		path = config.ConfigPath()
-	}
+	path := configPath()
 	cfg, err := config.Load(path)
 	return cfg, path, err
 }
 
 // saveConfig writes to the same path used by loadConfig.
 func saveConfig(cfg *config.Config) error {
-	path := flagConfigPath
-	if path == "" {
-		path = config.ConfigPath()
-	}
-	return config.Save(path, cfg)
+	return config.Save(configPath(), cfg)
 }
 
 // resolveServer picks a server entry: explicit alias wins, otherwise the
@@ -44,7 +46,8 @@ func resolveServer(cfg *config.Config, alias string) (*config.Server, error) {
 	return s, nil
 }
 
-// writeJSON emits v as indented JSON to w.
+// writeJSON emits v as indented JSON to w. If w is a bufio.Writer the
+// caller is responsible for flushing after the call.
 func writeJSON(w io.Writer, v any) error {
 	enc := json.NewEncoder(w)
 	enc.SetIndent("", "  ")
