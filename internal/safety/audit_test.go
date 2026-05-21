@@ -25,13 +25,21 @@ func TestAuditLog_AppendWritesLine(t *testing.T) {
 	require.Contains(t, lines[1], "exec")
 }
 
-func TestAuditLog_AppendMasksReason(t *testing.T) {
+func TestAuditLog_AppendMasksReasonAndResult(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "audit.log")
 	a := NewAuditLog(path)
-	require.NoError(t, a.Append(Entry{Tool: "exec", Alias: "h", Reason: "set DB_PASS=hunter2", Result: "ok"}))
+	require.NoError(t, a.Append(Entry{
+		Tool:   "exec",
+		Alias:  "h",
+		Reason: "set DB_PASS=hunter2",
+		Result: "API_KEY=leakedsecret done",
+	}))
 	data, err := os.ReadFile(path)
 	require.NoError(t, err)
-	require.NotContains(t, string(data), "hunter2")
+	s := string(data)
+	require.NotContains(t, s, "hunter2")       // Reason masked
+	require.NotContains(t, s, "leakedsecret")  // Result masked
+	require.Contains(t, s, `"time":"`)         // timestamp stamped
 }
 
 func TestAuditLog_FileIsModeSixZeroZero(t *testing.T) {

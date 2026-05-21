@@ -43,7 +43,7 @@ func (a *AuditLog) Append(e Entry) error {
 	if err != nil {
 		return fmt.Errorf("open audit log: %w", err)
 	}
-	defer f.Close()
+	defer f.Close() // error ignored; the write above is already confirmed
 	if _, err := f.Write(append(line, '\n')); err != nil {
 		return fmt.Errorf("write audit entry: %w", err)
 	}
