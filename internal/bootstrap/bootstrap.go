@@ -45,21 +45,24 @@ func ParseResult(raw string) Result {
 	return r
 }
 
-// Run uploads-and-executes the bootstrap script on the server via SSH and
-// returns the parsed Result. The script is piped to `sh` so nothing is
-// written to the remote filesystem.
+// Run executes the bootstrap script on the remote server via SSH and
+// returns the parsed Result. The script is passed as a quoted `sh -c`
+// argument, so nothing is written to the remote filesystem.
 func Run(ctx context.Context, s *config.Server) (Result, error) {
 	cli, err := sshpkg.Dial(s, sshpkg.BuildOpts{})
 	if err != nil {
 		return Result{}, err
 	}
 	defer cli.Close()
-	// Run via `sh -c` with the script passed as a single argument.
 	res, err := cli.Exec(ctx, "sh -c "+shellQuote(script))
 	if err != nil {
 		return Result{}, err
 	}
-	return ParseResult(res.Stdout), nil
+	r := ParseResult(res.Stdout)
+	if res.Stderr != "" {
+		r.RawOutput += "\n=STDERR=\n" + res.Stderr
+	}
+	return r, nil
 }
 
 // shellQuote wraps s in single quotes, escaping any embedded single quote,

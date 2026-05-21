@@ -12,8 +12,11 @@ elif command -v yum >/dev/null 2>&1; then PM="yum install -y";
 elif command -v apk >/dev/null 2>&1; then PM="apk add";
 else PM=""; fi
 
+# pkg_install runs the detected package manager; $PM intentionally
+# word-splits into command + flags (POSIX sh has no arrays).
+pkg_install() { $PM "$@"; }
 if [ -n "$PM" ]; then
-  $PM jq curl fail2ban >/dev/null 2>&1 || echo "warn: some packages failed to install"
+  pkg_install jq curl fail2ban >/dev/null 2>&1 || echo "warn: some packages failed to install"
 fi
 
 # 2. fail2ban on if available.

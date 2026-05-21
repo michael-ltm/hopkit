@@ -25,4 +25,5 @@ func TestParseResult_CapturesSshdState(t *testing.T) {
 	raw := "=SSHM-BOOTSTRAP-START=\n=SSHD-STATE=\nPasswordAuthentication no\nPermitRootLogin no\n=SSHM-BOOTSTRAP-DONE=\n"
 	r := ParseResult(raw)
 	require.Contains(t, strings.Join(r.SSHDState, "\n"), "PasswordAuthentication no")
+	require.Contains(t, strings.Join(r.SSHDState, "\n"), "PermitRootLogin no")
 }
