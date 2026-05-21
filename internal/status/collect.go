@@ -21,11 +21,11 @@ type Snapshot struct {
 
 // snapshotScript is the single remote command whose output ParseSnapshot
 // consumes. Each section is delimited by an =NAME= marker line.
-const snapshotScript = `echo "=UPTIME=" && uptime -p 2>/dev/null || uptime
+const snapshotScript = `echo "=UPTIME=" && { uptime -p 2>/dev/null || uptime 2>/dev/null; }
 echo "=LOAD=" && cat /proc/loadavg 2>/dev/null | awk '{print $1, $2, $3}'
 echo "=MEM=" && free -h 2>/dev/null | awk '/^Mem:/{print "Mem:", $2, $3, $4}'
 echo "=DISK=" && df -h / 2>/dev/null | awk 'NR==2{print $1, $2, $3, $5}'
-echo "=PORTS=" && (ss -tlnH 2>/dev/null || netstat -tln 2>/dev/null) | grep -oE ':[0-9]+ ' | tr -d ': ' | sort -un | tr '\n' ' '
+echo "=PORTS=" && (ss -tlnH 2>/dev/null || netstat -tln 2>/dev/null) | grep -oE ':[0-9]+' | tr -d ': ' | sort -un | tr '\n' ' '
 echo "=FAILED=" && (grep -c "Failed password" /var/log/auth.log /var/log/secure 2>/dev/null | awk -F: '{s+=$2} END{print s+0}')`
 
 // ParseSnapshot turns the marker-delimited output of snapshotScript into a
@@ -35,6 +35,8 @@ func ParseSnapshot(raw string) Snapshot {
 	section := ""
 	for _, line := range strings.Split(raw, "\n") {
 		trimmed := strings.TrimSpace(line)
+		// NOTE: any line that both starts and ends with '=' is treated as
+		// a section marker. Real uptime/df/ss output never does this.
 		if strings.HasPrefix(trimmed, "=") && strings.HasSuffix(trimmed, "=") {
 			section = strings.Trim(trimmed, "=")
 			continue
@@ -74,5 +76,8 @@ func Collect(ctx context.Context, s *config.Server) (Snapshot, error) {
 	if err != nil {
 		return Snapshot{}, err
 	}
+	// res.ExitCode is intentionally not checked: the script guards every
+	// command with 2>/dev/null, and partial output still parses cleanly
+	// into a Snapshot with the missing fields left at zero values.
 	return ParseSnapshot(res.Stdout), nil
 }
