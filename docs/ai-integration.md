@@ -7,7 +7,8 @@ sshm ships an MCP server so AI assistants can manage your servers.
 ### Claude Code (plugin)
 
 ```
-claude plugins install michael-ltm/sshm
+claude plugins marketplace add michael-ltm/sshm
+claude plugins install sshm-skill@sshm
 ```
 
 This registers the `sshm-server-ops` skill and the `sshm` MCP server.

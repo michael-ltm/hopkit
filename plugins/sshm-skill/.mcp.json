@@ -1,6 +1,7 @@
 {
   "mcpServers": {
     "sshm": {
+      "type": "stdio",
       "command": "sshm",
       "args": ["mcp"]
     }

@@ -326,10 +326,11 @@ plugins/sshm-skill/
     └── sshm-mcp.json                  # Auto-registers `sshm mcp` as MCP server in Claude Code
 ```
 
-Install in one line once published:
+Install once published:
 
 ```bash
-claude plugins install michael-ltm/sshm
+claude plugins marketplace add michael-ltm/sshm
+claude plugins install sshm-skill@sshm
 ```
 
 ---

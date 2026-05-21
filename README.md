@@ -38,7 +38,8 @@ sshm test --all        # parallel reachability check
 ## AI integration
 
 ```
-claude plugins install michael-ltm/sshm
+claude plugins marketplace add michael-ltm/sshm
+claude plugins install sshm-skill@sshm
 ```
 
 Then ask your assistant to "check the status of my prod server" or "deploy

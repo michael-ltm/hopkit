@@ -1,0 +1,22 @@
+{
+  "name": "sshm",
+  "owner": {
+    "name": "michael-ltm"
+  },
+  "description": "sshm — SSH connection manager plugins.",
+  "version": "0.2.0",
+  "plugins": [
+    {
+      "name": "sshm-skill",
+      "source": "./plugins/sshm-skill",
+      "description": "Manage SSH servers with sshm — list, connect, exec, bootstrap, inspect — from any AI assistant.",
+      "version": "0.2.0",
+      "author": {
+        "name": "michael-ltm"
+      },
+      "homepage": "https://github.com/michael-ltm/sshm",
+      "repository": "https://github.com/michael-ltm/sshm",
+      "license": "MIT"
+    }
+  ]
+}
