@@ -19,7 +19,7 @@ func TestShow_PrintsServerDetail(t *testing.T) {
 	}
 	require.NoError(t, config.Save(cfgPath, cfg))
 	flagConfigPath = cfgPath
-	t.Cleanup(func() { flagConfigPath = "" })
+	t.Cleanup(func() { flagConfigPath = ""; flagJSON = false; flagNoColor = false })
 
 	cmd := newShowCmd()
 	var out bytes.Buffer
@@ -35,7 +35,7 @@ func TestShow_ErrorsOnUnknownAlias(t *testing.T) {
 	cfgPath := filepath.Join(dir, "config.toml")
 	require.NoError(t, config.Save(cfgPath, config.New()))
 	flagConfigPath = cfgPath
-	t.Cleanup(func() { flagConfigPath = "" })
+	t.Cleanup(func() { flagConfigPath = ""; flagJSON = false; flagNoColor = false })
 
 	cmd := newShowCmd()
 	err := cmd.RunE(cmd, []string{"nope"})

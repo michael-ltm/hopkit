@@ -16,7 +16,7 @@ func TestExec_RejectsMissingCommand(t *testing.T) {
 	cfg.Servers["h"] = &config.Server{Host: "1.2.3.4", User: "u", Auth: config.AuthKey, KeyPath: "/k"}
 	require.NoError(t, config.Save(cfgPath, cfg))
 	flagConfigPath = cfgPath
-	t.Cleanup(func() { flagConfigPath = "" })
+	t.Cleanup(func() { flagConfigPath = ""; flagJSON = false; flagNoColor = false })
 
 	cmd := newExecCmd()
 	cmd.SetArgs([]string{"h"})

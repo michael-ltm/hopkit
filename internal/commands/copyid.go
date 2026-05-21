@@ -43,6 +43,12 @@ func newCopyIDCmd() *cobra.Command {
 			if err := keys.CopyID(ctx, s, string(pw), s.KeyPath); err != nil {
 				return err
 			}
+			if flagJSON {
+				return writeJSON(cmd.OutOrStdout(), map[string]string{
+					"alias":  args[0],
+					"result": "installed",
+				})
+			}
 			if _, err := fmt.Fprintln(cmd.OutOrStdout(), "public key installed"); err != nil {
 				return err
 			}

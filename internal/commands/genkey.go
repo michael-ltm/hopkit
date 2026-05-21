@@ -3,6 +3,7 @@ package commands
 import (
 	"fmt"
 	"path/filepath"
+	"strings"
 
 	"github.com/michael-ltm/sshm/internal/keys"
 	sshpkg "github.com/michael-ltm/sshm/internal/ssh"
@@ -39,6 +40,13 @@ func newGenKeyCmd() *cobra.Command {
 			s.KeyPath = actualPath
 			if err := saveConfig(cfg); err != nil {
 				return err
+			}
+			if flagJSON {
+				return writeJSON(cmd.OutOrStdout(), map[string]string{
+					"alias":      args[0],
+					"key_path":   expanded,
+					"public_key": strings.TrimSpace(pub),
+				})
 			}
 			if _, err := fmt.Fprintln(cmd.OutOrStdout(), expanded); err != nil {
 				return err
