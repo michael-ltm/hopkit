@@ -23,20 +23,33 @@ sshm exec my-host 'uptime'
 sshm test --all        # parallel reachability check
 ```
 
-## Features (v0.1)
+## Features
 
 - TOML config at `~/.config/sshm/config.toml` (XDG) or `%APPDATA%\sshm\config.toml` (Windows)
 - `add` (huh wizard) / `edit` / `rm` / `show` / `ls`
 - `connect` (interactive shell) / `exec` (one-off) / `test` (single + --all)
+- `status` (remote resource snapshot) / `init` (baseline hardening)
 - `gen-key` (ed25519) / `copy-id` (one-shot password, never stored)
+- **`mcp` — built-in MCP server** so AI assistants (Claude Code, Cursor,
+  Codex, Gemini CLI) can manage your servers. See [docs/ai-integration.md](docs/ai-integration.md).
 - `--json` on every command for scripting and AI integration
 - Pretty list with unicode/ascii icons (auto-detected)
 
+## AI integration
+
+```
+claude plugins install michael-ltm/sshm
+```
+
+Then ask your assistant to "check the status of my prod server" or "deploy
+the latest code to staging". sshm's MCP tools are audited, mask secrets, and
+block dangerous commands. See [docs/ai-integration.md](docs/ai-integration.md)
+and [docs/security.md](docs/security.md).
+
 ## Roadmap
 
-- **v0.2** — Built-in MCP server (`sshm mcp`) + Claude Code plugin + safety filter + bootstrap/init
 - **v0.3** — Import/export `~/.ssh/config`, tags/groups, parallel exec, OS keychain
-- **v1.0** — Port forwarding, SFTP browse, signed release artifacts, demo site
+- **v1.0** — Port forwarding, SFTP browse, signed release artifacts, strict known_hosts
 
 See [docs/specs/2026-05-13-sshm-design.md](docs/specs/2026-05-13-sshm-design.md) for the full design.
 
