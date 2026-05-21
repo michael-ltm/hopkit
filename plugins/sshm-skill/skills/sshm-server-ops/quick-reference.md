@@ -6,7 +6,7 @@
 | `get_server` | `alias` | — | full record (host masked) |
 | `test_connection` | `alias` | — | `{reachable, latency_ms, error}` |
 | `get_status` | `alias` | — | `{status: {uptime, load, memory, disk, open_ports, failed_logins}}` |
-| `add_server` | `alias`, `host`, `user`, `auth`, `reason` | `port`, `key_path` | `{added: true}` |
+| `add_server` | `alias`, `host`, `reason` | `user`, `auth` (default agent), `port`, `key_path` | `{added: true}` |
 | `edit_server` | `alias`, `reason` | `host`, `user`, `port`, `auth`, `key_path` | `{updated: true}` |
 | `remove_server` | `alias`, `reason` | — | `{removed: true}` |
 | `exec` | `alias`, `command`, `reason` | `unsafe` | `{exit, stdout, stderr}` |
