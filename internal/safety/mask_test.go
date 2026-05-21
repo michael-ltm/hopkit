@@ -31,3 +31,12 @@ func TestMaskSecrets_LeavesNormalTextAlone(t *testing.T) {
 	in := "disk usage is 42% on /dev/sda1"
 	require.Equal(t, in, MaskSecrets(in))
 }
+
+func TestMaskSecrets_PrivKeyTakesPrecedenceOverEnvAssign(t *testing.T) {
+	// A PEM body containing KEY=... text must be replaced wholesale, not
+	// partially corrupted by the env-assign pass. This locks in the
+	// priv-key-first ordering in MaskSecrets.
+	in := "-----BEGIN RSA PRIVATE KEY-----\nKEY=abc\n-----END RSA PRIVATE KEY-----"
+	out := MaskSecrets(in)
+	require.Equal(t, "[redacted private key]", out)
+}
