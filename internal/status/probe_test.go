@@ -37,7 +37,10 @@ func TestProbe_TCPOnlyMode_ReachableLocalListener(t *testing.T) {
 	r := Probe(context.Background(), srv, 500*time.Millisecond)
 	require.True(t, r.Reachable)
 	require.Empty(t, r.Error)
-	require.True(t, r.Latency > 0)
+	// Latency must be non-negative. It is NOT asserted strictly positive:
+	// a localhost connect can complete faster than the platform clock's
+	// granularity (notably on Windows), legitimately measuring as 0.
+	require.GreaterOrEqual(t, r.Latency, time.Duration(0))
 }
 
 func TestProbeMany_AllReachable(t *testing.T) {
