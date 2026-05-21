@@ -65,3 +65,52 @@ func TestHandleRemoveServer_Deletes(t *testing.T) {
 	require.NoError(t, err)
 	require.NotContains(t, reloaded.Servers, "gone")
 }
+
+func TestHandleEditServer_AppliesAuthAndKeyPath(t *testing.T) {
+	dir := t.TempDir()
+	cfgPath := filepath.Join(dir, "config.toml")
+	cfg := config.New()
+	cfg.Servers["h"] = &config.Server{Host: "1.2.3.4", User: "u", Auth: config.AuthAgent}
+	require.NoError(t, config.Save(cfgPath, cfg))
+	deps := Deps{ConfigPath: cfgPath, AuditPath: filepath.Join(dir, "a.log"), AllowWrite: true}
+
+	_, err := handleEditServer(deps, map[string]any{
+		"alias": "h", "reason": "switch to key auth",
+		"auth": "key", "key_path": "/home/u/.ssh/id",
+	})
+	require.NoError(t, err)
+	reloaded, err := config.Load(cfgPath)
+	require.NoError(t, err)
+	require.Equal(t, config.AuthKey, reloaded.Servers["h"].Auth)
+	require.Equal(t, "/home/u/.ssh/id", reloaded.Servers["h"].KeyPath)
+}
+
+func TestHandleAddServer_RejectsMissingHost(t *testing.T) {
+	dir := t.TempDir()
+	cfgPath := filepath.Join(dir, "config.toml")
+	require.NoError(t, config.Save(cfgPath, config.New()))
+	deps := Deps{ConfigPath: cfgPath, AuditPath: filepath.Join(dir, "a.log"), AllowWrite: true}
+
+	out, err := handleAddServer(deps, map[string]any{
+		"alias": "x", "user": "root", "auth": "agent", "reason": "test",
+	})
+	require.NoError(t, err)
+	js, _ := jsonResult(out)
+	require.Contains(t, js, "error")
+	require.Contains(t, js, "host")
+}
+
+func TestHandleAddServer_RejectsBadAuth(t *testing.T) {
+	dir := t.TempDir()
+	cfgPath := filepath.Join(dir, "config.toml")
+	require.NoError(t, config.Save(cfgPath, config.New()))
+	deps := Deps{ConfigPath: cfgPath, AuditPath: filepath.Join(dir, "a.log"), AllowWrite: true}
+
+	out, err := handleAddServer(deps, map[string]any{
+		"alias": "x", "host": "1.2.3.4", "user": "root",
+		"auth": "pubkey", "reason": "test",
+	})
+	require.NoError(t, err)
+	js, _ := jsonResult(out)
+	require.Contains(t, js, "error")
+}

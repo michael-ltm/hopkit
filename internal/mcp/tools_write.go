@@ -26,6 +26,26 @@ func strArg(args map[string]any, key string) string {
 	return v
 }
 
+// validAuth reports whether v is one of the supported auth methods.
+func validAuth(v string) bool {
+	return v == config.AuthKey || v == config.AuthPassword || v == config.AuthAgent
+}
+
+// portArg extracts a port from JSON args. JSON numbers decode as float64.
+// Returns (port, ok). ok is false when absent; an out-of-range value
+// returns (0, false) so the caller can reject it.
+func portArg(args map[string]any) (int, bool) {
+	p, ok := args["port"].(float64)
+	if !ok {
+		return 0, false
+	}
+	n := int(p)
+	if n < 1 || n > 65535 {
+		return 0, false
+	}
+	return n, true
+}
+
 // audit appends one record, swallowing log-write errors (the operation
 // already succeeded; a failed audit write must not fail the tool).
 func audit(deps Deps, e safety.Entry) {
@@ -48,13 +68,26 @@ func handleAddServer(deps Deps, args map[string]any) (any, error) {
 	if _, exists := cfg.Servers[alias]; exists {
 		return errResult("conflict", fmt.Sprintf("alias %q already exists", alias)), nil
 	}
+	host := strArg(args, "host")
+	if host == "" {
+		return errResult("bad_request", "host is required"), nil
+	}
+	auth := strArg(args, "auth")
+	if auth == "" {
+		auth = config.AuthAgent
+	}
+	if !validAuth(auth) {
+		return errResult("bad_request", fmt.Sprintf("auth %q must be key, password, or agent", auth)), nil
+	}
 	port := 22
-	if p, ok := args["port"].(float64); ok && p > 0 {
-		port = int(p)
+	if p, ok := portArg(args); ok {
+		port = p
+	} else if _, present := args["port"]; present {
+		return errResult("bad_request", "port must be an integer in 1..65535"), nil
 	}
 	cfg.Servers[alias] = &config.Server{
-		Host: strArg(args, "host"), Port: port, User: strArg(args, "user"),
-		Auth: strArg(args, "auth"), KeyPath: strArg(args, "key_path"),
+		Host: host, Port: port, User: strArg(args, "user"),
+		Auth: auth, KeyPath: strArg(args, "key_path"),
 	}
 	if err := config.Save(deps.ConfigPath, cfg); err != nil {
 		return errResult("config", err.Error()), nil
@@ -69,6 +102,9 @@ func handleEditServer(deps Deps, args map[string]any) (any, error) {
 		return errResult("bad_request", err.Error()), nil
 	}
 	alias := strArg(args, "alias")
+	if alias == "" {
+		return errResult("bad_request", "alias is required"), nil
+	}
 	cfg, err := config.Load(deps.ConfigPath)
 	if err != nil {
 		return errResult("config", err.Error()), nil
@@ -83,8 +119,19 @@ func handleEditServer(deps Deps, args map[string]any) (any, error) {
 	if v := strArg(args, "user"); v != "" {
 		s.User = v
 	}
-	if p, ok := args["port"].(float64); ok && p > 0 {
-		s.Port = int(p)
+	if v := strArg(args, "auth"); v != "" {
+		if !validAuth(v) {
+			return errResult("bad_request", fmt.Sprintf("auth %q must be key, password, or agent", v)), nil
+		}
+		s.Auth = v
+	}
+	if v := strArg(args, "key_path"); v != "" {
+		s.KeyPath = v
+	}
+	if p, ok := portArg(args); ok {
+		s.Port = p
+	} else if _, present := args["port"]; present {
+		return errResult("bad_request", "port must be an integer in 1..65535"), nil
 	}
 	if err := config.Save(deps.ConfigPath, cfg); err != nil {
 		return errResult("config", err.Error()), nil
@@ -142,7 +189,7 @@ func registerWriteTools(s *server.MCPServer, deps Deps, names []string) []string
 		names = append(names, name)
 	}
 	reg("add_server", "Add a new server (requires reason; audited).", handleAddServer)
-	reg("edit_server", "Update host/user/port on a server (requires reason; audited).", handleEditServer)
+	reg("edit_server", "Update host/user/port/auth/key_path on a server (requires reason; audited).", handleEditServer)
 	reg("remove_server", "Remove a server (requires reason; audited).", handleRemoveServer)
 	return names
 }
