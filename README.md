@@ -2,7 +2,7 @@
 
 > A pretty, AI-friendly SSH connection manager.
 >
-> Single binary on Win/Mac/Linux. Pretty `ls` with live status. Wizard `add`. Built-in MCP server for AI assistants (Claude Code, Cursor, Codex, Gemini CLI) — coming in v0.2.
+> Single binary on Win/Mac/Linux. Pretty `ls` with live status. Wizard `add`. Built-in MCP server for AI assistants (Claude Code, Cursor, Codex, Gemini CLI).
 
 ## Install
 

@@ -38,7 +38,7 @@ func newCopyIDCmd() *cobra.Command {
 					pw[i] = 0
 				}
 			}()
-			// TODO(v0.2): expose a --timeout flag instead of unbounded context.
+			// TODO(v0.3): expose a --timeout flag instead of unbounded context.
 			ctx := context.Background()
 			if err := keys.CopyID(ctx, s, string(pw), s.KeyPath); err != nil {
 				return err

@@ -72,3 +72,31 @@ func TestHandleExec_BlockedCommandIsAudited(t *testing.T) {
 	require.Contains(t, string(data), "blocked")
 	require.Contains(t, string(data), "exec")
 }
+
+func TestHandleExecMulti_RequiresReason(t *testing.T) {
+	dir := t.TempDir()
+	cfgPath := filepath.Join(dir, "config.toml")
+	require.NoError(t, config.Save(cfgPath, config.New()))
+	deps := Deps{ConfigPath: cfgPath, AuditPath: filepath.Join(dir, "a.log"), AllowWrite: true}
+
+	out, err := handleExecMulti(deps, map[string]any{
+		"aliases": []any{"h"}, "command": "ls",
+	})
+	require.NoError(t, err)
+	js, _ := jsonResult(out)
+	require.Contains(t, js, "error")
+}
+
+func TestHandleExecMulti_RejectsEmptyAliases(t *testing.T) {
+	dir := t.TempDir()
+	cfgPath := filepath.Join(dir, "config.toml")
+	require.NoError(t, config.Save(cfgPath, config.New()))
+	deps := Deps{ConfigPath: cfgPath, AuditPath: filepath.Join(dir, "a.log"), AllowWrite: true}
+
+	out, err := handleExecMulti(deps, map[string]any{
+		"aliases": []any{}, "command": "ls", "reason": "test",
+	})
+	require.NoError(t, err)
+	js, _ := jsonResult(out)
+	require.Contains(t, js, "error")
+}

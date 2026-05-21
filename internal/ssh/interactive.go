@@ -23,7 +23,7 @@ func (c *Client) AttachInteractive() error {
 	defer sess.Close()
 
 	fd := int(os.Stdin.Fd())
-	// TODO(v0.2): handle SIGWINCH to send window-change requests on resize.
+	// TODO(v0.3): handle SIGWINCH to send window-change requests on resize.
 	w, h := 80, 24
 	var oldState *term.State
 	if term.IsTerminal(fd) {
