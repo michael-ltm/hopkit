@@ -39,6 +39,7 @@ func NewRoot() *cobra.Command {
 		newCopyIDCmd(),
 		newGenKeyCmd(),
 		newStatusCmd(),
+		newInitCmd(),
 	)
 	return root
 }
