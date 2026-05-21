@@ -44,9 +44,18 @@ func newInitCmd() *cobra.Command {
 				}
 			}
 			if flagJSON {
-				return writeJSON(cmd.OutOrStdout(), map[string]any{args[0]: res})
+				if err := writeJSON(cmd.OutOrStdout(), map[string]any{args[0]: res}); err != nil {
+					return err
+				}
+			} else {
+				if err := renderInitResult(cmd, args[0], res); err != nil {
+					return err
+				}
 			}
-			return renderInitResult(cmd, args[0], res)
+			if !res.Completed {
+				return fmt.Errorf("bootstrap did not complete on %q — check the server (sudo prompt? package manager error?)", args[0])
+			}
+			return nil
 		},
 	}
 	c.Flags().IntVarP(&timeoutSec, "timeout", "t", 120, "timeout in seconds (0 = no timeout)")
