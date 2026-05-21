@@ -42,3 +42,5 @@ jobs:
         run: |
           SSHM_TEST_HOST=127.0.0.1:2222 SSHM_TEST_KEY=/tmp/test_key \
             go test -tags=integration ./internal/ssh/... || echo "integration skipped — requires composed key mount (follow-up)"
+      - name: MCP integration test
+        run: go test -tags=integration ./internal/mcp/...

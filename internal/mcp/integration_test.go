@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"os/exec"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
@@ -25,10 +26,9 @@ func TestIntegration_McpStdioListServers(t *testing.T) {
 	require.NoError(t, config.Save(cfgPath, cfg))
 
 	bin := filepath.Join(dir, "sshm")
-	build := exec.Command("go", "build", "-o", bin, "../../cmd/sshm")
-	build.Dir = "/Users/ming/Documents/code/project/my/sshm/internal/mcp"
+	build := exec.Command("go", "build", "-o", bin, "github.com/michael-ltm/sshm/cmd/sshm")
 	out, err := build.CombinedOutput()
-	require.NoError(t, err, "build failed: %s", string(out))
+	require.NoError(t, err, "go build failed: %s", out)
 
 	cmd := exec.Command(bin, "--config", cfgPath, "mcp")
 	stdin, err := cmd.StdinPipe()
@@ -95,17 +95,17 @@ func TestIntegration_McpStdioListServers(t *testing.T) {
 		"params": map[string]any{"name": "list_servers", "arguments": map[string]any{}},
 	})
 
-	// Read lines until we find one containing "prod"
+	// Read lines until we find the tools/call response (id=2)
 	done := make(chan string, 1)
 	go func() {
 		for {
 			line, err := r.ReadString('\n')
 			if err != nil {
-				done <- ""
+				done <- line
 				return
 			}
 			t.Logf("tools/call line: %s", line)
-			if len(line) > 0 {
+			if strings.Contains(line, `"id":2`) || strings.Contains(line, `"id": 2`) {
 				done <- line
 				return
 			}
