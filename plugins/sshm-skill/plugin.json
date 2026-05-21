@@ -1,0 +1,8 @@
+{
+  "name": "sshm-skill",
+  "version": "0.2.0",
+  "description": "Manage SSH servers with sshm — list, connect, exec, bootstrap, inspect — from any AI assistant.",
+  "author": "michael-ltm",
+  "license": "MIT",
+  "homepage": "https://github.com/michael-ltm/sshm"
+}
