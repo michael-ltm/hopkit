@@ -50,8 +50,11 @@ func handleExec(deps Deps, args map[string]any) (any, error) {
 	if err != nil {
 		return errResult("exec", safety.MaskSecrets(err.Error())), nil
 	}
-	audit(deps, safety.Entry{Tool: "exec", Alias: alias, Reason: reason,
-		Result: fmt.Sprintf("exit %d", res.ExitCode)})
+	result := fmt.Sprintf("exit %d", res.ExitCode)
+	if unsafe {
+		result += " (unsafe=true — filter bypassed)"
+	}
+	audit(deps, safety.Entry{Tool: "exec", Alias: alias, Reason: reason, Result: result})
 	return map[string]any{
 		"alias": alias, "exit": res.ExitCode,
 		"stdout": safety.MaskSecrets(res.Stdout),

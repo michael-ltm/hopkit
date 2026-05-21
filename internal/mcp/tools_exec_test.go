@@ -1,6 +1,7 @@
 package mcp
 
 import (
+	"os"
 	"path/filepath"
 	"testing"
 
@@ -50,4 +51,24 @@ func TestHandleExec_RequiresReason(t *testing.T) {
 	require.NoError(t, err)
 	js, _ := jsonResult(out)
 	require.Contains(t, js, "error")
+}
+
+func TestHandleExec_BlockedCommandIsAudited(t *testing.T) {
+	dir := t.TempDir()
+	cfgPath := filepath.Join(dir, "config.toml")
+	auditPath := filepath.Join(dir, "audit.log")
+	cfg := config.New()
+	cfg.Servers["h"] = &config.Server{Host: "1.2.3.4", User: "x", Auth: config.AuthAgent}
+	require.NoError(t, config.Save(cfgPath, cfg))
+	deps := Deps{ConfigPath: cfgPath, AuditPath: auditPath, AllowWrite: true}
+
+	_, err := handleExec(deps, map[string]any{
+		"alias": "h", "command": "rm -rf /", "reason": "cleanup",
+	})
+	require.NoError(t, err)
+
+	data, err := os.ReadFile(auditPath)
+	require.NoError(t, err)
+	require.Contains(t, string(data), "blocked")
+	require.Contains(t, string(data), "exec")
 }
