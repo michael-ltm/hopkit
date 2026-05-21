@@ -67,7 +67,8 @@ func handleTestConnection(deps Deps, args map[string]any) (any, error) {
 	r := status.Probe(context.Background(), s, 5*time.Second)
 	return map[string]any{
 		"alias": alias, "reachable": r.Reachable,
-		"latency_ms": r.Latency.Milliseconds(), "error": r.Error,
+		"latency_ms": r.Latency.Milliseconds(),
+		"error":      safety.MaskSecrets(r.Error),
 	}, nil
 }
 
