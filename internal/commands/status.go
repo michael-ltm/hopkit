@@ -3,6 +3,7 @@ package commands
 import (
 	"context"
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/michael-ltm/sshm/internal/status"
@@ -40,7 +41,7 @@ func newStatusCmd() *cobra.Command {
 			return renderSnapshot(cmd, args[0], snap)
 		},
 	}
-	c.Flags().IntVarP(&timeoutSec, "timeout", "t", 15, "timeout in seconds")
+	c.Flags().IntVarP(&timeoutSec, "timeout", "t", 15, "timeout in seconds (0 = no timeout)")
 	return c
 }
 
@@ -51,7 +52,7 @@ func renderSnapshot(cmd *cobra.Command, alias string, s status.Snapshot) error {
 		{"Load", s.Load},
 		{"Memory", s.Memory},
 		{"Disk", s.Disk},
-		{"Open ports", fmt.Sprintf("%v", s.OpenPorts)},
+		{"Open ports", strings.Join(s.OpenPorts, ", ")},
 		{"Failed logins", fmt.Sprintf("%d", s.FailedLogins)},
 	}
 	for _, r := range rows {
