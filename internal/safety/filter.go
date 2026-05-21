@@ -18,7 +18,7 @@ type dangerousPattern struct {
 // whitespace-collapsed command string. The list is intentionally
 // conservative — it targets unambiguously destructive operations.
 var dangerousPatterns = []dangerousPattern{
-	{regexp.MustCompile(`\brm\s+-[a-z]*r[a-z]*f?[a-z]*\s+(/|/\*|~)(\s|$)`), "recursive delete of a root-level or home path"},
+	{regexp.MustCompile(`(?i)\brm\s+-[a-z]*r[a-z]*f?[a-z]*\s+(/|/\*|~/?)(\s|$)`), "recursive delete of a root-level or home path"},
 	{regexp.MustCompile(`\bmkfs(\.\w+)?\s`), "filesystem creation (mkfs)"},
 	{regexp.MustCompile(`\bdd\s+.*of=/dev/`), "raw write to a device with dd"},
 	{regexp.MustCompile(`:\(\)\s*\{\s*:\s*\|\s*:\s*&\s*\}\s*;\s*:`), "fork bomb"},
@@ -28,6 +28,10 @@ var dangerousPatterns = []dangerousPattern{
 
 // IsDangerous reports whether cmd matches a built-in dangerous pattern.
 // When it returns true, the second value is a human-readable reason.
+//
+// This is a conservative guardrail, not a sandbox: it catches common
+// catastrophic commands but is not exhaustive. Callers must still honor
+// an explicit unsafe/override path for intentional destructive operations.
 func IsDangerous(cmd string) (bool, string) {
 	normalized := strings.Join(strings.Fields(cmd), " ")
 	for _, p := range dangerousPatterns {

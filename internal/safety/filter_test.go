@@ -17,6 +17,10 @@ func TestIsDangerous_BlocksKnownPatterns(t *testing.T) {
 		":(){ :|:& };:",
 		"chmod -R 000 /",
 		"echo x > /dev/sda",
+		"rm -fr /",
+		"/bin/rm -rf /",
+		"rm -rf ~/",
+		"rm -Rf /",
 	}
 	for _, cmd := range dangerous {
 		hit, reason := IsDangerous(cmd)
