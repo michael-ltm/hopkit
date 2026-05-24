@@ -73,8 +73,17 @@ func handleAddServer(deps Deps, args map[string]any) (any, error) {
 		return errResult("bad_request", "host is required"), nil
 	}
 	auth := strArg(args, "auth")
+	keyPath := strArg(args, "key_path")
 	if auth == "" {
-		auth = config.AuthAgent
+		// Infer auth from arguments: a caller that supplies a key_path almost
+		// certainly wants key auth (the agent default produced "no identities"
+		// failures when ssh-agent was empty). Falling back to agent only when
+		// nothing else is supplied preserves the original behaviour.
+		if keyPath != "" {
+			auth = config.AuthKey
+		} else {
+			auth = config.AuthAgent
+		}
 	}
 	if !validAuth(auth) {
 		return errResult("bad_request", fmt.Sprintf("auth %q must be key, password, or agent", auth)), nil
@@ -87,7 +96,7 @@ func handleAddServer(deps Deps, args map[string]any) (any, error) {
 	}
 	cfg.Servers[alias] = &config.Server{
 		Host: host, Port: port, User: strArg(args, "user"),
-		Auth: auth, KeyPath: strArg(args, "key_path"),
+		Auth: auth, KeyPath: keyPath,
 	}
 	if err := config.Save(deps.ConfigPath, cfg); err != nil {
 		return errResult("config", err.Error()), nil

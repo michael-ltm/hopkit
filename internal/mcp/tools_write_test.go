@@ -85,6 +85,44 @@ func TestHandleEditServer_AppliesAuthAndKeyPath(t *testing.T) {
 	require.Equal(t, "/home/u/.ssh/id", reloaded.Servers["h"].KeyPath)
 }
 
+// Regression: when a caller supplies key_path but no auth, sshm used to default
+// to agent and produce "no supported methods remain" failures because ssh-agent
+// was empty. Now it infers key auth.
+func TestHandleAddServer_InfersKeyAuthFromKeyPath(t *testing.T) {
+	dir := t.TempDir()
+	cfgPath := filepath.Join(dir, "config.toml")
+	require.NoError(t, config.Save(cfgPath, config.New()))
+	deps := Deps{ConfigPath: cfgPath, AuditPath: filepath.Join(dir, "a.log"), AllowWrite: true}
+
+	_, err := handleAddServer(deps, map[string]any{
+		"alias": "kbox", "host": "1.2.3.4", "user": "root",
+		"key_path": "/home/me/.ssh/id_ed25519",
+		"reason":   "regression for key inference",
+	})
+	require.NoError(t, err)
+	cfg, err := config.Load(cfgPath)
+	require.NoError(t, err)
+	require.Equal(t, config.AuthKey, cfg.Servers["kbox"].Auth)
+	require.Equal(t, "/home/me/.ssh/id_ed25519", cfg.Servers["kbox"].KeyPath)
+}
+
+// Without key_path or auth, it must still fall back to agent (existing behaviour).
+func TestHandleAddServer_DefaultsToAgentWhenNothingProvided(t *testing.T) {
+	dir := t.TempDir()
+	cfgPath := filepath.Join(dir, "config.toml")
+	require.NoError(t, config.Save(cfgPath, config.New()))
+	deps := Deps{ConfigPath: cfgPath, AuditPath: filepath.Join(dir, "a.log"), AllowWrite: true}
+
+	_, err := handleAddServer(deps, map[string]any{
+		"alias": "abox", "host": "1.2.3.4", "user": "root",
+		"reason": "default agent fallback",
+	})
+	require.NoError(t, err)
+	cfg, err := config.Load(cfgPath)
+	require.NoError(t, err)
+	require.Equal(t, config.AuthAgent, cfg.Servers["abox"].Auth)
+}
+
 func TestHandleAddServer_RejectsMissingHost(t *testing.T) {
 	dir := t.TempDir()
 	cfgPath := filepath.Join(dir, "config.toml")
