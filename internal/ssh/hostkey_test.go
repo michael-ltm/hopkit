@@ -6,6 +6,7 @@ import (
 	"net"
 	"os"
 	"path/filepath"
+	"runtime"
 	"sync"
 	"testing"
 
@@ -112,11 +113,15 @@ func TestEnsureKnownHosts_CreatesDirAndFileWithPerms(t *testing.T) {
 
 	dirInfo, err := os.Stat(filepath.Dir(path))
 	require.NoError(t, err)
-	require.Equal(t, os.FileMode(0o700), dirInfo.Mode().Perm())
-
 	fileInfo, err := os.Stat(path)
 	require.NoError(t, err)
-	require.Equal(t, os.FileMode(0o600), fileInfo.Mode().Perm())
+
+	// Windows does not enforce Unix permission bits (a 0700 dir reports 0777),
+	// so only assert the exact perms on Unix-like systems.
+	if runtime.GOOS != "windows" {
+		require.Equal(t, os.FileMode(0o700), dirInfo.Mode().Perm())
+		require.Equal(t, os.FileMode(0o600), fileInfo.Mode().Perm())
+	}
 
 	// Idempotent: calling again on existing file is fine.
 	require.NoError(t, ensureKnownHosts(path))
