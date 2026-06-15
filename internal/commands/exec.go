@@ -14,6 +14,7 @@ import (
 
 func newExecCmd() *cobra.Command {
 	var timeoutSec int
+	var insecure bool
 	c := &cobra.Command{
 		Use:   "exec <alias> <command...>",
 		Short: "Run a command on a server",
@@ -50,15 +51,16 @@ shell or wrap in 'sh -c "..."', e.g.:
 				ctx, cancel = context.WithTimeout(ctx, time.Duration(timeoutSec)*time.Second)
 				defer cancel()
 			}
-			return execOnce(ctx, cmd, s, remoteCmd)
+			return execOnce(ctx, cmd, s, remoteCmd, insecure)
 		},
 	}
 	c.Flags().IntVarP(&timeoutSec, "timeout", "t", 0, "timeout in seconds (0 = no timeout)")
+	c.Flags().BoolVar(&insecure, "insecure", false, "disable host-key verification (skip known_hosts check)")
 	return c
 }
 
-func execOnce(ctx context.Context, cmd *cobra.Command, s *config.Server, remoteCmd string) error {
-	cli, err := sshpkg.Dial(s, sshpkg.BuildOpts{})
+func execOnce(ctx context.Context, cmd *cobra.Command, s *config.Server, remoteCmd string, insecure bool) error {
+	cli, err := sshpkg.Dial(s, sshpkg.BuildOpts{Insecure: insecure})
 	if err != nil {
 		return err
 	}

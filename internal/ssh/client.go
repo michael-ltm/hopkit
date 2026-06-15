@@ -15,7 +15,6 @@ import (
 
 	"github.com/michael-ltm/sshm/internal/config"
 	gssh "golang.org/x/crypto/ssh"
-	"golang.org/x/crypto/ssh/knownhosts"
 )
 
 // nopCloser is returned when no resource needs closing.
@@ -26,9 +25,12 @@ func (nopCloser) Close() error { return nil }
 // BuildOpts is non-persistent input gathered at connect time (e.g. password
 // prompted from TTY). Never write the contents of BuildOpts to disk.
 type BuildOpts struct {
-	Password      string
-	HostKeyVerify bool          // when true, use knownhosts file from ~/.ssh
-	Timeout       time.Duration // 0 → default 10s
+	Password string
+	// Insecure disables host-key verification (InsecureIgnoreHostKey). The
+	// zero value is false: connections verify host keys via TOFU against
+	// ~/.ssh/known_hosts by default.
+	Insecure bool
+	Timeout  time.Duration // 0 → default 10s
 }
 
 // BuildClientConfig produces a *ssh.ClientConfig from a Server entry.
@@ -48,7 +50,7 @@ func BuildClientConfig(s *config.Server, opts BuildOpts) (*gssh.ClientConfig, io
 		return nil, nil, err
 	}
 
-	hostKey, err := hostKeyCallback(opts.HostKeyVerify)
+	hostKey, err := hostKeyCallback(opts.Insecure)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -125,15 +127,18 @@ func ExpandHome(p string) (string, error) {
 	return filepath.Join(h, p[1:]), nil
 }
 
-func hostKeyCallback(verify bool) (gssh.HostKeyCallback, error) {
-	if !verify {
-		// v0.1: tolerate first-use to keep onboarding simple. v0.2 will
-		// introduce strict known_hosts checking with TOFU.
+// hostKeyCallback returns the HostKeyCallback to use for a connection. By
+// default (insecure=false) it verifies host keys via trust-on-first-use
+// against ~/.ssh/known_hosts: unknown hosts are pinned, matching hosts are
+// accepted, and changed keys are rejected as a possible MITM. When insecure
+// is true it returns InsecureIgnoreHostKey() as an explicit opt-out.
+func hostKeyCallback(insecure bool) (gssh.HostKeyCallback, error) {
+	if insecure {
 		return gssh.InsecureIgnoreHostKey(), nil //nolint:gosec
 	}
-	home, err := os.UserHomeDir()
+	path, err := knownHostsPath()
 	if err != nil {
 		return nil, err
 	}
-	return knownhosts.New(filepath.Join(home, ".ssh", "known_hosts"))
+	return tofuHostKeyCallback(path), nil
 }

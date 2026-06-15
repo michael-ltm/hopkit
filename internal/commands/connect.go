@@ -7,7 +7,8 @@ import (
 )
 
 func newConnectCmd() *cobra.Command {
-	return &cobra.Command{
+	var insecure bool
+	c := &cobra.Command{
 		Use:     "connect <alias>",
 		Aliases: []string{"c"},
 		Short:   "Open an interactive SSH session",
@@ -25,13 +26,15 @@ func newConnectCmd() *cobra.Command {
 			if err != nil {
 				return err
 			}
-			return connect(s)
+			return connect(s, insecure)
 		},
 	}
+	c.Flags().BoolVar(&insecure, "insecure", false, "disable host-key verification (skip known_hosts check)")
+	return c
 }
 
-func connect(s *config.Server) error {
-	c, err := sshpkg.Dial(s, sshpkg.BuildOpts{})
+func connect(s *config.Server, insecure bool) error {
+	c, err := sshpkg.Dial(s, sshpkg.BuildOpts{Insecure: insecure})
 	if err != nil {
 		return err
 	}
