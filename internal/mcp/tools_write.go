@@ -97,6 +97,8 @@ func handleAddServer(deps Deps, args map[string]any) (any, error) {
 		cfg.Servers[alias] = &config.Server{
 			Host: host, Port: port, User: strArg(args, "user"),
 			Auth: auth, KeyPath: keyPath,
+			Proxy: strArg(args, "proxy"), ProxyJump: strArg(args, "proxy_jump"),
+			ProxyCommand: strArg(args, "proxy_command"),
 		}
 		return nil
 	})
@@ -152,6 +154,15 @@ func handleEditServer(deps Deps, args map[string]any) (any, error) {
 		if p, ok := portArg(args); ok {
 			s.Port = p
 		}
+		if v := strArg(args, "proxy"); v != "" {
+			s.Proxy = v
+		}
+		if v := strArg(args, "proxy_jump"); v != "" {
+			s.ProxyJump = v
+		}
+		if v := strArg(args, "proxy_command"); v != "" {
+			s.ProxyCommand = v
+		}
 		return nil
 	})
 	if notFound {
@@ -203,6 +214,9 @@ func registerWriteTools(s *server.MCPServer, deps Deps, names []string) []string
 			mcp.WithString("user", mcp.Description("ssh user")),
 			mcp.WithString("auth", mcp.Description("key|password|agent")),
 			mcp.WithString("key_path", mcp.Description("private key path")),
+			mcp.WithString("proxy", mcp.Description("SOCKS5 proxy for this host, e.g. socks5://127.0.0.1:7890 (also honors ALL_PROXY/HTTPS_PROXY env)")),
+			mcp.WithString("proxy_jump", mcp.Description("jump/bastion host: an existing server alias or [user@]host[:port]")),
+			mcp.WithString("proxy_command", mcp.Description("OpenSSH ProxyCommand, e.g. 'nc -X 5 -x 127.0.0.1:7890 %h %p' (%h/%p/%r substituted)")),
 			mcp.WithNumber("port", mcp.Description("ssh port")))
 		s.AddTool(tool, func(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
 			out, err := fn(deps, req.GetArguments())
@@ -217,8 +231,8 @@ func registerWriteTools(s *server.MCPServer, deps Deps, names []string) []string
 		})
 		names = append(names, name)
 	}
-	reg("add_server", "Add a new server (requires reason; audited).", handleAddServer)
-	reg("edit_server", "Update host/user/port/auth/key_path on a server (requires reason; audited).", handleEditServer)
+	reg("add_server", "Add a new server (requires reason; audited). Supports proxy/proxy_jump/proxy_command for SOCKS5/bastion/ProxyCommand dialing.", handleAddServer)
+	reg("edit_server", "Update host/user/port/auth/key_path/proxy/proxy_jump/proxy_command on a server (requires reason; audited).", handleEditServer)
 	reg("remove_server", "Remove a server (requires reason; audited).", handleRemoveServer)
 	return names
 }

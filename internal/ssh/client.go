@@ -31,6 +31,10 @@ type BuildOpts struct {
 	// ~/.ssh/known_hosts by default.
 	Insecure bool
 	Timeout  time.Duration // 0 → default 10s
+	// ConfigPath is the on-disk config path used to resolve a ProxyJump alias
+	// to a known server. Empty falls back to config.ConfigPath(); if that
+	// holds no matching alias the ProxyJump value is treated as a host spec.
+	ConfigPath string
 }
 
 // BuildClientConfig produces a *ssh.ClientConfig from a Server entry.

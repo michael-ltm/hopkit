@@ -4,8 +4,10 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"time"
 
 	"github.com/michael-ltm/sshm/internal/config"
+	"github.com/michael-ltm/sshm/internal/safety"
 	gssh "golang.org/x/crypto/ssh"
 )
 
@@ -17,17 +19,75 @@ type Client struct {
 }
 
 // Dial opens a fresh connection. Caller must call Close.
+//
+// The target is reached over the transport chosen by resolveTransportKind:
+// ProxyCommand > ProxyJump > SOCKS5 (s.Proxy or env) > Direct. When a proxy or
+// jump was selected but the connection fails, Dial retries once with a direct
+// TCP dial — this recovers the common TUN/VPN case where the host is reachable
+// directly but the configured SOCKS proxy is not (or vice versa is already the
+// direct path).
 func Dial(s *config.Server, opts BuildOpts) (*Client, error) {
 	cfg, closer, err := BuildClientConfig(s, opts)
 	if err != nil {
 		return nil, err
 	}
-	c, err := gssh.Dial("tcp", Address(s), cfg)
+
+	timeout := opts.Timeout
+	if timeout == 0 {
+		timeout = 10 * time.Second
+	}
+
+	// dialOnce performs a single connection attempt over the selected (or
+	// forced-direct) transport, completing the SSH handshake. On any failure
+	// it releases the transport conn and aux closers but never the agent
+	// closer (owned by the caller / reused across attempts).
+	dialOnce := func(forceDirect bool) (*gssh.Client, []io.Closer, transportKind, error) {
+		conn, aux, kind, err := dialTransportKind(s, opts, timeout, forceDirect)
+		if err != nil {
+			return nil, nil, kind, err
+		}
+		sshConn, chans, reqs, err := gssh.NewClientConn(conn, Address(s), cfg)
+		if err != nil {
+			// Surface ProxyCommand stderr (masked) before tearing down the
+			// process, since Close discards it.
+			detail := ""
+			if cc, ok := conn.(*cmdConn); ok {
+				if se := cc.stderrText(); se != "" {
+					detail = ": " + safety.MaskSecrets(se)
+				}
+			}
+			conn.Close()
+			if aux != nil {
+				aux.Close()
+			}
+			return nil, nil, kind, fmt.Errorf("dial %s: %w%s", Address(s), err, detail)
+		}
+		client := gssh.NewClient(sshConn, chans, reqs)
+		var auxClosers []io.Closer
+		if aux != nil {
+			auxClosers = append(auxClosers, aux)
+		}
+		return client, auxClosers, kind, nil
+	}
+
+	client, auxClosers, kind, err := dialOnce(false)
+	if err != nil && kind != kindDirect {
+		// A proxy/jump was selected and failed; fall back to a direct dial.
+		directClient, directAux, _, directErr := dialOnce(true)
+		if directErr == nil {
+			client, auxClosers, err = directClient, directAux, nil
+		} else {
+			err = fmt.Errorf("connect %s failed via %s (%v) and direct fallback (%w)",
+				Address(s), kind, err, directErr)
+		}
+	}
 	if err != nil {
 		closer.Close() // nopCloser unless an ssh-agent socket was opened
-		return nil, fmt.Errorf("dial %s: %w", Address(s), err)
+		return nil, err
 	}
-	return &Client{server: s, conn: c, closers: []io.Closer{closer}}, nil
+
+	closers := append([]io.Closer{closer}, auxClosers...)
+	return &Client{server: s, conn: client, closers: closers}, nil
 }
 
 // Close terminates the underlying TCP connection AND all auxiliary closers.

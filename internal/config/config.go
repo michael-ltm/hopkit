@@ -46,6 +46,7 @@ type Server struct {
 	LastStatus   string    `toml:"last_status,omitempty"`
 	ProxyJump    string    `toml:"proxy_jump,omitempty"`
 	ProxyCommand string    `toml:"proxy_command,omitempty"`
+	Proxy        string    `toml:"proxy,omitempty"` // e.g. "socks5://127.0.0.1:7890"
 	Forwards     []string  `toml:"forwards,omitempty"`
 }
 

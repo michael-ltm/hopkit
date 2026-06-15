@@ -123,6 +123,59 @@ func TestHandleAddServer_DefaultsToAgentWhenNothingProvided(t *testing.T) {
 	require.Equal(t, config.AuthAgent, cfg.Servers["abox"].Auth)
 }
 
+func TestHandleAddServer_PersistsProxyFields(t *testing.T) {
+	dir := t.TempDir()
+	cfgPath := filepath.Join(dir, "config.toml")
+	require.NoError(t, config.Save(cfgPath, config.New()))
+	deps := Deps{ConfigPath: cfgPath, AuditPath: filepath.Join(dir, "a.log"), AllowWrite: true}
+
+	_, err := handleAddServer(deps, map[string]any{
+		"alias": "pbox", "host": "10.0.0.9", "user": "root", "auth": "agent",
+		"proxy": "socks5://127.0.0.1:7890", "proxy_jump": "bastion",
+		"proxy_command": "nc -X 5 -x 127.0.0.1:7890 %h %p",
+		"reason":        "behind a SOCKS proxy",
+	})
+	require.NoError(t, err)
+	cfg, err := config.Load(cfgPath)
+	require.NoError(t, err)
+	s := cfg.Servers["pbox"]
+	require.NotNil(t, s)
+	require.Equal(t, "socks5://127.0.0.1:7890", s.Proxy)
+	require.Equal(t, "bastion", s.ProxyJump)
+	require.Equal(t, "nc -X 5 -x 127.0.0.1:7890 %h %p", s.ProxyCommand)
+}
+
+func TestHandleEditServer_UpdatesProxyFields(t *testing.T) {
+	dir := t.TempDir()
+	cfgPath := filepath.Join(dir, "config.toml")
+	cfg := config.New()
+	cfg.Servers["h"] = &config.Server{Host: "1.2.3.4", User: "u", Auth: config.AuthAgent, Proxy: "old:1"}
+	require.NoError(t, config.Save(cfgPath, cfg))
+	deps := Deps{ConfigPath: cfgPath, AuditPath: filepath.Join(dir, "a.log"), AllowWrite: true}
+
+	// Only proxy_jump is provided; proxy must be left untouched (matches the
+	// overwrite-only-when-non-empty convention used by other optional fields).
+	_, err := handleEditServer(deps, map[string]any{
+		"alias": "h", "reason": "add bastion", "proxy_jump": "jump.example",
+	})
+	require.NoError(t, err)
+	reloaded, err := config.Load(cfgPath)
+	require.NoError(t, err)
+	require.Equal(t, "jump.example", reloaded.Servers["h"].ProxyJump)
+	require.Equal(t, "old:1", reloaded.Servers["h"].Proxy, "unspecified proxy must be preserved")
+
+	// Now set proxy and proxy_command.
+	_, err = handleEditServer(deps, map[string]any{
+		"alias": "h", "reason": "set socks", "proxy": "socks5://127.0.0.1:1080",
+		"proxy_command": "nc %h %p",
+	})
+	require.NoError(t, err)
+	reloaded, err = config.Load(cfgPath)
+	require.NoError(t, err)
+	require.Equal(t, "socks5://127.0.0.1:1080", reloaded.Servers["h"].Proxy)
+	require.Equal(t, "nc %h %p", reloaded.Servers["h"].ProxyCommand)
+}
+
 func TestHandleAddServer_RejectsMissingHost(t *testing.T) {
 	dir := t.TempDir()
 	cfgPath := filepath.Join(dir, "config.toml")

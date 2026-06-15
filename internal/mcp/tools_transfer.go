@@ -67,7 +67,7 @@ func handleUpload(deps Deps, args map[string]any) (any, error) {
 		return errResult("not_found", fmt.Sprintf("unknown server %q", alias)), nil
 	}
 
-	cli, err := sshpkg.Dial(s, sshpkg.BuildOpts{})
+	cli, err := sshpkg.Dial(s, sshpkg.BuildOpts{ConfigPath: deps.ConfigPath})
 	if err != nil {
 		return errResult("ssh", safety.MaskSecrets(err.Error())), nil
 	}
@@ -131,7 +131,7 @@ func handleDownload(deps Deps, args map[string]any) (any, error) {
 		return errResult("not_found", fmt.Sprintf("unknown server %q", alias)), nil
 	}
 
-	cli, err := sshpkg.Dial(s, sshpkg.BuildOpts{})
+	cli, err := sshpkg.Dial(s, sshpkg.BuildOpts{ConfigPath: deps.ConfigPath})
 	if err != nil {
 		return errResult("ssh", safety.MaskSecrets(err.Error())), nil
 	}

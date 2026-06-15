@@ -153,7 +153,7 @@ func handleTailLogs(ctx context.Context, deps Deps, args map[string]any) (any, e
 	}
 	ctx, cancel := context.WithTimeout(ctx, 30*time.Second)
 	defer cancel()
-	cli, err := sshpkg.Dial(s, sshpkg.BuildOpts{})
+	cli, err := sshpkg.Dial(s, sshpkg.BuildOpts{ConfigPath: deps.ConfigPath})
 	if err != nil {
 		return errResult("ssh", safety.MaskSecrets(err.Error())), nil
 	}
