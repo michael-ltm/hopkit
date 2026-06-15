@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io"
 	"net"
+	"net/url"
 	"os"
 	"os/exec"
 	"strconv"
@@ -52,62 +53,98 @@ var socksEnvVars = []string{
 	"HTTPS_PROXY", "https_proxy",
 }
 
-// resolveTransportKind decides how to reach s, returning the kind plus its
+// resolveTransportKind decides how to reach s, returning the kind, its
 // relevant parameter (the ProxyCommand string, the ProxyJump spec, or the
-// normalized SOCKS5 host:port). Precedence: ProxyCommand > ProxyJump >
-// Proxy/env-SOCKS5 > Direct. The selection performs no I/O so it is unit
-// testable.
-func resolveTransportKind(s *config.Server) (transportKind, string) {
+// normalized SOCKS5 host:port), and optional SOCKS5 credentials. Precedence:
+// ProxyCommand > ProxyJump > Proxy/env-SOCKS5 > Direct. The selection
+// performs no I/O so it is unit testable.
+func resolveTransportKind(s *config.Server) (transportKind, string, *proxy.Auth) {
 	if v := strings.TrimSpace(s.ProxyCommand); v != "" {
-		return kindProxyCommand, v
+		return kindProxyCommand, v, nil
 	}
 	if v := strings.TrimSpace(s.ProxyJump); v != "" {
-		return kindProxyJump, v
+		return kindProxyJump, v, nil
 	}
-	if v := normalizeSocksAddr(s.Proxy); v != "" {
-		return kindSOCKS5, v
+	if hostPort, auth := parseSocksAddr(s.Proxy); hostPort != "" {
+		return kindSOCKS5, hostPort, auth
 	}
-	if v := socksProxyFromEnv(); v != "" {
-		return kindSOCKS5, v
+	if hostPort, auth := socksProxyFromEnv(); hostPort != "" {
+		return kindSOCKS5, hostPort, auth
 	}
-	return kindDirect, ""
+	return kindDirect, "", nil
 }
 
-// socksProxyFromEnv returns the normalized host:port of the first SOCKS5 proxy
-// found in the environment, or "" if none is set.
-func socksProxyFromEnv() string {
+// socksProxyFromEnv returns the normalized host:port and optional credentials
+// of the first SOCKS5 proxy found in the environment, or ("", nil) if none is
+// set.
+func socksProxyFromEnv() (string, *proxy.Auth) {
 	for _, k := range socksEnvVars {
-		if v := normalizeSocksAddr(os.Getenv(k)); v != "" {
-			return v
+		if hostPort, auth := parseSocksAddr(os.Getenv(k)); hostPort != "" {
+			return hostPort, auth
 		}
 	}
-	return ""
+	return "", nil
+}
+
+// parseSocksAddr parses a SOCKS5 proxy address in any of the following forms:
+//
+//   - socks5://[user:pass@]host:port
+//   - socks5h://[user:pass@]host:port
+//   - host:port  (bare, no scheme)
+//
+// It returns the bare host:port and optional credentials. Empty/whitespace
+// input, unsupported schemes (e.g. http://), and values without a valid
+// host:port return ("", nil). The password is never included in any returned
+// string; callers must treat the returned *proxy.Auth as sensitive.
+func parseSocksAddr(raw string) (string, *proxy.Auth) {
+	v := strings.TrimSpace(raw)
+	if v == "" {
+		return "", nil
+	}
+
+	lower := strings.ToLower(v)
+	isSocks := strings.HasPrefix(lower, "socks5://") || strings.HasPrefix(lower, "socks5h://")
+
+	if isSocks {
+		u, err := url.Parse(v)
+		if err != nil {
+			return "", nil
+		}
+		hostPort := u.Host
+		if _, _, err := net.SplitHostPort(hostPort); err != nil {
+			return "", nil
+		}
+		var auth *proxy.Auth
+		if u.User != nil {
+			pass, _ := u.User.Password()
+			auth = &proxy.Auth{
+				User:     u.User.Username(),
+				Password: pass,
+			}
+		}
+		return hostPort, auth
+	}
+
+	// Reject any remaining scheme (e.g. http://) we don't support.
+	if strings.Contains(v, "://") {
+		return "", nil
+	}
+
+	// Bare host:port form.
+	if _, _, err := net.SplitHostPort(v); err != nil {
+		return "", nil
+	}
+	return v, nil
 }
 
 // normalizeSocksAddr accepts "socks5://host:port", "socks5h://host:port" or a
-// bare "host:port" and returns the bare host:port. Empty/whitespace input and
-// values lacking a host:port shape return "".
+// bare "host:port" and returns the bare host:port. Authenticated forms
+// (socks5://user:pass@host:port) are also accepted; the credentials are
+// discarded by this function — use parseSocksAddr when credentials are needed.
+// Empty/whitespace input and values lacking a valid host:port shape return "".
 func normalizeSocksAddr(raw string) string {
-	v := strings.TrimSpace(raw)
-	if v == "" {
-		return ""
-	}
-	for _, scheme := range []string{"socks5://", "socks5h://"} {
-		if strings.HasPrefix(strings.ToLower(v), scheme) {
-			v = v[len(scheme):]
-			break
-		}
-	}
-	v = strings.TrimSpace(v)
-	// Require a host:port shape; reject values that still carry a scheme
-	// (e.g. http://) we don't support.
-	if v == "" || strings.Contains(v, "://") {
-		return ""
-	}
-	if _, _, err := net.SplitHostPort(v); err != nil {
-		return ""
-	}
-	return v
+	hostPort, _ := parseSocksAddr(raw)
+	return hostPort
 }
 
 // jumpSpec is a resolved ProxyJump hop target.
@@ -151,8 +188,8 @@ func parseJumpSpec(spec, defaultUser string) (jumpSpec, error) {
 }
 
 // substituteTokens replaces OpenSSH ProxyCommand tokens in cmd: %h→host,
-// %p→port, %r→user. All occurrences are replaced; a literal %% is left intact
-// is not specially handled (rare in practice).
+// %p→port, %r→user. All occurrences are replaced. %% is not treated
+// specially (rare in practice, and OpenSSH itself varies in handling).
 func substituteTokens(cmd, host, port, user string) string {
 	r := strings.NewReplacer("%h", host, "%p", port, "%r", user)
 	return r.Replace(cmd)
@@ -238,9 +275,9 @@ func dialTransport(s *config.Server, opts BuildOpts, timeout time.Duration, forc
 }
 
 func dialTransportKind(s *config.Server, opts BuildOpts, timeout time.Duration, forceDirect bool) (net.Conn, io.Closer, transportKind, error) {
-	kind, param := resolveTransportKind(s)
+	kind, param, auth := resolveTransportKind(s)
 	if forceDirect {
-		kind, param = kindDirect, ""
+		kind, param, auth = kindDirect, "", nil
 	}
 	switch kind {
 	case kindProxyCommand:
@@ -250,7 +287,7 @@ func dialTransportKind(s *config.Server, opts BuildOpts, timeout time.Duration, 
 		conn, aux, err := dialViaJump(s, param, opts, timeout)
 		return conn, aux, kind, err
 	case kindSOCKS5:
-		conn, err := dialSOCKS5(s, param, timeout)
+		conn, err := dialSOCKS5(s, param, auth, timeout)
 		return conn, nil, kind, err
 	default:
 		conn, err := directDialFunc(Address(s), timeout)
@@ -295,8 +332,10 @@ func dialProxyCommand(s *config.Server, command string) (net.Conn, error) {
 }
 
 // dialSOCKS5 dials the target through a SOCKS5 proxy at addr (host:port).
-func dialSOCKS5(s *config.Server, addr string, timeout time.Duration) (net.Conn, error) {
-	dialer, err := proxy.SOCKS5("tcp", addr, nil, &net.Dialer{Timeout: timeout})
+// auth carries optional credentials; pass nil for unauthenticated proxies.
+// The password is never included in returned error strings.
+func dialSOCKS5(s *config.Server, addr string, auth *proxy.Auth, timeout time.Duration) (net.Conn, error) {
+	dialer, err := proxy.SOCKS5("tcp", addr, auth, &net.Dialer{Timeout: timeout})
 	if err != nil {
 		return nil, fmt.Errorf("socks5 dialer %s: %w", addr, err)
 	}

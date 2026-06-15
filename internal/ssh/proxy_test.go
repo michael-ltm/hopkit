@@ -9,6 +9,7 @@ import (
 
 	"github.com/michael-ltm/sshm/internal/config"
 	"github.com/stretchr/testify/require"
+	"golang.org/x/net/proxy"
 )
 
 func TestSocksProxyFromEnv_PrecedenceAndNormalization(t *testing.T) {
@@ -16,19 +17,27 @@ func TestSocksProxyFromEnv_PrecedenceAndNormalization(t *testing.T) {
 	clearSocksEnv(t)
 
 	// No env set -> empty.
-	require.Equal(t, "", socksProxyFromEnv())
+	hp, auth := socksProxyFromEnv()
+	require.Equal(t, "", hp)
+	require.Nil(t, auth)
 
 	// HTTPS_PROXY alone, normalized from scheme form.
 	t.Setenv("HTTPS_PROXY", "socks5://127.0.0.1:1080")
-	require.Equal(t, "127.0.0.1:1080", socksProxyFromEnv())
+	hp, auth = socksProxyFromEnv()
+	require.Equal(t, "127.0.0.1:1080", hp)
+	require.Nil(t, auth)
 
 	// ALL_PROXY wins over HTTPS_PROXY (earlier in precedence list).
 	t.Setenv("ALL_PROXY", "socks5h://10.0.0.1:7890")
-	require.Equal(t, "10.0.0.1:7890", socksProxyFromEnv())
+	hp, auth = socksProxyFromEnv()
+	require.Equal(t, "10.0.0.1:7890", hp)
+	require.Nil(t, auth)
 
 	// Bare host:port form passes through unchanged.
 	t.Setenv("ALL_PROXY", "192.168.1.1:1234")
-	require.Equal(t, "192.168.1.1:1234", socksProxyFromEnv())
+	hp, auth = socksProxyFromEnv()
+	require.Equal(t, "192.168.1.1:1234", hp)
+	require.Nil(t, auth)
 }
 
 func TestNormalizeSocksAddr(t *testing.T) {
@@ -41,9 +50,47 @@ func TestNormalizeSocksAddr(t *testing.T) {
 		{"127.0.0.1:1080", "127.0.0.1:1080"},
 		{"http://127.0.0.1:8080", ""}, // unsupported scheme
 		{"justahost", ""},             // no port
+		// Authenticated forms: host:port is extracted, credentials discarded.
+		{"socks5://user:pass@127.0.0.1:1080", "127.0.0.1:1080"},
+		{"socks5h://alice:s3cr3t@proxy.example:9050", "proxy.example:9050"},
 	}
 	for _, c := range cases {
 		require.Equalf(t, c.want, normalizeSocksAddr(c.in), "input %q", c.in)
+	}
+}
+
+func TestParseSocksAddr(t *testing.T) {
+	cases := []struct {
+		in       string
+		wantHP   string
+		wantAuth *proxy.Auth
+	}{
+		// Unauthenticated forms — nil auth.
+		{"socks5://127.0.0.1:1080", "127.0.0.1:1080", nil},
+		{"socks5h://127.0.0.1:1080", "127.0.0.1:1080", nil},
+		{"127.0.0.1:1080", "127.0.0.1:1080", nil},
+		// Authenticated socks5://.
+		{
+			"socks5://user:pass@127.0.0.1:1080",
+			"127.0.0.1:1080",
+			&proxy.Auth{User: "user", Password: "pass"},
+		},
+		// Authenticated socks5h://.
+		{
+			"socks5h://alice:s3cr3t@proxy.example:9050",
+			"proxy.example:9050",
+			&proxy.Auth{User: "alice", Password: "s3cr3t"},
+		},
+		// Garbage inputs — empty hostPort, nil auth.
+		{"", "", nil},
+		{"   ", "", nil},
+		{"justahost", "", nil},
+		{"http://127.0.0.1:8080", "", nil},
+	}
+	for _, c := range cases {
+		gotHP, gotAuth := parseSocksAddr(c.in)
+		require.Equalf(t, c.wantHP, gotHP, "input %q: host:port", c.in)
+		require.Equalf(t, c.wantAuth, gotAuth, "input %q: auth", c.in)
 	}
 }
 
@@ -84,33 +131,46 @@ func TestResolveTransportKind_Precedence(t *testing.T) {
 	clearSocksEnv(t)
 
 	// ProxyCommand beats everything.
-	k, p := resolveTransportKind(&config.Server{
+	k, p, a := resolveTransportKind(&config.Server{
 		ProxyCommand: "nc %h %p", ProxyJump: "bastion", Proxy: "socks5://127.0.0.1:1080",
 	})
 	require.Equal(t, kindProxyCommand, k)
 	require.Equal(t, "nc %h %p", p)
+	require.Nil(t, a)
 
 	// ProxyJump beats Proxy/env SOCKS.
-	k, p = resolveTransportKind(&config.Server{
+	k, p, a = resolveTransportKind(&config.Server{
 		ProxyJump: "bastion", Proxy: "socks5://127.0.0.1:1080",
 	})
 	require.Equal(t, kindProxyJump, k)
 	require.Equal(t, "bastion", p)
+	require.Nil(t, a)
 
-	// Explicit Proxy field -> SOCKS5, normalized.
-	k, p = resolveTransportKind(&config.Server{Proxy: "socks5://127.0.0.1:1080"})
+	// Explicit Proxy field -> SOCKS5, normalized, no auth.
+	k, p, a = resolveTransportKind(&config.Server{Proxy: "socks5://127.0.0.1:1080"})
 	require.Equal(t, kindSOCKS5, k)
 	require.Equal(t, "127.0.0.1:1080", p)
+	require.Nil(t, a)
+
+	// Explicit Proxy with credentials -> SOCKS5 with auth; password not in param.
+	k, p, a = resolveTransportKind(&config.Server{Proxy: "socks5://user:pass@127.0.0.1:1080"})
+	require.Equal(t, kindSOCKS5, k)
+	require.Equal(t, "127.0.0.1:1080", p)
+	require.NotNil(t, a)
+	require.Equal(t, "user", a.User)
+	require.Equal(t, "pass", a.Password)
+	require.NotContains(t, p, "pass") // password must not appear in the host:port param
 
 	// Env SOCKS when no per-host proxy.
 	t.Setenv("ALL_PROXY", "socks5://10.0.0.1:7890")
-	k, p = resolveTransportKind(&config.Server{Host: "h"})
+	k, p, a = resolveTransportKind(&config.Server{Host: "h"})
 	require.Equal(t, kindSOCKS5, k)
 	require.Equal(t, "10.0.0.1:7890", p)
+	require.Nil(t, a)
 
 	// Direct when nothing configured and no env.
 	clearSocksEnv(t)
-	k, _ = resolveTransportKind(&config.Server{Host: "h"})
+	k, _, _ = resolveTransportKind(&config.Server{Host: "h"})
 	require.Equal(t, kindDirect, k)
 }
 
