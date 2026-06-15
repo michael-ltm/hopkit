@@ -15,6 +15,7 @@ func TestNewServer_RegistersExpectedTools(t *testing.T) {
 		"add_server", "edit_server", "remove_server",
 		"exec", "exec_multi",
 		"bootstrap", "gen_key", "copy_id", "tail_logs",
+		"upload", "download",
 	} {
 		require.Contains(t, names, want, "tool %q not registered", want)
 	}
@@ -26,7 +27,7 @@ func TestNewServer_ReadOnlyOmitsWriteTools(t *testing.T) {
 	// Only the 4 read tools must be present.
 	require.ElementsMatch(t, []string{"list_servers", "get_server", "test_connection", "get_status"}, names)
 	// No write/exec/ops tools.
-	for _, forbidden := range []string{"add_server", "edit_server", "remove_server", "exec", "exec_multi", "bootstrap", "gen_key", "copy_id", "tail_logs"} {
+	for _, forbidden := range []string{"add_server", "edit_server", "remove_server", "exec", "exec_multi", "bootstrap", "gen_key", "copy_id", "tail_logs", "upload", "download"} {
 		require.NotContains(t, names, forbidden)
 	}
 }
