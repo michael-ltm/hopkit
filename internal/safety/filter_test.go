@@ -67,7 +67,8 @@ func TestIsDangerous_BlocksNewPatterns(t *testing.T) {
 		// dd to device, any operand order
 		"dd if=/dev/zero of=/dev/sda bs=1M",
 		"dd of=/dev/sda if=/dev/zero bs=1M",
-		// shred a device
+		// shred a device — with flags, and also with NO flags (regression: was not blocked)
+		"shred /dev/sda",
 		"shred -n 3 /dev/sda",
 		"shred -vfz /dev/nvme0n1",
 		// recursive chmod/chown on root
@@ -107,6 +108,7 @@ func TestIsDangerous_NoFalsePositivesOnNewPatterns(t *testing.T) {
 		"git push | cat",
 		"docker logs app | tail -n 50",
 		"shred -u secrets.txt",
+		"shred ./secret.txt",
 	}
 	for _, cmd := range safe {
 		hit, reason := IsDangerous(cmd)

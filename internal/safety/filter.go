@@ -35,8 +35,10 @@ var dangerousPatterns = []dangerousPattern{
 	// it precedes if=).
 	{regexp.MustCompile(`\bdd\s+.*\bof=/dev/`), "raw write to a device with dd"},
 
-	// shred targeting a device node.
-	{regexp.MustCompile(`\bshred\s+.*\s/dev/\w+`), "shred of a device"},
+	// shred targeting a device node. The pattern uses zero-or-more flag tokens
+	// before /dev/ so that `shred /dev/sda` (no flags) is caught as well as
+	// `shred -n 3 /dev/sda`, `shred -vfz /dev/nvme0n1`, etc.
+	{regexp.MustCompile(`(?:^|\s)shred\s+(?:\S+\s+)*/dev/\w+`), "shred of a device"},
 
 	// recursive chmod/chown on the root filesystem.
 	{regexp.MustCompile(`\bchmod\s+-[a-zA-Z]*R[a-zA-Z]*\s+\S+\s+/(\s|$)`), "recursive chmod on root"},

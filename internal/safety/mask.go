@@ -47,15 +47,20 @@ var (
 	rePasswordLongFlag = regexp.MustCompile(`(--password)(=|\s+)\S+`)
 	// rePasswordShortFlag matches mysql/redis style `-pVALUE` (no space). It
 	// requires at least one character after `-p` so a bare `-p` (e.g. a port
-	// flag with a following space) is not touched.
+	// flag with a following space) is not touched. This intentionally also
+	// catches flag names like -post and -port — masking a flag name is cosmetic,
+	// but leaking a password is a security failure; we accept the false positive.
 	rePasswordShortFlag = regexp.MustCompile(`(^|\s)(-p)\S+`)
 
 	// --- IPv6 ---
 
-	// reIPv6 matches IPv6 addresses (full or compressed `::` forms). It
-	// requires at least two colons so ordinary `12:30` timestamps and
-	// `host:port` pairs are left alone.
-	reIPv6 = regexp.MustCompile(`\b(?:[0-9A-Fa-f]{1,4}:){2,}(?::|[0-9A-Fa-f]{1,4})(?::[0-9A-Fa-f]{1,4})*\b|\b[0-9A-Fa-f]{1,4}(?::[0-9A-Fa-f]{1,4}){2,}\b`)
+	// reIPv6 matches IPv6 addresses in either the compressed (::) form or the
+	// full 8-group form (7 colons). This is intentionally tighter than the
+	// previous 3-group heuristic: it avoids false-positives on MAC addresses
+	// (00:11:22:33:44:55) and short hex-colon tokens (abc:def:123). Some
+	// exotic/transitional IPv6 forms may not be caught — that is an accepted
+	// trade-off; false positives (masking non-secrets) matter more here.
+	reIPv6 = regexp.MustCompile(`[0-9A-Fa-f:]*::[0-9A-Fa-f:]*|(?:[0-9A-Fa-f]{1,4}:){7}[0-9A-Fa-f]{1,4}`)
 )
 
 // MaskSecrets redacts sensitive data from text that may be shown to an AI

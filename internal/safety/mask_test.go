@@ -117,15 +117,45 @@ func TestMaskSecrets_RedactsTokens(t *testing.T) {
 }
 
 func TestMaskSecrets_RedactsIPv6(t *testing.T) {
+	// Full 8-group form.
 	in := "connecting to 2001:0db8:85a3:0000:0000:8a2e:0370:7334 now"
 	out := MaskSecrets(in)
 	require.NotContains(t, out, "2001:0db8:85a3:0000:0000:8a2e:0370:7334")
 	require.Contains(t, out, "***")
 
-	// Compressed form.
+	// Compressed :: form.
 	in2 := "host fe80::1ff:fe23:4567:890a here"
 	out2 := MaskSecrets(in2)
 	require.NotContains(t, out2, "fe80::1ff:fe23:4567:890a")
+
+	// Short compressed form (::1, fe80::1, 2001:db8::1).
+	in3 := "loopback is ::1"
+	out3 := MaskSecrets(in3)
+	require.NotContains(t, out3, "::1")
+	require.Contains(t, out3, "***")
+
+	in4 := "addr 2001:db8::1 here"
+	out4 := MaskSecrets(in4)
+	require.NotContains(t, out4, "2001:db8::1")
+	require.Contains(t, out4, "***")
+
+	in5 := "link-local fe80::1 here"
+	out5 := MaskSecrets(in5)
+	require.NotContains(t, out5, "fe80::1")
+	require.Contains(t, out5, "***")
+}
+
+func TestMaskSecrets_DoesNotMaskMACOrShortHexColon(t *testing.T) {
+	// MAC addresses must NOT be redacted (they are not IPv6).
+	mac := "interface hw addr 00:11:22:33:44:55"
+	outMAC := MaskSecrets(mac)
+	require.Contains(t, outMAC, "00:11:22:33:44:55", "MAC address must not be redacted")
+	require.NotContains(t, outMAC, "***")
+
+	// Short hex-colon tokens must NOT be redacted.
+	short := "token abc:def:123"
+	outShort := MaskSecrets(short)
+	require.Contains(t, outShort, "abc:def:123", "short hex-colon token must not be redacted")
 }
 
 func TestMaskSecrets_DoesNotOverMaskBenignText(t *testing.T) {
