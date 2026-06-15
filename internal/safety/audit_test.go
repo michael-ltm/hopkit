@@ -1,9 +1,12 @@
 package safety
 
 import (
+	"encoding/json"
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 	"testing"
 
 	"github.com/stretchr/testify/require"
@@ -52,4 +55,37 @@ func TestAuditLog_FileIsModeSixZeroZero(t *testing.T) {
 	st, err := os.Stat(path)
 	require.NoError(t, err)
 	require.Equal(t, os.FileMode(0o600), st.Mode().Perm())
+}
+
+// TestAuditLog_ConcurrentAppends launches N goroutines each appending one
+// entry and asserts every line is valid JSON and the count equals N (no
+// interleaving/corruption). Run with -race to detect data-race violations.
+func TestAuditLog_ConcurrentAppends(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "audit.log")
+	a := NewAuditLog(path)
+	const N = 50
+
+	var wg sync.WaitGroup
+	wg.Add(N)
+	for i := 0; i < N; i++ {
+		i := i
+		go func() {
+			defer wg.Done()
+			err := a.Append(Entry{
+				Tool:   "exec",
+				Alias:  fmt.Sprintf("server%d", i),
+				Result: "ok",
+			})
+			require.NoError(t, err)
+		}()
+	}
+	wg.Wait()
+
+	data, err := os.ReadFile(path)
+	require.NoError(t, err)
+	lines := strings.Split(strings.TrimSpace(string(data)), "\n")
+	require.Len(t, lines, N, "expected %d lines, got %d — possible interleaving", N, len(lines))
+	for _, line := range lines {
+		require.True(t, json.Valid([]byte(line)), "invalid JSON line: %s", line)
+	}
 }

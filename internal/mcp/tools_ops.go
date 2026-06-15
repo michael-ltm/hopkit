@@ -21,6 +21,9 @@ func handleBootstrap(deps Deps, args map[string]any) (any, error) {
 		return errResult("bad_request", err.Error()), nil
 	}
 	alias := strArg(args, "alias")
+
+	// Plain load to read server details for the SSH call.  We do not hold the
+	// config mutex during the (potentially long) network operation.
 	cfg, err := config.Load(deps.ConfigPath)
 	if err != nil {
 		return errResult("config", err.Error()), nil
@@ -36,8 +39,13 @@ func handleBootstrap(deps Deps, args map[string]any) (any, error) {
 		return errResult("ssh", safety.MaskSecrets(err.Error())), nil
 	}
 	if res.Completed {
-		s.InitState = config.InitBootstrapped
-		_ = config.Save(deps.ConfigPath, cfg)
+		// Use Update so the write is serialized against concurrent mutations.
+		_ = config.Update(deps.ConfigPath, func(cfg *config.Config) error {
+			if s2, ok := cfg.Servers[alias]; ok {
+				s2.InitState = config.InitBootstrapped
+			}
+			return nil
+		})
 	}
 	audit(deps, safety.Entry{Tool: "bootstrap", Alias: alias, Reason: reason,
 		Result: fmt.Sprintf("completed=%v", res.Completed)})
@@ -50,12 +58,13 @@ func handleGenKey(deps Deps, args map[string]any) (any, error) {
 		return errResult("bad_request", err.Error()), nil
 	}
 	alias := strArg(args, "alias")
+
+	// Plain load to check the alias exists before generating any files.
 	cfg, err := config.Load(deps.ConfigPath)
 	if err != nil {
 		return errResult("config", err.Error()), nil
 	}
-	s, ok := cfg.Servers[alias]
-	if !ok {
+	if _, ok := cfg.Servers[alias]; !ok {
 		return errResult("not_found", fmt.Sprintf("unknown server %q", alias)), nil
 	}
 	path := strArg(args, "path")
@@ -70,8 +79,13 @@ func handleGenKey(deps Deps, args map[string]any) (any, error) {
 	if err != nil {
 		return errResult("keygen", err.Error()), nil
 	}
-	s.KeyPath = path
-	_ = config.Save(deps.ConfigPath, cfg)
+	// Use Update so the KeyPath write is serialized against concurrent mutations.
+	_ = config.Update(deps.ConfigPath, func(cfg *config.Config) error {
+		if s, ok := cfg.Servers[alias]; ok {
+			s.KeyPath = path
+		}
+		return nil
+	})
 	audit(deps, safety.Entry{Tool: "gen_key", Alias: alias, Reason: reason, Result: "ok"})
 	return map[string]any{"alias": alias, "key_path": expanded, "public_key": strings.TrimSpace(pub)}, nil
 }

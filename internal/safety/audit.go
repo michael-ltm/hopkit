@@ -5,8 +5,16 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"sync"
 	"time"
 )
+
+// auditMu serializes concurrent Append calls so that long JSON lines written
+// by different goroutines cannot interleave into corrupt records.
+// O_APPEND guarantees atomic writes only for writes smaller than PIPE_BUF
+// (~4 KiB on Linux); for larger payloads — or to be safe across platforms —
+// a mutex is the correct solution.
+var auditMu sync.Mutex
 
 // Entry is one audit record. Reason is masked before being written.
 type Entry struct {
@@ -27,6 +35,7 @@ func NewAuditLog(path string) *AuditLog { return &AuditLog{path: path} }
 
 // Append writes one masked record. The file and its parent directory are
 // created on first use. Each record is one JSON object on its own line.
+// Concurrent calls are serialized via auditMu.
 func (a *AuditLog) Append(e Entry) error {
 	if err := os.MkdirAll(filepath.Dir(a.path), 0o700); err != nil {
 		return fmt.Errorf("mkdir audit dir: %w", err)
@@ -39,6 +48,10 @@ func (a *AuditLog) Append(e Entry) error {
 	if err != nil {
 		return fmt.Errorf("marshal audit entry: %w", err)
 	}
+
+	auditMu.Lock()
+	defer auditMu.Unlock()
+
 	f, err := os.OpenFile(a.path, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0o600)
 	if err != nil {
 		return fmt.Errorf("open audit log: %w", err)

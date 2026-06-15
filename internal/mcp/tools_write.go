@@ -61,13 +61,6 @@ func handleAddServer(deps Deps, args map[string]any) (any, error) {
 	if alias == "" {
 		return errResult("bad_request", "alias is required"), nil
 	}
-	cfg, err := config.Load(deps.ConfigPath)
-	if err != nil {
-		return errResult("config", err.Error()), nil
-	}
-	if _, exists := cfg.Servers[alias]; exists {
-		return errResult("conflict", fmt.Sprintf("alias %q already exists", alias)), nil
-	}
 	host := strArg(args, "host")
 	if host == "" {
 		return errResult("bad_request", "host is required"), nil
@@ -94,11 +87,23 @@ func handleAddServer(deps Deps, args map[string]any) (any, error) {
 	} else if _, present := args["port"]; present {
 		return errResult("bad_request", "port must be an integer in 1..65535"), nil
 	}
-	cfg.Servers[alias] = &config.Server{
-		Host: host, Port: port, User: strArg(args, "user"),
-		Auth: auth, KeyPath: keyPath,
+
+	var conflict bool
+	err = config.Update(deps.ConfigPath, func(cfg *config.Config) error {
+		if _, exists := cfg.Servers[alias]; exists {
+			conflict = true
+			return fmt.Errorf("alias %q already exists", alias)
+		}
+		cfg.Servers[alias] = &config.Server{
+			Host: host, Port: port, User: strArg(args, "user"),
+			Auth: auth, KeyPath: keyPath,
+		}
+		return nil
+	})
+	if conflict {
+		return errResult("conflict", fmt.Sprintf("alias %q already exists", alias)), nil
 	}
-	if err := config.Save(deps.ConfigPath, cfg); err != nil {
+	if err != nil {
 		return errResult("config", err.Error()), nil
 	}
 	audit(deps, safety.Entry{Tool: "add_server", Alias: alias, Reason: reason, Result: "ok"})
@@ -114,35 +119,45 @@ func handleEditServer(deps Deps, args map[string]any) (any, error) {
 	if alias == "" {
 		return errResult("bad_request", "alias is required"), nil
 	}
-	cfg, err := config.Load(deps.ConfigPath)
-	if err != nil {
-		return errResult("config", err.Error()), nil
+	// Validate auth value before touching the config, so we can return
+	// bad_request early without taking the lock.
+	if v := strArg(args, "auth"); v != "" && !validAuth(v) {
+		return errResult("bad_request", fmt.Sprintf("auth %q must be key, password, or agent", v)), nil
 	}
-	s, ok := cfg.Servers[alias]
-	if !ok {
+	if _, present := args["port"]; present {
+		if _, ok := portArg(args); !ok {
+			return errResult("bad_request", "port must be an integer in 1..65535"), nil
+		}
+	}
+
+	var notFound bool
+	err = config.Update(deps.ConfigPath, func(cfg *config.Config) error {
+		s, ok := cfg.Servers[alias]
+		if !ok {
+			notFound = true
+			return fmt.Errorf("unknown server %q", alias)
+		}
+		if v := strArg(args, "host"); v != "" {
+			s.Host = v
+		}
+		if v := strArg(args, "user"); v != "" {
+			s.User = v
+		}
+		if v := strArg(args, "auth"); v != "" {
+			s.Auth = v
+		}
+		if v := strArg(args, "key_path"); v != "" {
+			s.KeyPath = v
+		}
+		if p, ok := portArg(args); ok {
+			s.Port = p
+		}
+		return nil
+	})
+	if notFound {
 		return errResult("not_found", fmt.Sprintf("unknown server %q", alias)), nil
 	}
-	if v := strArg(args, "host"); v != "" {
-		s.Host = v
-	}
-	if v := strArg(args, "user"); v != "" {
-		s.User = v
-	}
-	if v := strArg(args, "auth"); v != "" {
-		if !validAuth(v) {
-			return errResult("bad_request", fmt.Sprintf("auth %q must be key, password, or agent", v)), nil
-		}
-		s.Auth = v
-	}
-	if v := strArg(args, "key_path"); v != "" {
-		s.KeyPath = v
-	}
-	if p, ok := portArg(args); ok {
-		s.Port = p
-	} else if _, present := args["port"]; present {
-		return errResult("bad_request", "port must be an integer in 1..65535"), nil
-	}
-	if err := config.Save(deps.ConfigPath, cfg); err != nil {
+	if err != nil {
 		return errResult("config", err.Error()), nil
 	}
 	audit(deps, safety.Entry{Tool: "edit_server", Alias: alias, Reason: reason, Result: "ok"})
@@ -155,18 +170,23 @@ func handleRemoveServer(deps Deps, args map[string]any) (any, error) {
 		return errResult("bad_request", err.Error()), nil
 	}
 	alias := strArg(args, "alias")
-	cfg, err := config.Load(deps.ConfigPath)
-	if err != nil {
-		return errResult("config", err.Error()), nil
-	}
-	if _, ok := cfg.Servers[alias]; !ok {
+
+	var notFound bool
+	err = config.Update(deps.ConfigPath, func(cfg *config.Config) error {
+		if _, ok := cfg.Servers[alias]; !ok {
+			notFound = true
+			return fmt.Errorf("unknown server %q", alias)
+		}
+		delete(cfg.Servers, alias)
+		if cfg.Default == alias {
+			cfg.Default = ""
+		}
+		return nil
+	})
+	if notFound {
 		return errResult("not_found", fmt.Sprintf("unknown server %q", alias)), nil
 	}
-	delete(cfg.Servers, alias)
-	if cfg.Default == alias {
-		cfg.Default = ""
-	}
-	if err := config.Save(deps.ConfigPath, cfg); err != nil {
+	if err != nil {
 		return errResult("config", err.Error()), nil
 	}
 	audit(deps, safety.Entry{Tool: "remove_server", Alias: alias, Reason: reason, Result: "ok"})
