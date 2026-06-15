@@ -3,6 +3,7 @@ package mcp
 import (
 	"context"
 	"fmt"
+	"sort"
 	"time"
 
 	"github.com/mark3labs/mcp-go/mcp"
@@ -12,8 +13,9 @@ import (
 	"github.com/michael-ltm/sshm/internal/status"
 )
 
-// handleListServers returns every configured server with its host IP masked.
-func handleListServers(deps Deps, _ map[string]any) (any, error) {
+// handleListServers returns every configured server with its host IP masked,
+// sorted deterministically by alias.
+func handleListServers(ctx context.Context, deps Deps, _ map[string]any) (any, error) {
 	cfg, err := config.Load(deps.ConfigPath)
 	if err != nil {
 		return errResult("config", err.Error()), nil
@@ -32,11 +34,12 @@ func handleListServers(deps Deps, _ map[string]any) (any, error) {
 			Tags: s.Tags, LastStatus: s.LastStatus,
 		})
 	}
+	sort.Slice(list, func(i, j int) bool { return list[i].Alias < list[j].Alias })
 	return map[string]any{"servers": list}, nil
 }
 
 // handleGetServer returns one server record (host masked).
-func handleGetServer(deps Deps, args map[string]any) (any, error) {
+func handleGetServer(ctx context.Context, deps Deps, args map[string]any) (any, error) {
 	alias, _ := args["alias"].(string)
 	cfg, err := config.Load(deps.ConfigPath)
 	if err != nil {
@@ -54,7 +57,7 @@ func handleGetServer(deps Deps, args map[string]any) (any, error) {
 }
 
 // handleTestConnection probes a server's reachability.
-func handleTestConnection(deps Deps, args map[string]any) (any, error) {
+func handleTestConnection(ctx context.Context, deps Deps, args map[string]any) (any, error) {
 	alias, _ := args["alias"].(string)
 	cfg, err := config.Load(deps.ConfigPath)
 	if err != nil {
@@ -64,7 +67,7 @@ func handleTestConnection(deps Deps, args map[string]any) (any, error) {
 	if !ok {
 		return errResult("not_found", fmt.Sprintf("unknown server %q", alias)), nil
 	}
-	r := status.Probe(context.Background(), s, 5*time.Second)
+	r := status.Probe(ctx, s, 5*time.Second)
 	return map[string]any{
 		"alias": alias, "reachable": r.Reachable,
 		"latency_ms": r.Latency.Milliseconds(),
@@ -73,7 +76,7 @@ func handleTestConnection(deps Deps, args map[string]any) (any, error) {
 }
 
 // handleGetStatus collects a rich snapshot of a server.
-func handleGetStatus(deps Deps, args map[string]any) (any, error) {
+func handleGetStatus(ctx context.Context, deps Deps, args map[string]any) (any, error) {
 	alias, _ := args["alias"].(string)
 	cfg, err := config.Load(deps.ConfigPath)
 	if err != nil {
@@ -83,7 +86,7 @@ func handleGetStatus(deps Deps, args map[string]any) (any, error) {
 	if !ok {
 		return errResult("not_found", fmt.Sprintf("unknown server %q", alias)), nil
 	}
-	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
+	ctx, cancel := context.WithTimeout(ctx, 20*time.Second)
 	defer cancel()
 	snap, err := status.Collect(ctx, s)
 	if err != nil {
@@ -95,11 +98,11 @@ func handleGetStatus(deps Deps, args map[string]any) (any, error) {
 // registerReadTools registers the four read-only tools and appends their
 // names. It bridges the MCP request type to the plain handler functions.
 func registerReadTools(s *server.MCPServer, deps Deps, names []string) []string {
-	reg := func(name, desc string, fn func(Deps, map[string]any) (any, error)) {
+	reg := func(name, desc string, fn func(context.Context, Deps, map[string]any) (any, error)) {
 		tool := mcp.NewTool(name, mcp.WithDescription(desc),
 			mcp.WithString("alias", mcp.Description("server alias")))
 		s.AddTool(tool, func(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
-			out, err := fn(deps, req.GetArguments())
+			out, err := fn(ctx, deps, req.GetArguments())
 			if err != nil {
 				return mcp.NewToolResultError(err.Error()), nil
 			}

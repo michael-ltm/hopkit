@@ -15,7 +15,7 @@ import (
 	sshpkg "github.com/michael-ltm/sshm/internal/ssh"
 )
 
-func handleBootstrap(deps Deps, args map[string]any) (any, error) {
+func handleBootstrap(ctx context.Context, deps Deps, args map[string]any) (any, error) {
 	reason, err := requireReason(args)
 	if err != nil {
 		return errResult("bad_request", err.Error()), nil
@@ -32,7 +32,7 @@ func handleBootstrap(deps Deps, args map[string]any) (any, error) {
 	if !ok {
 		return errResult("not_found", fmt.Sprintf("unknown server %q", alias)), nil
 	}
-	ctx, cancel := context.WithTimeout(context.Background(), 120*time.Second)
+	ctx, cancel := context.WithTimeout(ctx, 120*time.Second)
 	defer cancel()
 	res, err := bootstrap.Run(ctx, s)
 	if err != nil {
@@ -40,19 +40,21 @@ func handleBootstrap(deps Deps, args map[string]any) (any, error) {
 	}
 	if res.Completed {
 		// Use Update so the write is serialized against concurrent mutations.
-		_ = config.Update(deps.ConfigPath, func(cfg *config.Config) error {
+		if uerr := config.Update(deps.ConfigPath, func(cfg *config.Config) error {
 			if s2, ok := cfg.Servers[alias]; ok {
 				s2.InitState = config.InitBootstrapped
 			}
 			return nil
-		})
+		}); uerr != nil {
+			return errResult("config", uerr.Error()), nil
+		}
 	}
 	audit(deps, safety.Entry{Tool: "bootstrap", Alias: alias, Reason: reason,
 		Result: fmt.Sprintf("completed=%v", res.Completed)})
 	return map[string]any{"alias": alias, "completed": res.Completed, "sshd_state": res.SSHDState}, nil
 }
 
-func handleGenKey(deps Deps, args map[string]any) (any, error) {
+func handleGenKey(ctx context.Context, deps Deps, args map[string]any) (any, error) {
 	reason, err := requireReason(args)
 	if err != nil {
 		return errResult("bad_request", err.Error()), nil
@@ -79,18 +81,23 @@ func handleGenKey(deps Deps, args map[string]any) (any, error) {
 	if err != nil {
 		return errResult("keygen", err.Error()), nil
 	}
-	// Use Update so the KeyPath write is serialized against concurrent mutations.
-	_ = config.Update(deps.ConfigPath, func(cfg *config.Config) error {
+	// Use Update so the KeyPath/Auth write is serialized against concurrent mutations.
+	if uerr := config.Update(deps.ConfigPath, func(cfg *config.Config) error {
 		if s, ok := cfg.Servers[alias]; ok {
 			s.KeyPath = path
+			if s.Auth != config.AuthKey {
+				s.Auth = config.AuthKey
+			}
 		}
 		return nil
-	})
+	}); uerr != nil {
+		return errResult("config", uerr.Error()), nil
+	}
 	audit(deps, safety.Entry{Tool: "gen_key", Alias: alias, Reason: reason, Result: "ok"})
 	return map[string]any{"alias": alias, "key_path": expanded, "public_key": strings.TrimSpace(pub)}, nil
 }
 
-func handleCopyID(deps Deps, args map[string]any) (any, error) {
+func handleCopyID(ctx context.Context, deps Deps, args map[string]any) (any, error) {
 	reason, err := requireReason(args)
 	if err != nil {
 		return errResult("bad_request", err.Error()), nil
@@ -105,7 +112,24 @@ func handleCopyID(deps Deps, args map[string]any) (any, error) {
 	}, nil
 }
 
-func handleTailLogs(deps Deps, args map[string]any) (any, error) {
+// clampLines returns the number of tail lines, clamped to [1, maxTailLines],
+// with a default of defaultTailLines when lines is 0.
+const (
+	defaultTailLines = 100
+	maxTailLines     = 5000
+)
+
+func clampLines(lines int) int {
+	if lines <= 0 {
+		return defaultTailLines
+	}
+	if lines > maxTailLines {
+		return maxTailLines
+	}
+	return lines
+}
+
+func handleTailLogs(ctx context.Context, deps Deps, args map[string]any) (any, error) {
 	reason, err := requireReason(args)
 	if err != nil {
 		return errResult("bad_request", err.Error()), nil
@@ -115,9 +139,9 @@ func handleTailLogs(deps Deps, args map[string]any) (any, error) {
 	if path == "" {
 		return errResult("bad_request", "path is required"), nil
 	}
-	n := 100
-	if v, ok := args["lines"].(float64); ok && v > 0 {
-		n = int(v)
+	n := defaultTailLines
+	if v, ok := args["lines"].(float64); ok {
+		n = clampLines(int(v))
 	}
 	cfg, err := config.Load(deps.ConfigPath)
 	if err != nil {
@@ -127,7 +151,7 @@ func handleTailLogs(deps Deps, args map[string]any) (any, error) {
 	if !ok {
 		return errResult("not_found", fmt.Sprintf("unknown server %q", alias)), nil
 	}
-	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	ctx, cancel := context.WithTimeout(ctx, 30*time.Second)
 	defer cancel()
 	cli, err := sshpkg.Dial(s, sshpkg.BuildOpts{})
 	if err != nil {
@@ -149,7 +173,7 @@ func shellQuoteArg(s string) string {
 
 // registerOpsTools registers bootstrap, gen_key, copy_id, tail_logs.
 func registerOpsTools(s *server.MCPServer, deps Deps, names []string) []string {
-	reg := func(name, desc string, fn func(Deps, map[string]any) (any, error), extra ...mcp.ToolOption) {
+	reg := func(name, desc string, fn func(context.Context, Deps, map[string]any) (any, error), extra ...mcp.ToolOption) {
 		opts := append([]mcp.ToolOption{
 			mcp.WithDescription(desc),
 			mcp.WithString("alias", mcp.Description("server alias")),
@@ -157,7 +181,7 @@ func registerOpsTools(s *server.MCPServer, deps Deps, names []string) []string {
 		}, extra...)
 		tool := mcp.NewTool(name, opts...)
 		s.AddTool(tool, func(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
-			out, err := fn(deps, req.GetArguments())
+			out, err := fn(ctx, deps, req.GetArguments())
 			if err != nil {
 				return mcp.NewToolResultError(err.Error()), nil
 			}
@@ -172,6 +196,6 @@ func registerOpsTools(s *server.MCPServer, deps Deps, names []string) []string {
 	reg("copy_id", "Get instructions to install the public key (password stays on the CLI).", handleCopyID)
 	reg("tail_logs", "Tail a remote log file.", handleTailLogs,
 		mcp.WithString("path", mcp.Description("remote log file path")),
-		mcp.WithNumber("lines", mcp.Description("number of trailing lines (default 100)")))
+		mcp.WithNumber("lines", mcp.Description("number of trailing lines (default 100, max 5000)")))
 	return names
 }

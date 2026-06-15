@@ -71,14 +71,32 @@ func TestProbeMany_EmptyMapReturnsEmpty(t *testing.T) {
 	require.Empty(t, results)
 }
 
+// TestProbeMany_CancelledContext verifies that an already-cancelled context
+// causes ProbeMany to stop launching probes and return promptly. The number of
+// results may be anywhere from 0 to N (races are fine — we only assert < N for
+// a large-enough N to make accidental full completion vanishingly unlikely).
 func TestProbeMany_CancelledContext(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel() // cancel before calling
 
-	servers := map[string]*config.Server{
-		"a": {Host: "127.0.0.1", Port: 1}, // port 1 — refused/unreachable
+	// Build a map of many servers that would take time to probe if launched.
+	// We use 20 servers pointing to refused ports; with a cancelled ctx the
+	// loop should bail out immediately and return far fewer than 20 results.
+	servers := map[string]*config.Server{}
+	for i := 0; i < 20; i++ {
+		// Port 1 is refused on localhost; no actual network traffic needed.
+		servers[fmt.Sprintf("s%d", i)] = &config.Server{Host: "127.0.0.1", Port: 1}
 	}
+
+	start := time.Now()
 	results := ProbeMany(ctx, servers, 500*time.Millisecond)
-	require.Len(t, results, 1)
-	require.False(t, results["a"].Reachable)
+	elapsed := time.Since(start)
+
+	// Must return well under the total probe timeout (20 × 500ms = 10s).
+	// In practice it should be <50ms; allow 3s to be generous on slow CI.
+	require.Less(t, elapsed, 3*time.Second, "ProbeMany took too long with cancelled ctx")
+
+	// Must return fewer results than total servers (context stopped launching).
+	require.Less(t, len(results), len(servers),
+		"expected fewer than %d results with cancelled ctx, got %d", len(servers), len(results))
 }

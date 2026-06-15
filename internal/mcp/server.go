@@ -9,13 +9,18 @@ import (
 type Deps struct {
 	ConfigPath string
 	AuditPath  string
-	AllowWrite bool // when false, write/exec tools are not registered
+	AllowWrite bool   // when false, write/exec tools are not registered
+	Version    string // build version (set by ldflags via commands.Version); falls back to "dev"
 }
 
 // NewServer builds the MCP server with every sshm tool registered, and
 // returns the registered tool names for verification.
 func NewServer(deps Deps) (*server.MCPServer, []string) {
-	s := server.NewMCPServer("sshm", "0.2.0")
+	ver := deps.Version
+	if ver == "" {
+		ver = "dev"
+	}
+	s := server.NewMCPServer("sshm", ver)
 	var names []string
 	names = registerReadTools(s, deps, names)
 	if deps.AllowWrite {

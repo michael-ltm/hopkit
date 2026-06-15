@@ -23,6 +23,7 @@ to stderr; mutations are recorded to the audit log.`,
 				ConfigPath: configPath(),
 				AuditPath:  config.AuditPath(),
 				AllowWrite: !readOnly,
+				Version:    Version,
 			}
 			s, _ := mcppkg.NewServer(deps)
 			return server.ServeStdio(s)

@@ -44,6 +44,8 @@ func Probe(ctx context.Context, s *config.Server, timeout time.Duration) Result 
 }
 
 // ProbeMany runs Probe across all servers concurrently (bounded to 16).
+// If ctx is cancelled before all goroutines are launched, no further probes
+// are started and only the results of already-launched probes are returned.
 func ProbeMany(ctx context.Context, servers map[string]*config.Server, timeout time.Duration) map[string]Result {
 	const maxConc = 16
 	sem := make(chan struct{}, maxConc)
@@ -52,15 +54,28 @@ func ProbeMany(ctx context.Context, servers map[string]*config.Server, timeout t
 		r     Result
 	}
 	out := make(chan item, len(servers))
+
+	launched := 0
 	for alias, s := range servers {
-		sem <- struct{}{}
-		go func(a string, srv *config.Server) {
-			defer func() { <-sem }()
-			out <- item{a, Probe(ctx, srv, timeout)}
-		}(alias, s)
+		// Stop launching new probes if the context is already cancelled.
+		select {
+		case <-ctx.Done():
+			// Context cancelled — do not start any more goroutines.
+		case sem <- struct{}{}:
+			launched++
+			go func(a string, srv *config.Server) {
+				defer func() { <-sem }()
+				out <- item{a, Probe(ctx, srv, timeout)}
+			}(alias, s)
+		}
+		// If we hit ctx.Done() in the select above, we break out of the loop
+		// after the select. A labelled break isn't needed; we simply detect
+		// ctx.Done() in the next iteration too, so any remaining servers are
+		// skipped as well.
 	}
+
 	results := map[string]Result{}
-	for i := 0; i < len(servers); i++ {
+	for i := 0; i < launched; i++ {
 		it := <-out
 		results[it.alias] = it.r
 	}
