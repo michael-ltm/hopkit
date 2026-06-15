@@ -6,8 +6,12 @@ Common multi-step workflows expressed as sshm tool sequences.
 
 1. `test_connection` — confirm the host is up.
 2. `exec` with `command: "cd /var/www/app && git pull"`, a `reason`.
-3. `exec` with `command: "systemctl restart app"`.
-4. `get_status` — confirm the service is healthy.
+   Alternatively, use `upload` to push a specific file directly (e.g. a
+   compiled binary or config file) without requiring git on the remote.
+3. For long-running build or migration steps, use `exec` with `detach: true`
+   and then poll progress with `tail_logs` on the returned `log_path`.
+4. `exec` with `command: "systemctl restart app"`.
+5. `get_status` — confirm the service is healthy.
 
 ## Onboard a fresh server
 

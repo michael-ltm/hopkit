@@ -68,10 +68,9 @@ func ProbeMany(ctx context.Context, servers map[string]*config.Server, timeout t
 				out <- item{a, Probe(ctx, srv, timeout)}
 			}(alias, s)
 		}
-		// If we hit ctx.Done() in the select above, we break out of the loop
-		// after the select. A labelled break isn't needed; we simply detect
-		// ctx.Done() in the next iteration too, so any remaining servers are
-		// skipped as well.
+		// On cancellation we stop launching further probes. A semaphore slot
+		// that frees at the same instant as cancellation may let one more
+		// goroutine start; it will return quickly via the cancelled context.
 	}
 
 	results := map[string]Result{}
