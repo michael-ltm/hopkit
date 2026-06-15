@@ -40,9 +40,9 @@ func TestAuditLog_AppendMasksReasonAndResult(t *testing.T) {
 	data, err := os.ReadFile(path)
 	require.NoError(t, err)
 	s := string(data)
-	require.NotContains(t, s, "hunter2")       // Reason masked
-	require.NotContains(t, s, "leakedsecret")  // Result masked
-	require.Contains(t, s, `"time":"`)         // timestamp stamped
+	require.NotContains(t, s, "hunter2")      // Reason masked
+	require.NotContains(t, s, "leakedsecret") // Result masked
+	require.Contains(t, s, `"time":"`)        // timestamp stamped
 }
 
 func TestAuditLog_FileIsModeSixZeroZero(t *testing.T) {

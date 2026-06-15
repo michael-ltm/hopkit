@@ -14,8 +14,8 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-// Run with: SSHM_TEST_HOST=127.0.0.1:2222 SSHM_TEST_KEY=/tmp/test_key \
-//           go test -tags=integration ./internal/ssh/...
+//	Run with: SSHM_TEST_HOST=127.0.0.1:2222 SSHM_TEST_KEY=/tmp/test_key \
+//	          go test -tags=integration ./internal/ssh/...
 func TestIntegration_DialExec(t *testing.T) {
 	host := os.Getenv("SSHM_TEST_HOST")
 	if host == "" {

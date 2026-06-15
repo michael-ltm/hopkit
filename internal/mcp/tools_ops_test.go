@@ -70,13 +70,13 @@ func TestClampLines(t *testing.T) {
 		in   int
 		want int
 	}{
-		{0, defaultTailLines},   // zero → default
-		{-5, defaultTailLines},  // negative → default
-		{1, 1},                  // floor
-		{100, 100},              // unchanged
-		{5000, 5000},            // max
-		{5001, maxTailLines},    // above max → clamped
-		{99999, maxTailLines},   // way above max → clamped
+		{0, defaultTailLines},  // zero → default
+		{-5, defaultTailLines}, // negative → default
+		{1, 1},                 // floor
+		{100, 100},             // unchanged
+		{5000, 5000},           // max
+		{5001, maxTailLines},   // above max → clamped
+		{99999, maxTailLines},  // way above max → clamped
 	}
 	for _, tt := range tests {
 		got := clampLines(tt.in)
