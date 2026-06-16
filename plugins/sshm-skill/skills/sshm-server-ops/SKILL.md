@@ -16,6 +16,13 @@ dangerous commands.
 - `test_connection` — quick reachability probe.
 - `add_server` / `edit_server` / `remove_server` — manage the inventory.
   Every write needs a `reason` and is recorded to the audit log.
+  `add_server` and `edit_server` accept optional proxy args: `proxy`
+  (SOCKS5 URL `socks5://[user:pass@]host:port`), `proxy_jump` (an existing
+  alias or `[user@]host[:port]`), or `proxy_command` (shell command with
+  `%h`/`%p`/`%r` substitution). A local SOCKS5 proxy is also auto-detected
+  from `ALL_PROXY` / `HTTPS_PROXY` env vars (zero-config behind a VPN or
+  local proxy). If a proxy or jump attempt fails, sshm falls back to a direct
+  connection automatically.
 - `exec` / `exec_multi` — run commands. Dangerous commands (`rm -rf /`,
   `mkfs`, …) are blocked unless `unsafe: true` is passed. `exec` supports
   `timeout_seconds` (0 = no timeout, default 60) and `detach` (background

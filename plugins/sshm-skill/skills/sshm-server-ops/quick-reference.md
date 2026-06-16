@@ -6,8 +6,8 @@
 | `get_server` | `alias` | — | full record (host masked) |
 | `test_connection` | `alias` | — | `{reachable, latency_ms, error}` |
 | `get_status` | `alias` | — | `{status: {uptime, load, memory, disk, open_ports, failed_logins}}` |
-| `add_server` | `alias`, `host`, `reason` | `user`, `auth` (default agent), `port`, `key_path` | `{added: true}` |
-| `edit_server` | `alias`, `reason` | `host`, `user`, `port`, `auth`, `key_path` | `{updated: true}` |
+| `add_server` | `alias`, `host`, `reason` | `user`, `auth` (default agent), `port`, `key_path`, `proxy`, `proxy_jump`, `proxy_command` | `{added: true}` |
+| `edit_server` | `alias`, `reason` | `host`, `user`, `port`, `auth`, `key_path`, `proxy`, `proxy_jump`, `proxy_command` | `{updated: true}` |
 | `remove_server` | `alias`, `reason` | — | `{removed: true}` |
 | `exec` | `alias`, `command`, `reason` | `unsafe`, `timeout_seconds` (0 = no timeout, default 60), `detach` | `{exit, stdout, stderr}`; on timeout adds `timed_out: true`; large output adds `truncated: true`; with `detach` returns `{detached, log_path}` |
 | `exec_multi` | `aliases[]`, `command`, `reason` | `unsafe`, `timeout_seconds` | `{results: {alias: …}, succeeded: […], failed: {alias: reason}}` |

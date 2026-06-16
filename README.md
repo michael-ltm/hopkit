@@ -35,6 +35,7 @@ sshm test --all        # parallel reachability check
   (`upload`/`download`) and host-key verification (TOFU). See [docs/ai-integration.md](docs/ai-integration.md).
 - `--json` on every command for scripting and AI integration
 - Pretty list with unicode/ascii icons (auto-detected)
+- Proxy/jump-host connections: per-host SOCKS5 (`proxy`), ProxyJump (`proxy_jump`), ProxyCommand (`proxy_command`); SOCKS5 auto-detected from `ALL_PROXY`/`HTTPS_PROXY` env vars (zero-config); failed proxy attempts fall back to direct
 
 ## AI integration
 
@@ -51,7 +52,8 @@ and [docs/security.md](docs/security.md).
 ## Roadmap
 
 - **v0.3** ✓ — Host-key TOFU verification (strict known_hosts still v1.0), parallel `exec_multi`, `upload`/`download` single files, `exec` timeout + detach — _shipped_
-- **v0.4** — Import/export `~/.ssh/config`, tags/groups, OS keychain
+- **v0.4** ✓ — Proxy/VPN-aware dialing: SOCKS5 (`proxy`), ProxyJump, ProxyCommand; SOCKS5 auto-detected from env; automatic direct fallback — _shipped_
+- **v0.5** — Import/export `~/.ssh/config`, tags/groups, OS keychain
 - **v1.0** — Port forwarding, SFTP browse, signed release artifacts, strict known_hosts enforcement
 
 See [docs/specs/2026-05-13-sshm-design.md](docs/specs/2026-05-13-sshm-design.md) for the full design.

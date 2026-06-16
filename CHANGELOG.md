@@ -7,6 +7,20 @@ All notable changes to this project will be documented in this file. Format: [Ke
 ### Fixed
 - Plugin distribution: the repo now has a proper `.claude-plugin/marketplace.json` so `claude plugins marketplace add michael-ltm/sshm` works. The plugin manifest moved to `.claude-plugin/plugin.json` and the MCP registration to `.mcp.json` per the Claude Code plugin format.
 
+## [0.4.0] — 2026-06-16
+
+### Added
+- Proxy/VPN-aware SSH dialing with transport precedence: `proxy_command` > `proxy_jump` > `proxy` (SOCKS5) > direct.
+- `proxy_command`: runs a shell command as the transport; supports `%h`/`%p`/`%r` substitution (e.g. `nc -X 5 -x 127.0.0.1:7890 %h %p`).
+- `proxy_jump`: single-hop jump host — an existing sshm alias or `[user@]host[:port]`.
+- `proxy`: per-host SOCKS5 URL (`socks5://[user:pass@]host:port`); authenticated SOCKS5 supported.
+- Zero-config SOCKS5: if no `proxy` is set, sshm auto-detects a local proxy from env vars `ALL_PROXY`, `SOCKS5_PROXY`, `HTTPS_PROXY` (upper- and lower-case) — works out of the box behind a local VPN or proxy.
+- Retry / fallback: if a proxy or jump-host attempt fails, sshm automatically retries via a direct connection (covers TUN/VPN-active environments).
+- `add_server` / `edit_server` MCP tools gained optional `proxy`, `proxy_jump`, and `proxy_command` args.
+
+### Changed
+- New dependency: `golang.org/x/net` (SOCKS5 dialer).
+
 ## [0.3.0] — 2026-06-16
 
 ### Added
