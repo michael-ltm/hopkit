@@ -91,11 +91,12 @@ func newProvisionCmd() *cobra.Command {
 					if gerr != nil {
 						return "", gerr
 					}
+					// In-memory only: the test step below needs s.Auth/s.KeyPath set
+					// to actually exercise key auth. Persisting to disk happens later
+					// in RunE, only after copy-id and the connectivity test have
+					// confirmed the key works (see keyConfirmed in runProvision).
 					s.KeyPath = actualPath
 					s.Auth = config.AuthKey
-					if serr := saveConfig(cfg); serr != nil {
-						return "", serr
-					}
 					store, serr := keystore.StoreAndLoad(expanded, passphrase)
 					if serr != nil {
 						return "", serr
@@ -124,7 +125,17 @@ func newProvisionCmd() *cobra.Command {
 					return hardenDisablePassword(context.Background(), s)
 				},
 			}
-			if err := runProvision(steps, doHarden, nil); err != nil {
+			var confirmed bool
+			err = runProvision(steps, doHarden, &confirmed)
+			if confirmed {
+				// Key auth was confirmed by the connectivity test, so persist
+				// the alias as key-auth even if a later --harden step failed:
+				// key auth itself is verified working, only hardening isn't.
+				if serr := saveConfig(cfg); serr != nil {
+					return fmt.Errorf("save config: %w", serr)
+				}
+			}
+			if err != nil {
 				return err
 			}
 			fmt.Fprintln(cmd.OutOrStdout(), "provisioned: key auth working"+hardenedSuffix(doHarden))
