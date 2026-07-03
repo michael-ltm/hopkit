@@ -1,6 +1,6 @@
 {
   "name": "sshm-skill",
-  "version": "0.4.1",
+  "version": "0.5.0",
   "description": "Manage SSH servers with sshm — list, connect, exec, bootstrap, inspect — from any AI assistant.",
   "author": {
     "name": "michael-ltm"
