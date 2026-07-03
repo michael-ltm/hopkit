@@ -4,6 +4,16 @@ All notable changes to this project will be documented in this file. Format: [Ke
 
 ## [Unreleased]
 
+## [0.4.1] — 2026-07-03
+
+### Added
+- Encrypted (passphrase-protected) private keys now work with `auth = "key"`: when the key file is encrypted, sshm resolves the matching identity from the running ssh-agent by exact public-key match — a keychain-backed agent signs without sshm ever handling the passphrase. Only that one identity is offered, so a server's `MaxAuthTries` is never exhausted by unrelated agent keys.
+- Windows: ssh-agent support via the `\\.\pipe\openssh-ssh-agent` named pipe (the "OpenSSH Authentication Agent" service) for both `auth = "agent"` and the encrypted-key fallback.
+- Legacy PEM-encrypted keys (no embedded public key): the identity for the agent lookup is recovered from the sibling `.pub` file.
+
+### Changed
+- New dependency: `github.com/Microsoft/go-winio` (Windows named-pipe dialing; non-Windows builds unaffected).
+
 ### Fixed
 - Plugin distribution: the repo now has a proper `.claude-plugin/marketplace.json` so `claude plugins marketplace add michael-ltm/sshm` works. The plugin manifest moved to `.claude-plugin/plugin.json` and the MCP registration to `.mcp.json` per the Claude Code plugin format.
 
