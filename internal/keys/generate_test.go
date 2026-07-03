@@ -7,6 +7,7 @@ import (
 	"testing"
 
 	"github.com/stretchr/testify/require"
+	gssh "golang.org/x/crypto/ssh"
 )
 
 func TestGenerateED25519_WritesBothFiles(t *testing.T) {
@@ -55,6 +56,37 @@ func TestGenerateED25519_StripsNewlinesFromComment(t *testing.T) {
 	// Newline was stripped, so there is no injected second line.
 	require.NotContains(t, pub, "\nmalicious-extra-line")
 	require.Contains(t, pub, "goodmalicious-extra-line")
+}
+
+func TestGenerateED25519Encrypted_RoundTrips(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "id_enc")
+	pub, err := GenerateED25519Encrypted(path, "enc@host", "s3cr3t-pass")
+	require.NoError(t, err)
+	require.Contains(t, pub, "ssh-ed25519")
+
+	data, err := os.ReadFile(path)
+	require.NoError(t, err)
+
+	// Wrong/empty passphrase must fail; correct one must recover the key.
+	_, err = gssh.ParseRawPrivateKey(data)
+	require.Error(t, err, "encrypted key must not parse without a passphrase")
+
+	signer, err := gssh.ParsePrivateKeyWithPassphrase(data, []byte("s3cr3t-pass"))
+	require.NoError(t, err)
+	require.Contains(t, string(gssh.MarshalAuthorizedKey(signer.PublicKey())), "ssh-ed25519")
+}
+
+func TestGenerateED25519Encrypted_EmptyPassphraseIsPlain(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "id_plain")
+	_, err := GenerateED25519Encrypted(path, "plain@host", "")
+	require.NoError(t, err)
+
+	data, err := os.ReadFile(path)
+	require.NoError(t, err)
+	_, err = gssh.ParseRawPrivateKey(data) // parses without a passphrase
+	require.NoError(t, err)
 }
 
 func osIsUnix() bool { return os.PathSeparator == '/' }

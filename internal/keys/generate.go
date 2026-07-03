@@ -4,6 +4,7 @@ package keys
 import (
 	"crypto/ed25519"
 	"crypto/rand"
+	"encoding/pem"
 	"errors"
 	"fmt"
 	"os"
@@ -12,12 +13,17 @@ import (
 	gssh "golang.org/x/crypto/ssh"
 )
 
-// GenerateED25519 writes a new ed25519 private key to keyPath (mode 0600)
-// and its public key to keyPath+".pub" (mode 0644). Returns the public-key
-// line (OpenSSH format). Refuses to overwrite an existing private key.
+// GenerateED25519 writes a new unencrypted ed25519 keypair. See
+// GenerateED25519Encrypted for the passphrase-protected form.
 func GenerateED25519(keyPath, comment string) (pubLine string, err error) {
-	// Reject control characters in the comment so they can't smuggle extra
-	// lines into authorized_keys when the returned pub line is appended there.
+	return GenerateED25519Encrypted(keyPath, comment, "")
+}
+
+// GenerateED25519Encrypted writes a new ed25519 private key to keyPath
+// (mode 0600) and its public key to keyPath+".pub" (mode 0644), returning the
+// OpenSSH public-key line. When passphrase != "" the private key is encrypted
+// with it. Refuses to overwrite an existing private key.
+func GenerateED25519Encrypted(keyPath, comment, passphrase string) (pubLine string, err error) {
 	comment = strings.Map(func(r rune) rune {
 		if r == '\n' || r == '\r' {
 			return -1
@@ -38,15 +44,19 @@ func GenerateED25519(keyPath, comment string) (pubLine string, err error) {
 		return "", fmt.Errorf("generate ed25519: %w", err)
 	}
 
-	pemBlock, err2 := gssh.MarshalPrivateKey(priv, comment)
-	if err2 != nil {
-		return "", fmt.Errorf("marshal private key: %w", err2)
+	var pemBlock *pem.Block
+	var mErr error
+	if passphrase == "" {
+		pemBlock, mErr = gssh.MarshalPrivateKey(priv, comment)
+	} else {
+		pemBlock, mErr = gssh.MarshalPrivateKeyWithPassphrase(priv, comment, []byte(passphrase))
+	}
+	if mErr != nil {
+		return "", fmt.Errorf("marshal private key: %w", mErr)
 	}
 	if err = os.WriteFile(keyPath, encodePEM(pemBlock), 0o600); err != nil {
 		return "", fmt.Errorf("write private key %s: %w", keyPath, err)
 	}
-
-	// Remove the private key file if any subsequent step fails.
 	defer func() {
 		if err != nil {
 			os.Remove(keyPath)
@@ -59,7 +69,7 @@ func GenerateED25519(keyPath, comment string) (pubLine string, err error) {
 		return "", err
 	}
 	pubLine = string(gssh.MarshalAuthorizedKey(sshPub))
-	pubLine = pubLine[:len(pubLine)-1] + " " + comment + "\n" // append comment
+	pubLine = pubLine[:len(pubLine)-1] + " " + comment + "\n"
 	if err = os.WriteFile(keyPath+".pub", []byte(pubLine), 0o644); err != nil {
 		err = fmt.Errorf("write public key %s: %w", keyPath+".pub", err)
 		return "", err
