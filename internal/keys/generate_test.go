@@ -90,3 +90,69 @@ func TestGenerateED25519Encrypted_EmptyPassphraseIsPlain(t *testing.T) {
 }
 
 func osIsUnix() bool { return os.PathSeparator == '/' }
+
+func TestRemoveGenerated_RemovesKeyPubAndRecoveryFiles(t *testing.T) {
+	dir := t.TempDir()
+	keyPath := filepath.Join(dir, "id_test")
+	_, err := GenerateED25519Encrypted(keyPath, "c@sshm", "pw")
+	require.NoError(t, err)
+	_, err = WriteRecovery(keyPath, "pw")
+	require.NoError(t, err)
+
+	require.FileExists(t, keyPath)
+	require.FileExists(t, keyPath+".pub")
+	require.FileExists(t, keyPath+".passphrase")
+
+	RemoveGenerated(keyPath)
+
+	require.NoFileExists(t, keyPath)
+	require.NoFileExists(t, keyPath+".pub")
+	require.NoFileExists(t, keyPath+".passphrase")
+}
+
+func TestRemoveGenerated_IgnoresMissingFiles(t *testing.T) {
+	dir := t.TempDir()
+	keyPath := filepath.Join(dir, "id_missing")
+	// None of these files exist; RemoveGenerated must not panic or error.
+	require.NotPanics(t, func() { RemoveGenerated(keyPath) })
+}
+
+// TestRemoveGenerated_CleansUpAfterFatalWriteRecoveryFailure mirrors the
+// scenario a caller (gen-key CLI / gen_key MCP tool) hits on a retry: a
+// stale .passphrase file is already present (e.g. left over from a prior
+// partial run), so WriteRecovery refuses to overwrite it and returns an
+// error. That is a genuinely fatal error occurring *after* the key was
+// already written to disk, so the caller must clean up the orphaned key
+// files — otherwise a subsequent retry would hit
+// GenerateED25519Encrypted's "key already exists" refusal and wedge
+// permanently. This exercises that exact fatal-path/cleanup contract at the
+// keys layer, since exercising it through the CLI/MCP orchestration would
+// require an encrypted key (passphrase != ""), which also drives the real
+// keystore.StoreAndLoad call — unsafe to run outside SSHM_KEYSTORE_E2E
+// because on macOS that touches the real login keychain.
+func TestRemoveGenerated_CleansUpAfterFatalWriteRecoveryFailure(t *testing.T) {
+	dir := t.TempDir()
+	keyPath := filepath.Join(dir, "id_test")
+
+	// Simulate the stale recovery file that makes WriteRecovery fail.
+	require.NoError(t, os.WriteFile(keyPath+".passphrase", []byte("stale"), 0o600))
+
+	_, err := GenerateED25519Encrypted(keyPath, "c@sshm", "pw")
+	require.NoError(t, err)
+	require.FileExists(t, keyPath)
+	require.FileExists(t, keyPath+".pub")
+
+	_, err = WriteRecovery(keyPath, "pw")
+	require.Error(t, err, "WriteRecovery must refuse to overwrite an existing recovery file")
+
+	// Mirror the cleanup callers perform on this fatal path.
+	RemoveGenerated(keyPath)
+
+	require.NoFileExists(t, keyPath, "orphaned private key must be removed on retry-wedging failures")
+	require.NoFileExists(t, keyPath+".pub", "orphaned public key must be removed on retry-wedging failures")
+	require.NoFileExists(t, keyPath+".passphrase", "stale recovery file must be removed so a retry can proceed")
+
+	// A retry now succeeds instead of hitting "key already exists".
+	_, err = GenerateED25519Encrypted(keyPath, "c@sshm", "pw2")
+	require.NoError(t, err, "retry after cleanup must not be wedged")
+}

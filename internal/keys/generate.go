@@ -76,3 +76,17 @@ func GenerateED25519Encrypted(keyPath, comment, passphrase string) (pubLine stri
 	}
 	return pubLine, nil
 }
+
+// RemoveGenerated removes the private key, its .pub file, and any
+// keyPath+".passphrase" recovery file, ignoring errors from each removal.
+//
+// Callers use this when a step *after* GenerateED25519Encrypted has already
+// succeeded fails fatally (e.g. WriteRecovery or a config save) — without
+// this cleanup, the key file would be left orphaned on disk and a retry
+// would hit GenerateED25519Encrypted's "key already exists" refusal,
+// wedging the caller permanently.
+func RemoveGenerated(keyPath string) {
+	os.Remove(keyPath)
+	os.Remove(keyPath + ".pub")
+	os.Remove(keyPath + ".passphrase")
+}

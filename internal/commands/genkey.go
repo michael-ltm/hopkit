@@ -48,22 +48,26 @@ func newGenKeyCmd() *cobra.Command {
 				return err
 			}
 
-			s.KeyPath = actualPath
-			if err := saveConfig(cfg); err != nil {
-				return err
-			}
-
 			var recoveryPath string
 			var store keystore.Result
 			if passphrase != "" {
-				store, err = keystore.StoreAndLoad(expanded, passphrase)
-				if err != nil {
-					return fmt.Errorf("key generated at %s but keystore step failed: %w", expanded, err)
-				}
+				// Best-effort: the encrypted key on disk is the primary
+				// deliverable and is valid regardless of agent/keychain
+				// availability (e.g. a headless host with no ssh-agent), so
+				// a keystore failure must not fail gen-key or orphan the key.
+				store = keystore.BestEffort(keystore.StoreAndLoad(expanded, passphrase))
+
 				recoveryPath, err = keys.WriteRecovery(expanded, passphrase)
 				if err != nil {
-					return err
+					keys.RemoveGenerated(expanded)
+					return fmt.Errorf("write recovery for %s: %w", expanded, err)
 				}
+			}
+
+			s.KeyPath = actualPath
+			if err := saveConfig(cfg); err != nil {
+				keys.RemoveGenerated(expanded)
+				return fmt.Errorf("save config after generating %s: %w", expanded, err)
 			}
 
 			if flagJSON {

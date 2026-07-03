@@ -75,3 +75,32 @@ func TestRunProvision_SetsKeyConfirmedOnlyAfterTestPasses(t *testing.T) {
 		require.False(t, confirmed, "a failed connectivity test must never mark the key as confirmed")
 	})
 }
+
+// TestPasswordAuthReportedOff exercises the pure verification helper that
+// `hardenDisablePassword` uses to confirm password auth is *actually* off
+// after installing the sshd_config.d drop-in and reloading — not just that
+// `sshd -t` (syntax check) passed. A passing syntax check says nothing about
+// whether the main sshd_config even includes drop-in files (requires
+// `Include /etc/ssh/sshd_config.d/*.conf`), so without this check the drop-in
+// could be silently inert while the caller reports "password login disabled".
+func TestPasswordAuthReportedOff(t *testing.T) {
+	tests := []struct {
+		name string
+		in   string
+		want bool
+	}{
+		{"disabled, lowercase", "passwordauthentication no\n", true},
+		{"disabled, mixed case as sshd -T sometimes varies", "PasswordAuthentication no\n", true},
+		{"disabled, no trailing newline", "passwordauthentication no", true},
+		{"still enabled", "passwordauthentication yes\n", false},
+		{"empty output — drop-in not honored / grep found nothing", "", false},
+		{"whitespace only", "   \n", false},
+		{"unexpected value", "passwordauthentication maybe\n", false},
+		{"leading/trailing whitespace around a good line", "  passwordauthentication no  \n", true},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			require.Equal(t, tt.want, passwordAuthReportedOff(tt.in))
+		})
+	}
+}

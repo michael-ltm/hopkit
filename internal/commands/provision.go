@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"path/filepath"
+	"strings"
 
 	"github.com/michael-ltm/sshm/internal/config"
 	"github.com/michael-ltm/sshm/internal/keys"
@@ -155,7 +156,13 @@ func hardenedSuffix(h bool) string {
 }
 
 // hardenDisablePassword installs a drop-in that disables password auth, after
-// validating with `sshd -t` so a bad config can never lock the user out.
+// validating with `sshd -t` so a bad config can never lock the user out. It
+// then verifies, via `sshd -T`, that password auth is *actually* off — a
+// passing `sshd -t` only proves the drop-in is syntactically valid, not that
+// the main sshd_config actually includes drop-in files at all (that requires
+// an `Include /etc/ssh/sshd_config.d/*.conf` directive). Without this
+// verification the drop-in could be silently inert while the caller reports
+// success.
 //
 // internal/bootstrap.Run deliberately does NOT touch sshd settings (it only
 // installs baseline tooling like fail2ban), so there is no existing reusable
@@ -176,5 +183,30 @@ func hardenDisablePassword(ctx context.Context, s *config.Server) error {
 	if res.ExitCode != 0 {
 		return fmt.Errorf("harden exited %d: %s", res.ExitCode, res.Stderr)
 	}
+
+	verify, err := cli.Exec(ctx, `sshd -T 2>/dev/null | grep -i '^passwordauthentication '`)
+	if err != nil {
+		return fmt.Errorf("verify password auth disabled: %w", err)
+	}
+	if !passwordAuthReportedOff(verify.Stdout) {
+		return fmt.Errorf(
+			"drop-in installed and sshd reloaded, but sshd -T still reports %q — the main sshd_config likely lacks `Include /etc/ssh/sshd_config.d/*.conf`, so the drop-in is not being applied; password login was NOT disabled",
+			strings.TrimSpace(verify.Stdout))
+	}
 	return nil
+}
+
+// passwordAuthReportedOff reports whether the (possibly multi-line) output of
+// `sshd -T | grep -i '^passwordauthentication '` shows password auth as
+// actually disabled. It is a pure function so the verification logic can be
+// unit-tested without a real SSH connection.
+func passwordAuthReportedOff(grepOutput string) bool {
+	for _, line := range strings.Split(grepOutput, "\n") {
+		line = strings.ToLower(strings.TrimSpace(line))
+		if line == "" {
+			continue
+		}
+		return line == "passwordauthentication no"
+	}
+	return false
 }

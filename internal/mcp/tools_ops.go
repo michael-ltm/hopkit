@@ -86,13 +86,16 @@ func handleGenKey(ctx context.Context, deps Deps, args map[string]any) (any, err
 	if err != nil {
 		return errResult("keygen", err.Error()), nil
 	}
-	store, err := keystore.StoreAndLoad(expanded, passphrase)
-	if err != nil {
-		return errResult("keystore", err.Error()), nil
-	}
+	// Best-effort: the encrypted key on disk is the primary deliverable and
+	// is valid regardless of agent/keychain availability (e.g. a headless
+	// host with no ssh-agent), so a keystore failure must not fail gen_key
+	// or orphan the key file already written to disk.
+	store := keystore.BestEffort(keystore.StoreAndLoad(expanded, passphrase))
+
 	recoveryPath, err := keys.WriteRecovery(expanded, passphrase)
 	if err != nil {
-		return errResult("recovery", err.Error()), nil
+		keys.RemoveGenerated(expanded)
+		return errResult("recovery", fmt.Errorf("write recovery for %s: %w", expanded, err).Error()), nil
 	}
 
 	// Use Update so the KeyPath/Auth write is serialized against concurrent mutations.
@@ -105,7 +108,8 @@ func handleGenKey(ctx context.Context, deps Deps, args map[string]any) (any, err
 		}
 		return nil
 	}); uerr != nil {
-		return errResult("config", uerr.Error()), nil
+		keys.RemoveGenerated(expanded)
+		return errResult("config", fmt.Errorf("update config after generating %s: %w", expanded, uerr).Error()), nil
 	}
 	audit(deps, safety.Entry{Tool: "gen_key", Alias: alias, Reason: reason, Result: "ok"})
 	return map[string]any{
