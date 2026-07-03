@@ -63,12 +63,24 @@ GenerateED25519Encrypted(keyPath, comment, passphrase string) (pubLine string, e
 - The atomic-cleanup `defer os.Remove(keyPath)` on error is preserved.
 
 **Passphrase model (decided): per-key random.**
-sshm generates a strong random passphrase (diceware-style, ~4 words + digits,
-generated from `crypto/rand`), stores it in the OS keystore, **and prints it
-once** to the CLI so the user can save it to their password manager. Each key
-gets its own passphrase → per-key blast radius. Rationale: a shared passphrase
-means one cracked file endangers all; independent passphrases don't. The
-one-time print is the recovery path if the keystore is ever lost.
+sshm generates a strong per-key passphrase — a high-entropy token from
+`crypto/rand` (32 bytes, base64url; the passphrase is machine-stored and never
+typed, so memorability has no value and a wordlist would only weaken it). It is
+stored in the OS keystore. Each key gets its own passphrase → per-key blast
+radius; a shared passphrase means one cracked file endangers all, independent
+ones don't.
+
+**Recovery + the "never through AI" rule.** The passphrase must reach the user
+(to save in a password manager) as a fallback if the keystore is ever lost —
+but it must never pass through the AI text channel. Mechanism:
+
+- On generation, write the passphrase once to a `0600` recovery file at
+  `<keyPath>.passphrase`.
+- The **CLI** additionally echoes it to the human terminal and tells the user
+  to move it to their password manager and delete the file.
+- The **MCP/AI** result returns only a *pointer* — "passphrase stored in
+  keystore; recovery copy at `<path>` (move to your password manager, then
+  delete)" — never the passphrase value.
 
 **(b) New package `internal/keystore` — cross-platform passphrase/agent glue.**
 One interface, three build-tagged implementations. This is where today's
@@ -102,23 +114,32 @@ type Result struct {
   logout/reboot. Persisted = false, Note explains it; if `gnome-keyring` /
   `keychain` is detected, use it and set Persisted = true.
 
-**(c) New orchestrator `provision`.**
-CLI: `sshm provision <alias> --host … [--user …] [--port …] [--harden]`.
-MCP tool: `provision` (write-class, requires `reason`, audited).
-Steps, each idempotent and each failure surfaced:
+**(c) New CLI orchestrator `sshm provision`.**
+`sshm provision <alias> [--path …] [--harden]` (the alias must already exist
+with host/user/port; add it first with `sshm add` or `add_server`). Because
+`copy-id` needs the server password, full end-to-end provisioning is a **CLI**
+command (it can prompt for the password on the TTY); the password never leaves
+the terminal. Steps, each surfaced on failure:
 
-1. `gen_key` (encrypted, per-key random passphrase) → `keystore.StoreAndLoad`.
-2. `copy_id` — install the public key. **Password stays on the CLI**; the
-   MCP tool returns the "run `sshm copy-id <alias>` in a terminal"
-   instruction exactly as `copy_id` does today (password never through AI).
-3. `add_server` with `auth = "key"`, `key_path` set.
+1. `gen_key` (encrypted, per-key random passphrase) → `keystore.StoreAndLoad`
+   → recovery file.
+2. `copy_id` — prompt for the server password on the TTY, install the public
+   key (one-shot password, never persisted).
+3. Set the alias to `auth = "key"`, `key_path`.
 4. `test_connection`.
-5. If `--harden` (CLI) / `harden:true` (MCP) **and** step 4 passed: disable
-   password auth server-side via the existing `bootstrap` path (drop-in
-   `/etc/ssh/sshd_config.d/*.conf`, `sshd -t` before reload — never lock the
-   user out on a bad config).
+5. If `--harden` **and** step 4 passed: disable password auth server-side via
+   the existing `bootstrap` path (drop-in `/etc/ssh/sshd_config.d/*.conf`,
+   `sshd -t` before reload — never lock the user out on a bad config).
 
 `provision` composes existing verbs; it does not reimplement them.
+
+**MCP/AI path — no new tool.** The AI does not need a `provision` MCP tool: the
+security default is already carried by (i) `gen_key` now encrypting +
+storing + recovery-pointer, and (ii) `add_server` already defaulting to
+`auth=key`. The AI composes `add_server` → `gen_key` and then hands the user
+the CLI instruction for `copy-id`/`provision` (password stays off the AI
+channel, exactly as `copy_id` does today). Sequencing lives in SKILL.md
+(Layer A). A dedicated MCP `provision` tool is deferred (YAGNI) — see §6.
 
 ### 3.2 Layer A — SKILL.md (soft steering for the AI)
 
@@ -142,9 +163,9 @@ Add a "Secure server onboarding" section to
 - `generate`: encrypted key round-trips — `ssh-keygen -y -P <pass>` (or
   `gssh.ParsePrivateKeyWithPassphrase`) recovers the same public key; empty
   passphrase still yields a parseable unencrypted key.
-- `provision`: orchestration tested against fake step functions — asserts
-  order, that a failed `test_connection` blocks harden, that `copy_id`
-  defers to CLI, and that audit entries are written.
+- `provision`: orchestration tested against injected step functions —
+  asserts step order and that a failed `test_connection` blocks the harden
+  step (never touch sshd if the key isn't confirmed working).
 - Cross-compile gate: `GOOS=windows/linux/darwin go build ./...` all green
   (as enforced in v0.4.1).
 
@@ -163,6 +184,9 @@ Add a "Secure server onboarding" section to
 
 ## 6. YAGNI (explicitly out of scope)
 
+- A dedicated MCP `provision` tool (the AI path is already secured by an
+  encrypting `gen_key` + `add_server` + SKILL.md sequencing; a bespoke tool
+  only saves round-trips and would need the password off-channel anyway).
 - Cloud/remote passphrase escrow or backup.
 - Passphrase rotation UI (today's manual `ssh-keygen -p` suffices).
 - Migrating existing on-disk unencrypted keys (a separate one-shot, not the
