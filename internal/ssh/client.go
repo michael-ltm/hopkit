@@ -82,11 +82,11 @@ func Address(s *config.Server) string {
 func buildAuth(s *config.Server, opts BuildOpts) ([]gssh.AuthMethod, io.Closer, error) {
 	switch s.Auth {
 	case config.AuthKey:
-		key, err := loadPrivateKey(s.KeyPath)
+		key, closer, err := loadKeySigner(s.KeyPath)
 		if err != nil {
 			return nil, nil, err
 		}
-		return []gssh.AuthMethod{gssh.PublicKeys(key)}, nil, nil
+		return []gssh.AuthMethod{gssh.PublicKeys(key)}, closer, nil
 	case config.AuthPassword:
 		if opts.Password == "" {
 			return nil, nil, errors.New("password not provided for auth=password (use --ask-password or keychain)")
@@ -103,20 +103,47 @@ func buildAuth(s *config.Server, opts BuildOpts) ([]gssh.AuthMethod, io.Closer, 
 	}
 }
 
-func loadPrivateKey(path string) (gssh.Signer, error) {
+// loadKeySigner returns a signer for the private key at path. Unencrypted
+// keys are parsed directly (nil closer). Encrypted keys are resolved through
+// the running ssh-agent by exact public-key match, so a keychain-backed agent
+// supplies signatures without sshm ever handling the passphrase; the returned
+// closer then owns the agent socket and must stay open while the signer is
+// in use.
+func loadKeySigner(path string) (gssh.Signer, io.Closer, error) {
 	exp, err := ExpandHome(path)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 	data, err := os.ReadFile(exp)
 	if err != nil {
-		return nil, fmt.Errorf("read key %s: %w", exp, err)
+		return nil, nil, fmt.Errorf("read key %s: %w", exp, err)
 	}
 	signer, err := gssh.ParsePrivateKey(data)
-	if err != nil {
-		return nil, fmt.Errorf("parse key %s: %w", exp, err)
+	if err == nil {
+		return signer, nil, nil
 	}
-	return signer, nil
+	var missing *gssh.PassphraseMissingError
+	if !errors.As(err, &missing) {
+		return nil, nil, fmt.Errorf("parse key %s: %w", exp, err)
+	}
+	pub := missing.PublicKey
+	if pub == nil {
+		// Legacy PEM encryption hides the public half; recover it from the
+		// sibling .pub file when present.
+		if pubData, perr := os.ReadFile(exp + ".pub"); perr == nil {
+			if p, _, _, _, perr2 := gssh.ParseAuthorizedKey(pubData); perr2 == nil {
+				pub = p
+			}
+		}
+	}
+	if pub == nil {
+		return nil, nil, fmt.Errorf("key %s is encrypted and its public key is unknown; ssh-add it or create %s.pub: %w", exp, exp, err)
+	}
+	agentSigner, closer, aerr := agentSignerFor(pub)
+	if aerr != nil {
+		return nil, nil, fmt.Errorf("key %s is encrypted and unavailable via ssh-agent: %w", exp, aerr)
+	}
+	return agentSigner, closer, nil
 }
 
 // ExpandHome expands a leading ~ to the current user's home directory.
