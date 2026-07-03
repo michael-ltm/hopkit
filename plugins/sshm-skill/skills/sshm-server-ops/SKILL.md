@@ -36,6 +36,27 @@ dangerous commands.
 - `tail_logs` — read the tail of a remote log file (`lines` clamped to
   [1, 5000]).
 
+## Secure server onboarding (default)
+
+When the user asks to add or onboard a server, default to key authentication —
+never password auth unless they explicitly insist:
+
+1. `add_server` with `auth=key` (this is already the default when a key is
+   involved).
+2. `gen_key` — this now generates a **passphrase-encrypted** key, stores the
+   passphrase in the OS keystore, and writes a `0600` recovery file. The tool
+   result gives you `recovery_file` (a path) but **never** the passphrase
+   itself — do not ask for or echo passphrases or private-key contents.
+3. Tell the user to run `sshm copy-id <alias>` (or `sshm provision <alias>`)
+   in a terminal to install the key — copy-id needs the server password, which
+   must stay on the CLI and never pass through you.
+4. After key auth works, offer to disable password login on the server
+   (`sshm provision <alias> --harden`, or the bootstrap path). Recommend it for
+   internet-facing servers; ask first — the user may have others who log in
+   with passwords.
+
+Never place private-key bytes, passphrases, or recovery-file contents in chat.
+
 ## Rules
 
 1. Prefer `get_status` / `test_connection` before acting on a server.

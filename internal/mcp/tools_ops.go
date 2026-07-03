@@ -11,6 +11,7 @@ import (
 	"github.com/michael-ltm/sshm/internal/bootstrap"
 	"github.com/michael-ltm/sshm/internal/config"
 	"github.com/michael-ltm/sshm/internal/keys"
+	"github.com/michael-ltm/sshm/internal/keystore"
 	"github.com/michael-ltm/sshm/internal/safety"
 	sshpkg "github.com/michael-ltm/sshm/internal/ssh"
 )
@@ -77,10 +78,26 @@ func handleGenKey(ctx context.Context, deps Deps, args map[string]any) (any, err
 	if err != nil {
 		return errResult("path", err.Error()), nil
 	}
-	pub, err := keys.GenerateED25519(expanded, alias+"@sshm")
+	passphrase, err := keys.RandomPassphrase()
 	if err != nil {
 		return errResult("keygen", err.Error()), nil
 	}
+	pub, err := keys.GenerateED25519Encrypted(expanded, alias+"@sshm", passphrase)
+	if err != nil {
+		return errResult("keygen", err.Error()), nil
+	}
+	// Best-effort: the encrypted key on disk is the primary deliverable and
+	// is valid regardless of agent/keychain availability (e.g. a headless
+	// host with no ssh-agent), so a keystore failure must not fail gen_key
+	// or orphan the key file already written to disk.
+	store := keystore.BestEffort(keystore.StoreAndLoad(expanded, passphrase))
+
+	recoveryPath, err := keys.WriteRecovery(expanded, passphrase)
+	if err != nil {
+		keys.RemoveGenerated(expanded)
+		return errResult("recovery", fmt.Errorf("write recovery for %s: %w", expanded, err).Error()), nil
+	}
+
 	// Use Update so the KeyPath/Auth write is serialized against concurrent mutations.
 	if uerr := config.Update(deps.ConfigPath, func(cfg *config.Config) error {
 		if s, ok := cfg.Servers[alias]; ok {
@@ -91,10 +108,19 @@ func handleGenKey(ctx context.Context, deps Deps, args map[string]any) (any, err
 		}
 		return nil
 	}); uerr != nil {
-		return errResult("config", uerr.Error()), nil
+		keys.RemoveGenerated(expanded)
+		return errResult("config", fmt.Errorf("update config after generating %s: %w", expanded, uerr).Error()), nil
 	}
 	audit(deps, safety.Entry{Tool: "gen_key", Alias: alias, Reason: reason, Result: "ok"})
-	return map[string]any{"alias": alias, "key_path": expanded, "public_key": strings.TrimSpace(pub)}, nil
+	return map[string]any{
+		"alias":         alias,
+		"key_path":      expanded,
+		"public_key":    strings.TrimSpace(pub),
+		"encrypted":     true,
+		"persisted":     store.Persisted,
+		"recovery_file": recoveryPath,
+		"note":          store.Note,
+	}, nil
 }
 
 func handleCopyID(ctx context.Context, deps Deps, args map[string]any) (any, error) {

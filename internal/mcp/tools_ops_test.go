@@ -2,6 +2,7 @@ package mcp
 
 import (
 	"context"
+	"os"
 	"path/filepath"
 	"testing"
 
@@ -10,6 +11,12 @@ import (
 )
 
 func TestHandleGenKey_CreatesKeyAndUpdatesConfig(t *testing.T) {
+	// gen_key now always encrypts and persists to the real keystore (no
+	// unencrypted escape hatch on the MCP path), so this exercises the real
+	// keychain/ssh-agent. Opt-in only. See Task 7/8 notes.
+	if os.Getenv("SSHM_KEYSTORE_E2E") == "" {
+		t.Skip("set SSHM_KEYSTORE_E2E=1 to exercise the real keystore path")
+	}
 	dir := t.TempDir()
 	cfgPath := filepath.Join(dir, "config.toml")
 	cfg := config.New()
@@ -34,6 +41,10 @@ func TestHandleGenKey_CreatesKeyAndUpdatesConfig(t *testing.T) {
 }
 
 func TestHandleGenKey_PreservesAuthKeyIfAlreadyKey(t *testing.T) {
+	// Same reason as above: gen_key now always hits the real keystore.
+	if os.Getenv("SSHM_KEYSTORE_E2E") == "" {
+		t.Skip("set SSHM_KEYSTORE_E2E=1 to exercise the real keystore path")
+	}
 	dir := t.TempDir()
 	cfgPath := filepath.Join(dir, "config.toml")
 	cfg := config.New()
@@ -52,6 +63,29 @@ func TestHandleGenKey_PreservesAuthKeyIfAlreadyKey(t *testing.T) {
 	cfg2, err := config.Load(cfgPath)
 	require.NoError(t, err)
 	require.Equal(t, config.AuthKey, cfg2.Servers["h"].Auth)
+}
+
+func TestHandleGenKey_EncryptsAndHidesPassphrase(t *testing.T) {
+	// Opt-in only (real keystore side effects). See Task 7 note.
+	if os.Getenv("SSHM_KEYSTORE_E2E") == "" {
+		t.Skip("set SSHM_KEYSTORE_E2E=1 to exercise the real keystore path")
+	}
+	dir := t.TempDir()
+	cfgPath := filepath.Join(dir, "config.toml")
+	cfg := config.New()
+	cfg.Servers["srv"] = &config.Server{Host: "1.2.3.4", User: "x", Auth: config.AuthPassword}
+	require.NoError(t, config.Save(cfgPath, cfg))
+	deps := Deps{ConfigPath: cfgPath, AuditPath: filepath.Join(dir, "a.log"), AllowWrite: true}
+
+	keyPath := filepath.Join(dir, "id_test3")
+	res, err := handleGenKey(context.Background(), deps, map[string]any{
+		"alias": "srv", "path": keyPath, "reason": "test",
+	})
+	require.NoError(t, err)
+	m := res.(map[string]any)
+	require.Equal(t, true, m["encrypted"])
+	require.NotContains(t, m, "passphrase") // never returned
+	require.Contains(t, m["recovery_file"].(string), ".passphrase")
 }
 
 func TestHandleTailLogs_RequiresReason(t *testing.T) {

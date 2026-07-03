@@ -4,6 +4,16 @@ All notable changes to this project will be documented in this file. Format: [Ke
 
 ## [Unreleased]
 
+## [0.5.0] — 2026-07-04
+
+### Added
+- Secure-by-default key provisioning. `gen_key` (CLI and MCP) now generates a **passphrase-encrypted** ed25519 key, stores the passphrase in the OS keystore (macOS login keychain via `ssh-add --apple-use-keychain`; Windows OpenSSH agent / DPAPI; Linux ssh-agent, session-only), and writes a `0600` recovery file. The MCP result returns only a recovery-file pointer — never the passphrase.
+- `sshm provision <alias> [--harden]` — one command to generate an encrypted key, install it (one-shot password on the CLI), verify key auth, and optionally disable password login on the server. `--harden` refuses to run unless the connectivity test passed, and verifies via `sshd -T` that password auth is actually off before reporting success.
+- `internal/keystore` package: cross-platform passphrase storage + agent loading, reusing the per-OS agent dialer.
+
+### Changed
+- `sshm gen-key` encrypts by default; pass `--no-encrypt` for the old plaintext behaviour. Agent/keystore loading is best-effort — a headless host with no agent still generates and registers the encrypted key (reported as not-persisted) rather than failing.
+
 ## [0.4.1] — 2026-07-03
 
 ### Added

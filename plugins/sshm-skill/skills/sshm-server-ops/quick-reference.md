@@ -14,6 +14,10 @@
 | `upload` | `alias`, `local_path`, `remote_path`, `reason` | — | `{uploaded: true, bytes}` |
 | `download` | `alias`, `remote_path`, `local_path`, `reason` | — | `{downloaded: true, bytes}` |
 | `bootstrap` | `alias`, `reason` | — | `{completed, sshd_state}` |
-| `gen_key` | `alias`, `path`, `reason` | — | `{key_path, public_key}` |
+| `gen_key` | `alias`, `path`, `reason` | — | `{key_path, public_key, encrypted, persisted, recovery_file}` |
 | `copy_id` | `alias`, `reason` | — | `{action_required: "<cli instruction>"}` |
 | `tail_logs` | `alias`, `path`, `reason` | `lines` (clamped to [1, 5000]) | `{lines: "<masked tail>"}` |
+
+## Common onboarding commands
+
+- `sshm provision <alias> [--harden]` — encrypted key + install + test (+ optionally disable password login). The secure default for onboarding.
