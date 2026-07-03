@@ -17,3 +17,7 @@
 | `gen_key` | `alias`, `path`, `reason` | — | `{key_path, public_key}` |
 | `copy_id` | `alias`, `reason` | — | `{action_required: "<cli instruction>"}` |
 | `tail_logs` | `alias`, `path`, `reason` | `lines` (clamped to [1, 5000]) | `{lines: "<masked tail>"}` |
+
+## Common onboarding commands
+
+- `sshm provision <alias> [--harden]` — encrypted key + install + test (+ optionally disable password login). The secure default for onboarding.
