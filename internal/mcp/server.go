@@ -7,10 +7,11 @@ import (
 // Deps is the non-global state an MCP server needs: where the config and
 // audit log live. Passing these explicitly keeps the server testable.
 type Deps struct {
-	ConfigPath string
-	AuditPath  string
-	AllowWrite bool   // when false, write/exec tools are not registered
-	Version    string // build version (set by ldflags via commands.Version); falls back to "dev"
+	ConfigPath      string
+	AuditPath       string
+	AllowWrite      bool   // when false, write/exec tools are not registered
+	Version         string // build version (set by ldflags via commands.Version); falls back to "dev"
+	TransferManager *transferManager
 }
 
 // NewServer builds the MCP server with every sshm tool registered, and
@@ -19,6 +20,9 @@ func NewServer(deps Deps) (*server.MCPServer, []string) {
 	ver := deps.Version
 	if ver == "" {
 		ver = "dev"
+	}
+	if deps.TransferManager == nil {
+		deps.TransferManager = defaultTransferManager
 	}
 	s := server.NewMCPServer("sshm", ver)
 	var names []string

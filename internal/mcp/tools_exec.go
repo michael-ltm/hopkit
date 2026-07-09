@@ -74,7 +74,7 @@ func handleExec(ctx context.Context, deps Deps, args map[string]any) (any, error
 	defer cli.Close()
 
 	if detach {
-		return runDetached(ctx, deps, cli, alias, command, reason, unsafe)
+		return runDetached(ctx, deps, cli, alias, command, reason, unsafe, strArg(args, "platform"))
 	}
 
 	timeout := execTimeout(args)
@@ -131,19 +131,15 @@ func handleExec(ctx context.Context, deps Deps, args map[string]any) (any, error
 // runDetached launches command in the background on a POSIX remote and returns
 // immediately. Output is redirected to a log file the caller can poll with
 // tail_logs. timeout_seconds is ignored for detached commands.
-func runDetached(ctx context.Context, deps Deps, cli *sshpkg.Client, alias, command, reason string, unsafe bool) (any, error) {
-	logPath := fmt.Sprintf("/tmp/sshm-detach-%d.log", time.Now().UnixNano())
-	// nohup + setsid (when available) fully detaches from the SSH session so the
-	// command survives the connection closing. Fall back to plain nohup if
-	// setsid is missing. </dev/null detaches stdin; output goes to logPath.
-	inner := shellQuoteArg(command)
-	wrapper := fmt.Sprintf(
-		"if command -v setsid >/dev/null 2>&1; then nohup setsid sh -c %s </dev/null >%s 2>&1 & else nohup sh -c %s </dev/null >%s 2>&1 & fi",
-		inner, shellQuoteArg(logPath), inner, shellQuoteArg(logPath))
+func runDetached(ctx context.Context, deps Deps, cli *sshpkg.Client, alias, command, reason string, unsafe bool, platform string) (any, error) {
+	if strings.TrimSpace(platform) == "" || strings.EqualFold(platform, "auto") {
+		platform = detectRemoteDetachPlatform(ctx, cli)
+	}
+	launcher := buildDetachLauncher(platform, command, time.Now().UnixNano())
 
 	launchCtx, cancel := context.WithTimeout(ctx, detachLaunchTimeout)
 	defer cancel()
-	res, err := cli.Exec(launchCtx, wrapper)
+	res, err := cli.Exec(launchCtx, launcher.Command)
 	if err != nil {
 		if errors.Is(err, context.DeadlineExceeded) || errors.Is(err, context.Canceled) {
 			return errResult("exec", "detach launcher timed out before the command could be started"), nil
@@ -162,9 +158,61 @@ func runDetached(ctx context.Context, deps Deps, cli *sshpkg.Client, alias, comm
 	return map[string]any{
 		"alias":    alias,
 		"detached": true,
-		"log_path": logPath,
+		"platform": launcher.Platform,
+		"log_path": launcher.LogPath,
+		"stdout":   safety.MaskSecrets(res.Stdout),
 		"note":     "running in background; poll with tail_logs on log_path",
 	}, nil
+}
+
+type detachLauncher struct {
+	Platform string
+	Command  string
+	LogPath  string
+}
+
+func detectRemoteDetachPlatform(ctx context.Context, cli *sshpkg.Client) string {
+	probeCtx, cancel := context.WithTimeout(ctx, 5*time.Second)
+	defer cancel()
+	res, err := cli.Exec(probeCtx, "cmd /c ver")
+	if err != nil {
+		return "posix"
+	}
+	return detectDetachPlatform(res.Stdout, res.Stderr)
+}
+
+func detectDetachPlatform(stdout, stderr string) string {
+	raw := strings.ToLower(stdout + "\n" + stderr)
+	if strings.Contains(raw, "microsoft windows") || strings.Contains(raw, "windows [version") {
+		return "windows"
+	}
+	return "posix"
+}
+
+func buildDetachLauncher(platform, command string, nonce int64) detachLauncher {
+	if strings.EqualFold(platform, "windows") {
+		logName := fmt.Sprintf("sshm-detach-%d.log", nonce)
+		scriptName := fmt.Sprintf("sshm-detach-%d.ps1", nonce)
+		logPath := `$env:TEMP\` + logName
+		logExpr := "(Join-Path $env:TEMP " + powershellSingleQuote(logName) + ")"
+		scriptExpr := "(Join-Path $env:TEMP " + powershellSingleQuote(scriptName) + ")"
+		body := strings.ReplaceAll(command, "\r\n", "\n") + " *> " + logExpr
+		wrapper := fmt.Sprintf(
+			"$script=%s; $log=%s; Set-Content -LiteralPath $script -Encoding UTF8 -Value @'\n%s\n'@; $p=Start-Process -FilePath 'powershell.exe' -ArgumentList @('-NoProfile','-ExecutionPolicy','Bypass','-File',$script) -WindowStyle Hidden -PassThru; Write-Output ('pid=' + $p.Id); Write-Output ('log=' + $log)",
+			scriptExpr, logExpr, body)
+		return detachLauncher{Platform: "windows", Command: wrapper, LogPath: logPath}
+	}
+
+	logPath := fmt.Sprintf("/tmp/sshm-detach-%d.log", nonce)
+	inner := shellQuoteArg(command)
+	wrapper := fmt.Sprintf(
+		"if command -v setsid >/dev/null 2>&1; then nohup setsid sh -c %s </dev/null >%s 2>&1 & else nohup sh -c %s </dev/null >%s 2>&1 & fi",
+		inner, shellQuoteArg(logPath), inner, shellQuoteArg(logPath))
+	return detachLauncher{Platform: "posix", Command: wrapper, LogPath: logPath}
+}
+
+func powershellSingleQuote(s string) string {
+	return "'" + strings.ReplaceAll(s, "'", "''") + "'"
 }
 
 // handleExecMulti runs the same command across several aliases concurrently
@@ -265,6 +313,7 @@ func registerExecTools(s *server.MCPServer, deps Deps, names []string) []string 
 		mcp.WithString("reason", mcp.Description("why (required, audited)")),
 		mcp.WithBoolean("unsafe", mcp.Description("bypass the dangerous-command filter")),
 		mcp.WithNumber("timeout_seconds", mcp.Description("max seconds before the command is killed; 0 = no timeout; default 60")),
+		mcp.WithString("platform", mcp.Description("detach platform override: auto|posix|windows")),
 		mcp.WithBoolean("detach", mcp.Description("run the command in the background on a POSIX remote and return immediately (poll output with tail_logs)")))
 	s.AddTool(execTool, func(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
 		out, err := handleExec(ctx, deps, req.GetArguments())

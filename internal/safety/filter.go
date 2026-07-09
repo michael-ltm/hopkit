@@ -59,6 +59,7 @@ var dangerousPatterns = []dangerousPattern{
 // isDangerousRMTarget so /tmp and relative paths can be excluded (RE2 has no
 // lookahead).
 var reRMForce = regexp.MustCompile(`\brm\s+(?:-[a-zA-Z]*(?:r[a-zA-Z]*f|f[a-zA-Z]*r)[a-zA-Z]*|--recursive\s+--force|--force\s+--recursive)\b([^|;&]*)`)
+var reBenignDevNullRedirect = regexp.MustCompile(`(?i)(^|\s)([012]?>|[12]>&[12])\s*/dev/null\b|(^|\s)[12]>&[12]\b`)
 
 // IsDangerous reports whether cmd matches a built-in dangerous pattern.
 // When it returns true, the second value is a human-readable reason.
@@ -68,17 +69,18 @@ var reRMForce = regexp.MustCompile(`\brm\s+(?:-[a-zA-Z]*(?:r[a-zA-Z]*f|f[a-zA-Z]
 // an explicit unsafe/override path for intentional destructive operations.
 func IsDangerous(cmd string) (bool, string) {
 	normalized := strings.Join(strings.Fields(cmd), " ")
+	forFilter := reBenignDevNullRedirect.ReplaceAllString(normalized, " ")
 
 	// Recursive+force rm targeting an absolute system or home path. Handled
 	// before the regex table so /tmp and relative-path targets are spared.
-	if m := reRMForce.FindStringSubmatch(normalized); m != nil {
+	if m := reRMForce.FindStringSubmatch(forFilter); m != nil {
 		if isDangerousRMTarget(m[1]) {
 			return true, "recursive force delete of an absolute or home path"
 		}
 	}
 
 	for _, p := range dangerousPatterns {
-		if p.re.MatchString(normalized) {
+		if p.re.MatchString(forFilter) {
 			return true, p.reason
 		}
 	}

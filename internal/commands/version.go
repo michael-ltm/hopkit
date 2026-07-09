@@ -6,8 +6,8 @@ import (
 	"github.com/spf13/cobra"
 )
 
-// Version is set at link time via -ldflags; default is "dev".
-var Version = "0.1.0-dev"
+// Version is set at link time via -ldflags; default tracks the source build.
+var Version = "0.5.1"
 
 func newVersionCmd() *cobra.Command {
 	return &cobra.Command{

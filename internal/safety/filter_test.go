@@ -109,6 +109,9 @@ func TestIsDangerous_NoFalsePositivesOnNewPatterns(t *testing.T) {
 		"docker logs app | tail -n 50",
 		"shred -u secrets.txt",
 		"shred ./secret.txt",
+		"sshd -T 2>/dev/null | grep -i '^passwordauthentication '",
+		"command -v systemctl >/dev/null 2>&1",
+		"echo done >/dev/null",
 	}
 	for _, cmd := range safe {
 		hit, reason := IsDangerous(cmd)

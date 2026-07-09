@@ -35,6 +35,8 @@ func NewRoot() *cobra.Command {
 		newEditCmd(),
 		newConnectCmd(),
 		newExecCmd(),
+		newUploadCmd(),
+		newDownloadCmd(),
 		newTestCmd(),
 		newCopyIDCmd(),
 		newGenKeyCmd(),

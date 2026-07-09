@@ -13,7 +13,9 @@ dangerous commands.
 
 - `list_servers` — see every configured server (host IPs are masked).
 - `get_server` / `get_status` — inspect one server's config / live resources.
-- `test_connection` — quick reachability probe.
+- `test_connection` — quick TCP reachability probe.
+- `check_ssh` — layered TCP/auth/exec check; prefer this when you need to
+  know whether commands can actually run.
 - `add_server` / `edit_server` / `remove_server` — manage the inventory.
   Every write needs a `reason` and is recorded to the audit log.
   `add_server` and `edit_server` accept optional proxy args: `proxy`
@@ -25,10 +27,14 @@ dangerous commands.
   connection automatically.
 - `exec` / `exec_multi` — run commands. Dangerous commands (`rm -rf /`,
   `mkfs`, …) are blocked unless `unsafe: true` is passed. `exec` supports
-  `timeout_seconds` (0 = no timeout, default 60) and `detach` (background
-  run; poll output with `tail_logs`). Always supply a `reason`.
+  `timeout_seconds` (0 = no timeout, default 60), `detach`, and optional
+  `platform=auto|posix|windows` for detached launchers. Always supply a
+  `reason`.
 - `upload` / `download` — transfer a single file between the local machine
   and a server over SFTP (returns a byte-count summary, never file content).
+  Use `resume=true` and `sha256` for large artifacts.
+- `transfer_start` / `transfer_status` — background file transfer for large
+  artifacts that may exceed a single MCP tool-call timeout.
 - `bootstrap` — baseline-harden a fresh server.
 - `gen_key` — generate an ed25519 keypair for a host.
 - `copy_id` — returns CLI instructions; copy-id needs a password, which is
@@ -59,7 +65,7 @@ Never place private-key bytes, passphrases, or recovery-file contents in chat.
 
 ## Rules
 
-1. Prefer `get_status` / `test_connection` before acting on a server.
+1. Prefer `get_status` / `check_ssh` before acting on a server.
 2. Always pass a clear, specific `reason` to write/exec tools.
 3. Never pass `unsafe: true` unless the user explicitly confirms the
    destructive command.

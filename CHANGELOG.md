@@ -4,6 +4,20 @@ All notable changes to this project will be documented in this file. Format: [Ke
 
 ## [Unreleased]
 
+## [0.5.1] — 2026-07-09
+
+### Added
+- `check_ssh` MCP tool for layered diagnostics: TCP reachability, SSH auth/handshake, and a minimal `hostname` exec check. This avoids treating an open port as proof that remote commands can run.
+- Background MCP transfers via `transfer_start` and `transfer_status`, so large uploads/downloads can continue outside a single tool-call timeout and be polled by transfer id.
+- CLI `sshm upload` and `sshm download` commands for direct SFTP file transfer with `--resume`, `--sha256`, and `--timeout`.
+
+### Changed
+- MCP `upload` / `download` now write through `.part` files, support `resume: true`, return SHA-256, and atomically rename after a successful transfer.
+- `exec detach` can auto-detect Windows remotes and launch detached commands through PowerShell instead of assuming a POSIX shell.
+
+### Fixed
+- The dangerous-command filter no longer blocks benign `/dev/null` redirections like `2>/dev/null` and `>/dev/null`, while still blocking redirects to real device nodes and system paths.
+
 ## [0.5.0] — 2026-07-04
 
 ### Added
