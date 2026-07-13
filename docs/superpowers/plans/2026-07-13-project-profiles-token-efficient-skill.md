@@ -442,8 +442,9 @@ outside `auto|posix|windows` with `bad_request` before dialing. Generate POSIX
 `tail -n` or a PowerShell encoded command containing
 `Get-Content -LiteralPath 'C:\Temp\build.log' -Tail 25`. Return the resolved
 platform and add the optional field to the tool schema. If the remote command
-returns a non-zero exit code, return a structured `exec` error containing masked
-stderr; successful return fields remain unchanged. When a Windows detached
+returns a non-zero exit code, audit `tail_logs` with the actual exit before
+returning a structured `exec` error containing masked stderr; successful return
+fields remain unchanged. When a Windows detached
 launcher exits zero but omits `log=`, audit the partial launch and return recovery
 metadata including alias, platform, stdout, and any parsed pid. Correct exec
 descriptions so they no longer claim detach is POSIX-only.
