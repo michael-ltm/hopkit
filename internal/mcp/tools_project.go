@@ -193,6 +193,12 @@ func handleExecProject(ctx context.Context, deps Deps, args map[string]any) (any
 			execArgs[key] = value
 		}
 	}
+	detach, _ := args["detach"].(bool)
+	platform := strArg(args, "platform")
+	if detach && (strings.TrimSpace(platform) == "" || strings.EqualFold(platform, "auto")) &&
+		(shell == "powershell" || shell == "cmd") {
+		execArgs["platform"] = "windows"
+	}
 	execResult, err := runProjectExec(ctx, deps, execArgs)
 	if err != nil {
 		return nil, err

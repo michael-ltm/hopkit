@@ -245,6 +245,63 @@ func TestHandleExecProjectForwardsWrappedCommandAndAddsMetadata(t *testing.T) {
 	require.Equal(t, true, result["truncated"])
 }
 
+func TestHandleExecProjectDerivesWindowsDetachPlatformFromPowerShell(t *testing.T) {
+	for _, tc := range []struct {
+		name     string
+		platform any
+		present  bool
+	}{
+		{name: "platform omitted"},
+		{name: "platform auto", platform: "auto", present: true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			cfgPath, auditPath := writeExecProjectTestConfig(t)
+			oldRunProjectExec := runProjectExec
+			t.Cleanup(func() { runProjectExec = oldRunProjectExec })
+
+			var forwarded map[string]any
+			runProjectExec = func(_ context.Context, _ Deps, args map[string]any) (any, error) {
+				forwarded = args
+				return map[string]any{"detached": true}, nil
+			}
+			args := map[string]any{
+				"project": "project_ajie", "command": "python build.py",
+				"reason": "build release", "detach": true,
+			}
+			if tc.present {
+				args["platform"] = tc.platform
+			}
+
+			_, err := handleExecProject(context.Background(), Deps{
+				ConfigPath: cfgPath, AuditPath: auditPath,
+			}, args)
+			require.NoError(t, err)
+			require.Equal(t, "windows", forwarded["platform"])
+		})
+	}
+}
+
+func TestHandleExecProjectPreservesExplicitDetachPlatform(t *testing.T) {
+	cfgPath, auditPath := writeExecProjectTestConfig(t)
+	oldRunProjectExec := runProjectExec
+	t.Cleanup(func() { runProjectExec = oldRunProjectExec })
+
+	var forwarded map[string]any
+	runProjectExec = func(_ context.Context, _ Deps, args map[string]any) (any, error) {
+		forwarded = args
+		return map[string]any{"detached": true}, nil
+	}
+
+	_, err := handleExecProject(context.Background(), Deps{
+		ConfigPath: cfgPath, AuditPath: auditPath,
+	}, map[string]any{
+		"project": "project_ajie", "command": "python build.py", "reason": "build release",
+		"detach": true, "platform": "posix",
+	})
+	require.NoError(t, err)
+	require.Equal(t, "posix", forwarded["platform"])
+}
+
 func TestHandleExecProjectRejectsUnknownProjectBeforeExec(t *testing.T) {
 	cfgPath, auditPath := writeExecProjectTestConfig(t)
 	oldRunProjectExec := runProjectExec
