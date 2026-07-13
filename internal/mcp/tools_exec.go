@@ -195,8 +195,15 @@ func buildDetachedResult(alias string, launcher detachLauncher, stdout string) m
 	pid := 0
 	if launcher.Platform == "windows" {
 		pid, logPath = parseDetachMetadata(stdout)
-		if logPath == "" {
-			out := errResult("exec", "Windows detach launcher did not return readable log metadata")
+		metadataError := ""
+		switch {
+		case pid <= 0:
+			metadataError = "Windows detach launcher did not return a confirmed process ID"
+		case logPath == "":
+			metadataError = "Windows detach launcher did not return readable log metadata"
+		}
+		if metadataError != "" {
+			out := errResult("exec", metadataError)
 			out["alias"] = alias
 			out["detached"] = true
 			out["platform"] = launcher.Platform
@@ -225,7 +232,7 @@ func finishDetachedLaunch(deps Deps, alias, reason string, unsafe bool, launcher
 	out := buildDetachedResult(alias, launcher, stdout)
 	result := "detached"
 	if _, failed := out["error"]; failed {
-		result = "detached (log metadata unavailable)"
+		result = "detached (launch metadata unavailable)"
 	}
 	if unsafe {
 		result += " (unsafe=true — filter bypassed)"
@@ -261,7 +268,7 @@ func buildDetachLauncher(platform, command string, nonce int64) detachLauncher {
 		body := "& {\n" + normalizedCommand + "\n} *> " + logExpr
 		childEncoded := base64.StdEncoding.EncodeToString(utf16LE(body))
 		wrapper := fmt.Sprintf(
-			"$log=%s; $childEncoded=%s; $p=Start-Process -FilePath 'powershell.exe' -ArgumentList @('-NoProfile','-NonInteractive','-ExecutionPolicy','Bypass','-EncodedCommand',$childEncoded) -WindowStyle Hidden -PassThru; Write-Output ('pid=' + $p.Id); Write-Output ('log=' + $log)",
+			"$ErrorActionPreference='Stop'; try { $log=%s; $childEncoded=%s; $p=Start-Process -FilePath 'powershell.exe' -ArgumentList @('-NoProfile','-NonInteractive','-ExecutionPolicy','Bypass','-EncodedCommand',$childEncoded) -WindowStyle Hidden -PassThru -ErrorAction Stop; if ($null -eq $p -or $p.Id -le 0) { throw 'child process did not return a valid PID' }; Write-Output ('pid=' + $p.Id); Write-Output ('log=' + $log) } catch { [Console]::Error.WriteLine('sshm detach launch failed: ' + $_.Exception.Message); exit 1 }",
 			logExpr, powershellSingleQuote(childEncoded))
 		return detachLauncher{Platform: "windows", Command: powershellEncodedCommand(wrapper), LogPath: logPath}
 	}

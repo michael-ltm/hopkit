@@ -30,8 +30,13 @@ func TestBuildDetachLauncherUsesNestedEncodedCommandsForWindows(t *testing.T) {
 		words[i] = binary.LittleEndian.Uint16(decoded[i*2:])
 	}
 	outerScript := string(utf16.Decode(words))
+	require.Contains(t, outerScript, "$ErrorActionPreference='Stop'")
+	require.Contains(t, outerScript, "try {")
 	require.Contains(t, outerScript, "Start-Process")
+	require.Contains(t, outerScript, "-PassThru -ErrorAction Stop")
 	require.Contains(t, outerScript, "'-EncodedCommand',$childEncoded")
+	require.Contains(t, outerScript, "catch {")
+	require.Contains(t, outerScript, "exit 1")
 	require.Contains(t, outerScript, "Write-Output ('pid=' + $p.Id)")
 	require.Contains(t, outerScript, "Write-Output ('log=' + $log)")
 	require.NotContains(t, outerScript, "'-File'")
@@ -40,6 +45,10 @@ func TestBuildDetachLauncherUsesNestedEncodedCommandsForWindows(t *testing.T) {
 	require.NotContains(t, outerScript, command)
 	require.NotContains(t, outerScript, "\n'@\n")
 	require.NotContains(t, outerScript, `C:\Build Root\app source`)
+	catchIndex := strings.Index(outerScript, "catch {")
+	require.Positive(t, catchIndex)
+	require.NotContains(t, outerScript[catchIndex:], "Write-Output ('pid='")
+	require.NotContains(t, outerScript[catchIndex:], "Write-Output ('log='")
 
 	match := regexp.MustCompile(`\$childEncoded='([A-Za-z0-9+/=]+)'`).FindStringSubmatch(outerScript)
 	require.Len(t, match, 2)
@@ -91,6 +100,35 @@ func TestBuildDetachedResultRejectsWindowsWithoutLogMetadata(t *testing.T) {
 		"kind":    "exec",
 		"message": "Windows detach launcher did not return readable log metadata",
 	}, result["error"])
+}
+
+func TestBuildDetachedResultRejectsWindowsWithoutConfirmedPID(t *testing.T) {
+	launcher := buildDetachLauncher("windows", "npm run build", 123)
+	tests := []struct {
+		name   string
+		stdout string
+	}{
+		{name: "log only", stdout: "log=C:\\Temp\\build.log\r\n"},
+		{name: "zero pid", stdout: "pid=0\r\nlog=C:\\Temp\\build.log\r\n"},
+		{name: "invalid pid", stdout: "pid=not-a-number\r\nlog=C:\\Temp\\build.log\r\n"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			result := buildDetachedResult("pc-e5", launcher, tt.stdout)
+
+			require.Equal(t, map[string]string{
+				"kind":    "exec",
+				"message": "Windows detach launcher did not return a confirmed process ID",
+			}, result["error"])
+			require.Equal(t, "pc-e5", result["alias"])
+			require.Equal(t, true, result["detached"])
+			require.Equal(t, "windows", result["platform"])
+			require.NotContains(t, result, "log_path")
+			require.NotContains(t, result, "pid")
+			require.NotContains(t, result, "note")
+		})
+	}
 }
 
 func TestBuildDetachedResultPreservesPOSIXLogPath(t *testing.T) {
