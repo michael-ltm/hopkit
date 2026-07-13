@@ -2,9 +2,14 @@ package mcp
 
 import (
 	"context"
+	"encoding/base64"
+	"encoding/binary"
 	"fmt"
+	"path"
 	"regexp"
 	"sort"
+	"strings"
+	"unicode/utf16"
 
 	"github.com/mark3labs/mcp-go/mcp"
 	"github.com/mark3labs/mcp-go/server"
@@ -13,6 +18,200 @@ import (
 )
 
 var projectNamePattern = regexp.MustCompile(`^[a-z0-9][a-z0-9._-]*$`)
+
+func isWindowsRemotePath(remotePath string) bool {
+	if strings.HasPrefix(remotePath, `\\`) {
+		return true
+	}
+	if len(remotePath) < 3 || remotePath[1] != ':' || (remotePath[2] != '\\' && remotePath[2] != '/') {
+		return false
+	}
+	first := remotePath[0]
+	return first >= 'A' && first <= 'Z' || first >= 'a' && first <= 'z'
+}
+
+func projectWorkdir(project *config.Project, selector string) (string, error) {
+	if project == nil {
+		return "", fmt.Errorf("project profile is missing")
+	}
+
+	var workdir string
+	switch selector {
+	case "", "workspace":
+		workdir = project.RemoteWorkspace
+	case "runs":
+		workdir = project.RemoteRuns
+		if workdir == "" {
+			return "", fmt.Errorf("remote_runs is not configured")
+		}
+	case "artifact_parent":
+		if project.ArtifactPath == "" {
+			return "", fmt.Errorf("artifact_path is not configured")
+		}
+		if isWindowsRemotePath(project.ArtifactPath) {
+			lastSeparator := strings.LastIndexAny(project.ArtifactPath, `/\`)
+			if lastSeparator < 0 {
+				return "", fmt.Errorf("artifact_path has no parent directory")
+			}
+			if lastSeparator == 2 && project.ArtifactPath[1] == ':' {
+				workdir = project.ArtifactPath[:lastSeparator+1]
+			} else {
+				workdir = project.ArtifactPath[:lastSeparator]
+			}
+		} else {
+			workdir = path.Dir(project.ArtifactPath)
+		}
+	default:
+		return "", fmt.Errorf("workdir must be workspace, runs, or artifact_parent")
+	}
+	if workdir == "" {
+		return "", fmt.Errorf("selected workdir is not configured")
+	}
+	return workdir, nil
+}
+
+func resolveProjectShell(configured, workdir string) (string, error) {
+	switch configured {
+	case "", "auto":
+		if isWindowsRemotePath(workdir) {
+			return "powershell", nil
+		}
+		return "posix", nil
+	case "posix", "powershell", "cmd":
+		return configured, nil
+	default:
+		return "", fmt.Errorf("unsupported project shell %q", configured)
+	}
+}
+
+func utf16LE(s string) []byte {
+	words := utf16.Encode([]rune(s))
+	out := make([]byte, len(words)*2)
+	for i, word := range words {
+		binary.LittleEndian.PutUint16(out[i*2:], word)
+	}
+	return out
+}
+
+func wrapProjectCommand(shell, workdir, command string) (string, error) {
+	if workdir == "" {
+		return "", fmt.Errorf("workdir is required")
+	}
+	if strings.ContainsAny(workdir, "\x00\r\n") {
+		return "", fmt.Errorf("workdir must not contain NUL or newline characters")
+	}
+
+	switch shell {
+	case "posix":
+		return "cd " + shellQuoteArg(workdir) + " && " + command, nil
+	case "powershell":
+		script := "Set-Location -LiteralPath " + powershellSingleQuote(workdir) +
+			"; if (-not $?) { exit 1 }; " + command
+		encoded := base64.StdEncoding.EncodeToString(utf16LE(script))
+		return "powershell.exe -NoProfile -NonInteractive -EncodedCommand " + encoded, nil
+	case "cmd":
+		if strings.Contains(workdir, `"`) {
+			return "", fmt.Errorf("cmd workdir must not contain double quotes")
+		}
+		return fmt.Sprintf(`cmd.exe /d /s /c "cd /d ""%s"" && %s"`, workdir, command), nil
+	default:
+		return "", fmt.Errorf("unsupported project shell %q", shell)
+	}
+}
+
+var runProjectExec = handleExec
+
+func handleExecProject(ctx context.Context, deps Deps, args map[string]any) (any, error) {
+	reason, err := requireReason(args)
+	if err != nil {
+		return errResult("bad_request", err.Error()), nil
+	}
+	name := strArg(args, "project")
+	if name == "" {
+		return errResult("bad_request", "project is required"), nil
+	}
+	command := strArg(args, "command")
+	if command == "" {
+		return errResult("bad_request", "command is required"), nil
+	}
+
+	cfg, err := config.Load(deps.ConfigPath)
+	if err != nil {
+		return errResult("config", err.Error()), nil
+	}
+	project, ok := cfg.Projects[name]
+	if !ok || project == nil {
+		available := make([]string, 0, len(cfg.Projects))
+		for candidate, profile := range cfg.Projects {
+			if profile != nil {
+				available = append(available, candidate)
+			}
+		}
+		sort.Strings(available)
+		message := fmt.Sprintf("unknown project %q", name)
+		if len(available) > 0 {
+			message += "; available projects: " + strings.Join(available, ", ")
+		}
+		return errResult("not_found", message), nil
+	}
+	if _, ok := cfg.Servers[project.Server]; !ok {
+		return errResult("config", fmt.Sprintf(
+			"project %q references unknown server %q", name, project.Server)), nil
+	}
+
+	workdir, err := projectWorkdir(project, strArg(args, "workdir"))
+	if err != nil {
+		return errResult("bad_request", err.Error()), nil
+	}
+	shell, err := resolveProjectShell(project.Shell, workdir)
+	if err != nil {
+		return errResult("config", err.Error()), nil
+	}
+	projectReason := fmt.Sprintf("[project:%s] %s", name, reason)
+	unsafe, _ := args["unsafe"].(bool)
+	if !unsafe {
+		if hit, why := safety.IsDangerous(command); hit {
+			audit(deps, safety.Entry{
+				Tool: "exec", Alias: project.Server, Reason: projectReason,
+				Result: "blocked: dangerous command",
+			})
+			return errResult("dangerous", fmt.Sprintf(
+				"dangerous command blocked (%s); pass unsafe=true to override", why)), nil
+		}
+	}
+	wrappedCommand, err := wrapProjectCommand(shell, workdir, command)
+	if err != nil {
+		return errResult("bad_request", err.Error()), nil
+	}
+
+	execArgs := map[string]any{
+		"alias": project.Server, "command": wrappedCommand,
+		"reason": projectReason,
+	}
+	for _, key := range []string{"unsafe", "timeout_seconds", "detach", "platform"} {
+		if value, present := args[key]; present {
+			execArgs[key] = value
+		}
+	}
+	execResult, err := runProjectExec(ctx, deps, execArgs)
+	if err != nil {
+		return nil, err
+	}
+	result, ok := execResult.(map[string]any)
+	if !ok {
+		return errResult("exec", "unexpected exec result"), nil
+	}
+
+	out := make(map[string]any, len(result)+4)
+	for key, value := range result {
+		out[key] = value
+	}
+	out["project"] = name
+	out["alias"] = project.Server
+	out["workdir"] = workdir
+	out["shell"] = shell
+	return out, nil
+}
 
 func validProjectShell(v string) bool {
 	switch v {
@@ -206,4 +405,29 @@ func registerProjectWriteTools(s *server.MCPServer, deps Deps, names []string) [
 		return mcp.NewToolResultText(safety.MaskSecrets(js)), nil
 	})
 	return append(names, "upsert_project")
+}
+
+func registerProjectExecTool(s *server.MCPServer, deps Deps, names []string) []string {
+	tool := mcp.NewTool("exec_project",
+		mcp.WithDescription("Run a command in a configured project workspace using existing exec safety, timeout, detach, and audit behavior."),
+		mcp.WithString("project", mcp.Required(), mcp.Description("project name")),
+		mcp.WithString("command", mcp.Required(), mcp.Description("the shell command to run")),
+		mcp.WithString("reason", mcp.Required(), mcp.Description("why this command is being run (audited)")),
+		mcp.WithString("workdir", mcp.Description("workspace (default), runs, or artifact_parent")),
+		mcp.WithBoolean("unsafe", mcp.Description("bypass the dangerous-command filter")),
+		mcp.WithNumber("timeout_seconds", mcp.Description("max seconds before the command is killed; 0 = no timeout; default 60")),
+		mcp.WithBoolean("detach", mcp.Description("run the command in the background and return immediately")),
+		mcp.WithString("platform", mcp.Description("detach platform override: auto|posix|windows")))
+	s.AddTool(tool, func(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+		out, err := handleExecProject(ctx, deps, req.GetArguments())
+		if err != nil {
+			return mcp.NewToolResultError(err.Error()), nil
+		}
+		js, err := jsonResult(out)
+		if err != nil {
+			return mcp.NewToolResultError(err.Error()), nil
+		}
+		return mcp.NewToolResultText(safety.MaskSecrets(js)), nil
+	})
+	return append(names, "exec_project")
 }

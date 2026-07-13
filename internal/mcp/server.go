@@ -32,6 +32,7 @@ func NewServer(deps Deps) (*server.MCPServer, []string) {
 		names = registerWriteTools(s, deps, names)
 		names = registerProjectWriteTools(s, deps, names)
 		names = registerExecTools(s, deps, names)
+		names = registerProjectExecTool(s, deps, names)
 		names = registerOpsTools(s, deps, names)
 		names = registerTransferTools(s, deps, names)
 	}
