@@ -2,6 +2,7 @@ package mcp
 
 import (
 	"context"
+	"encoding/base64"
 	"errors"
 	"fmt"
 	"strconv"
@@ -25,6 +26,13 @@ const detachLaunchTimeout = 15 * time.Second
 
 // execMultiConcurrency caps how many aliases exec_multi dials at once.
 const execMultiConcurrency = 8
+
+var (
+	dialExecRemote       = sshpkg.Dial
+	runExecRemoteCommand = func(ctx context.Context, cli *sshpkg.Client, command string) (*sshpkg.ExecResult, error) {
+		return cli.Exec(ctx, command)
+	}
+)
 
 // execTimeout resolves the command timeout from args. MCP numbers arrive as
 // float64. Absent or invalid-negative defaults to 60s; 0 means NO timeout
@@ -68,8 +76,9 @@ func handleExec(ctx context.Context, deps Deps, args map[string]any) (any, error
 	if !ok {
 		return errResult("not_found", fmt.Sprintf("unknown server %q", alias)), nil
 	}
-	cli, err := sshpkg.Dial(s, sshpkg.BuildOpts{ConfigPath: deps.ConfigPath})
+	cli, err := dialExecRemote(s, sshpkg.BuildOpts{ConfigPath: deps.ConfigPath})
 	if err != nil {
+		audit(deps, safety.Entry{Tool: "exec", Alias: alias, Reason: reason, Result: "ssh failed"})
 		return errResult("ssh", safety.MaskSecrets(err.Error())), nil
 	}
 	defer cli.Close()
@@ -86,7 +95,7 @@ func handleExec(ctx context.Context, deps Deps, args map[string]any) (any, error
 		defer cancel()
 	}
 
-	res, err := cli.Exec(cmdCtx, command)
+	res, err := runExecRemoteCommand(cmdCtx, cli, command)
 	if err != nil {
 		// Timeout / cancellation: ssh.Exec returns the partial output captured
 		// so far plus ctx.Err(). Surface that partial output instead of dropping
@@ -111,6 +120,7 @@ func handleExec(ctx context.Context, deps Deps, args map[string]any) (any, error
 			return out, nil
 		}
 		// Genuine non-timeout exec error.
+		audit(deps, safety.Entry{Tool: "exec", Alias: alias, Reason: reason, Result: "exec failed"})
 		return errResult("exec", safety.MaskSecrets(err.Error())), nil
 	}
 	result := fmt.Sprintf("exit %d", res.ExitCode)
@@ -140,14 +150,18 @@ func runDetached(ctx context.Context, deps Deps, cli *sshpkg.Client, alias, comm
 
 	launchCtx, cancel := context.WithTimeout(ctx, detachLaunchTimeout)
 	defer cancel()
-	res, err := cli.Exec(launchCtx, launcher.Command)
+	res, err := runExecRemoteCommand(launchCtx, cli, launcher.Command)
 	if err != nil {
 		if errors.Is(err, context.DeadlineExceeded) || errors.Is(err, context.Canceled) {
+			audit(deps, safety.Entry{Tool: "exec", Alias: alias, Reason: reason, Result: "detach launcher timed out"})
 			return errResult("exec", "detach launcher timed out before the command could be started"), nil
 		}
+		audit(deps, safety.Entry{Tool: "exec", Alias: alias, Reason: reason, Result: "detach launcher failed"})
 		return errResult("exec", safety.MaskSecrets(err.Error())), nil
 	}
 	if res.ExitCode != 0 {
+		audit(deps, safety.Entry{Tool: "exec", Alias: alias, Reason: reason,
+			Result: fmt.Sprintf("detach launcher exit %d", res.ExitCode)})
 		return errResult("exec", safety.MaskSecrets(fmt.Sprintf(
 			"detach launcher exited %d: %s", res.ExitCode, res.Stderr))), nil
 	}
@@ -223,7 +237,7 @@ func finishDetachedLaunch(deps Deps, alias, reason string, unsafe bool, launcher
 func detectRemoteDetachPlatform(ctx context.Context, cli *sshpkg.Client) string {
 	probeCtx, cancel := context.WithTimeout(ctx, 5*time.Second)
 	defer cancel()
-	res, err := cli.Exec(probeCtx, "cmd /c ver")
+	res, err := runExecRemoteCommand(probeCtx, cli, "cmd /c ver")
 	if err != nil {
 		return "posix"
 	}
@@ -246,9 +260,10 @@ func buildDetachLauncher(platform, command string, nonce int64) detachLauncher {
 		logExpr := "(Join-Path $env:TEMP " + powershellSingleQuote(logName) + ")"
 		scriptExpr := "(Join-Path $env:TEMP " + powershellSingleQuote(scriptName) + ")"
 		body := strings.ReplaceAll(command, "\r\n", "\n") + " *> " + logExpr
+		encodedBody := base64.StdEncoding.EncodeToString([]byte(body))
 		wrapper := fmt.Sprintf(
-			"$script=%s; $log=%s; Set-Content -LiteralPath $script -Encoding UTF8 -Value @'\n%s\n'@; $p=Start-Process -FilePath 'powershell.exe' -ArgumentList @('-NoProfile','-ExecutionPolicy','Bypass','-File',$script) -WindowStyle Hidden -PassThru; Write-Output ('pid=' + $p.Id); Write-Output ('log=' + $log)",
-			scriptExpr, logExpr, body)
+			"$script=%s; $log=%s; $body=[Text.Encoding]::UTF8.GetString([Convert]::FromBase64String(%s)); Set-Content -LiteralPath $script -Encoding UTF8 -Value $body; $p=Start-Process -FilePath 'powershell.exe' -ArgumentList @('-NoProfile','-ExecutionPolicy','Bypass','-File',$script) -WindowStyle Hidden -PassThru; Write-Output ('pid=' + $p.Id); Write-Output ('log=' + $log)",
+			scriptExpr, logExpr, powershellSingleQuote(encodedBody))
 		return detachLauncher{Platform: "windows", Command: powershellEncodedCommand(wrapper), LogPath: logPath}
 	}
 

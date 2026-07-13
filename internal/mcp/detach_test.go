@@ -3,6 +3,7 @@ package mcp
 import (
 	"encoding/base64"
 	"encoding/binary"
+	"regexp"
 	"strings"
 	"testing"
 	"unicode/utf16"
@@ -11,11 +12,12 @@ import (
 )
 
 func TestBuildDetachLauncherUsesPowerShellForWindows(t *testing.T) {
-	launcher := buildDetachLauncher("windows", "npm run build", 123)
+	command := "$payload = @'\nchild data\n'@\nWrite-Output 'pid=999'"
+	launcher := buildDetachLauncher("windows", command, 123)
 
 	const prefix = "powershell.exe -NoProfile -NonInteractive -EncodedCommand "
 	require.True(t, strings.HasPrefix(launcher.Command, prefix))
-	require.NotContains(t, launcher.Command, "npm run build")
+	require.NotContains(t, launcher.Command, command)
 	require.NotContains(t, launcher.Command, "$script=")
 	require.NotContains(t, launcher.Command, "Start-Process")
 
@@ -27,11 +29,20 @@ func TestBuildDetachLauncherUsesPowerShellForWindows(t *testing.T) {
 	for i := range words {
 		words[i] = binary.LittleEndian.Uint16(decoded[i*2:])
 	}
-	script := string(utf16.Decode(words))
-	require.Contains(t, script, "Start-Process")
-	require.Contains(t, script, "Write-Output ('pid=' + $p.Id)")
-	require.Contains(t, script, "Write-Output ('log=' + $log)")
-	require.Contains(t, script, "npm run build")
+	outerScript := string(utf16.Decode(words))
+	require.Contains(t, outerScript, "Start-Process")
+	require.Contains(t, outerScript, "Write-Output ('pid=' + $p.Id)")
+	require.Contains(t, outerScript, "Write-Output ('log=' + $log)")
+	require.NotContains(t, outerScript, command)
+	require.NotContains(t, outerScript, "\n'@\n")
+	require.NotContains(t, outerScript, "Write-Output 'pid=999'")
+
+	match := regexp.MustCompile(`\[Convert\]::FromBase64String\('([A-Za-z0-9+/=]+)'\)`).FindStringSubmatch(outerScript)
+	require.Len(t, match, 2)
+	innerBytes, err := base64.StdEncoding.DecodeString(match[1])
+	require.NoError(t, err)
+	innerScript := string(innerBytes)
+	require.Equal(t, command+" *> (Join-Path $env:TEMP 'sshm-detach-123.log')", innerScript)
 	require.Contains(t, launcher.LogPath, `\sshm-detach-123.log`)
 	require.Equal(t, "windows", launcher.Platform)
 }

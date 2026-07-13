@@ -80,18 +80,19 @@ func TestProjectRoundTripAndSaveUpgrade(t *testing.T) {
 }
 
 func TestSaveRejectsProjectCredentialsWithoutModifyingDisk(t *testing.T) {
-	const credential = "TOKEN=literal-secret"
 	fields := []struct {
-		name string
-		set  func(*Project, string)
+		name         string
+		credential   string
+		secretNeedle string
+		set          func(*Project, string)
 	}{
-		{name: "local_root", set: func(p *Project, v string) { p.LocalRoot = v }},
-		{name: "remote_workspace", set: func(p *Project, v string) { p.RemoteWorkspace = v }},
-		{name: "remote_runs", set: func(p *Project, v string) { p.RemoteRuns = v }},
-		{name: "artifact_path", set: func(p *Project, v string) { p.ArtifactPath = v }},
-		{name: "local_artifact_dir", set: func(p *Project, v string) { p.LocalArtifactDir = v }},
-		{name: "build_command", set: func(p *Project, v string) { p.BuildCommand = v }},
-		{name: "verify_command", set: func(p *Project, v string) { p.VerifyCommand = v }},
+		{name: "local_root", credential: "-----BEGIN PRIVATE KEY-----\nprivate-data\n-----END PRIVATE KEY-----", secretNeedle: "private-data", set: func(p *Project, v string) { p.LocalRoot = v }},
+		{name: "remote_workspace", credential: "ssh://user:workspace-secret@example.com/repo", secretNeedle: "workspace-secret", set: func(p *Project, v string) { p.RemoteWorkspace = v }},
+		{name: "remote_runs", credential: "AKIAIOSFODNN7EXAMPLE", secretNeedle: "AKIAIOSFODNN7EXAMPLE", set: func(p *Project, v string) { p.RemoteRuns = v }},
+		{name: "artifact_path", credential: "/tmp/xoxb-1234567890-abcdefghij", secretNeedle: "xoxb-1234567890-abcdefghij", set: func(p *Project, v string) { p.ArtifactPath = v }},
+		{name: "local_artifact_dir", credential: "eyJhbGciOiJIUzI1NiJ9.payload.signature", secretNeedle: "eyJhbGciOiJIUzI1NiJ9.payload.signature", set: func(p *Project, v string) { p.LocalArtifactDir = v }},
+		{name: "build_command", credential: "builder --client-secret build-secret", secretNeedle: "build-secret", set: func(p *Project, v string) { p.BuildCommand = v }},
+		{name: "verify_command", credential: "token: verify-secret", secretNeedle: "verify-secret", set: func(p *Project, v string) { p.VerifyCommand = v }},
 	}
 
 	for _, field := range fields {
@@ -105,11 +106,11 @@ func TestSaveRejectsProjectCredentialsWithoutModifyingDisk(t *testing.T) {
 			before, err := os.ReadFile(path)
 			require.NoError(t, err)
 
-			field.set(cfg.Projects["project"], credential)
+			field.set(cfg.Projects["project"], field.credential)
 			err = Save(path, cfg)
 			require.Error(t, err)
 			require.Contains(t, err.Error(), field.name)
-			require.NotContains(t, err.Error(), "literal-secret")
+			require.NotContains(t, err.Error(), field.secretNeedle)
 			after, readErr := os.ReadFile(path)
 			require.NoError(t, readErr)
 			require.Equal(t, before, after)

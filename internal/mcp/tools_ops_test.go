@@ -5,6 +5,7 @@ import (
 	"encoding/base64"
 	"encoding/binary"
 	"encoding/json"
+	"errors"
 	"os"
 	"path/filepath"
 	"strings"
@@ -222,6 +223,49 @@ func TestHandleTailLogsAuditsNonzeroExit(t *testing.T) {
 			require.Equal(t, "build", entry.Alias)
 			require.Equal(t, "inspect failed build", entry.Reason)
 			require.Equal(t, "exit 7", entry.Result)
+		})
+	}
+}
+
+func TestHandleTailLogsAuditsRemoteErrors(t *testing.T) {
+	oldRunTailLogsRemote := runTailLogsRemote
+	t.Cleanup(func() { runTailLogsRemote = oldRunTailLogsRemote })
+
+	for _, tt := range []struct {
+		kind      string
+		wantAudit string
+		secret    string
+	}{
+		{kind: "ssh", wantAudit: "tail ssh failed", secret: "tail-ssh-secret"},
+		{kind: "exec", wantAudit: "tail exec failed", secret: "tail-exec-secret"},
+	} {
+		t.Run(tt.kind, func(t *testing.T) {
+			dir := t.TempDir()
+			cfgPath := filepath.Join(dir, "config.toml")
+			auditPath := filepath.Join(dir, "audit.jsonl")
+			cfg := config.New()
+			cfg.Servers["build"] = &config.Server{Host: "example.invalid", User: "builder", Auth: config.AuthAgent}
+			require.NoError(t, config.Save(cfgPath, cfg))
+
+			runTailLogsRemote = func(_ context.Context, _ Deps, _ *config.Server, platform, _ string, _ int) (string, *sshpkg.ExecResult, string, error) {
+				return platform, nil, tt.kind, errors.New("remote failure TOKEN=" + tt.secret)
+			}
+			out, err := handleTailLogs(context.Background(), Deps{ConfigPath: cfgPath, AuditPath: auditPath}, map[string]any{
+				"alias": "build", "path": "/tmp/build.log", "platform": "posix", "reason": "test tail failure",
+			})
+			require.NoError(t, err)
+			errorPayload, ok := out.(map[string]any)["error"].(map[string]string)
+			require.True(t, ok)
+			require.Equal(t, tt.kind, errorPayload["kind"])
+
+			entry := requireSingleAuditEntry(t, auditPath)
+			require.Equal(t, "tail_logs", entry.Tool)
+			require.Equal(t, "build", entry.Alias)
+			require.Equal(t, "test tail failure", entry.Reason)
+			require.Equal(t, tt.wantAudit, entry.Result)
+			auditData, readErr := os.ReadFile(auditPath)
+			require.NoError(t, readErr)
+			require.NotContains(t, string(auditData), tt.secret)
 		})
 	}
 }

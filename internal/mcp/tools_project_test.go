@@ -108,13 +108,13 @@ func TestUpsertProjectRejectsCredentialFieldsWithoutModifyingDisk(t *testing.T) 
 		value        string
 		secretNeedle string
 	}{
-		{name: "local_root", value: "/src/TOKEN=local-root-secret", secretNeedle: "local-root-secret"},
-		{name: "remote_workspace", value: "https://user:workspace-secret@example.com/repo", secretNeedle: "workspace-secret"},
-		{name: "remote_runs", value: "Authorization: Bearer runs-secret", secretNeedle: "runs-secret"},
-		{name: "artifact_path", value: "/tmp/ghp_abcdefghijklmnopqrstuvwxyz0123456789", secretNeedle: "ghp_abcdefghijklmnopqrstuvwxyz0123456789"},
-		{name: "local_artifact_dir", value: "TOKEN=artifact-dir-secret", secretNeedle: "artifact-dir-secret"},
-		{name: "build_command", value: "builder --password build-secret", secretNeedle: "build-secret"},
-		{name: "verify_command", value: "TOKEN=verify-secret go test ./...", secretNeedle: "verify-secret"},
+		{name: "local_root", value: "-----BEGIN PRIVATE KEY-----\nprivate-data\n-----END PRIVATE KEY-----", secretNeedle: "private-data"},
+		{name: "remote_workspace", value: "sftp://builder:workspace-secret@example.com/work", secretNeedle: "workspace-secret"},
+		{name: "remote_runs", value: "AKIAIOSFODNN7EXAMPLE", secretNeedle: "AKIAIOSFODNN7EXAMPLE"},
+		{name: "artifact_path", value: "/tmp/xoxb-1234567890-abcdefghij", secretNeedle: "xoxb-1234567890-abcdefghij"},
+		{name: "local_artifact_dir", value: "eyJhbGciOiJIUzI1NiJ9.payload.signature", secretNeedle: "eyJhbGciOiJIUzI1NiJ9.payload.signature"},
+		{name: "build_command", value: "builder --client-secret build-secret", secretNeedle: "build-secret"},
+		{name: "verify_command", value: "token: verify-secret", secretNeedle: "verify-secret"},
 	}
 
 	for _, field := range fields {

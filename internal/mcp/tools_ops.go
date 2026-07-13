@@ -191,6 +191,14 @@ func handleTailLogs(ctx context.Context, deps Deps, args map[string]any) (any, e
 	defer cancel()
 	platform, res, errKind, err := runTailLogsRemote(ctx, deps, s, platform, path, n)
 	if err != nil {
+		result := "tail failed"
+		switch errKind {
+		case "ssh":
+			result = "tail ssh failed"
+		case "exec":
+			result = "tail exec failed"
+		}
+		audit(deps, safety.Entry{Tool: "tail_logs", Alias: alias, Reason: reason, Result: result})
 		return errResult(errKind, safety.MaskSecrets(err.Error())), nil
 	}
 	out := buildTailLogsResult(alias, path, platform, res)

@@ -2,14 +2,30 @@ package mcp
 
 import (
 	"context"
+	"encoding/json"
+	"errors"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
 	"github.com/michael-ltm/sshm/internal/config"
+	"github.com/michael-ltm/sshm/internal/safety"
+	sshpkg "github.com/michael-ltm/sshm/internal/ssh"
 	"github.com/stretchr/testify/require"
 )
+
+func requireSingleAuditEntry(t *testing.T, path string) safety.Entry {
+	t.Helper()
+	data, err := os.ReadFile(path)
+	require.NoError(t, err)
+	lines := strings.Split(strings.TrimSpace(string(data)), "\n")
+	require.Len(t, lines, 1)
+	var entry safety.Entry
+	require.NoError(t, json.Unmarshal([]byte(lines[0]), &entry))
+	return entry
+}
 
 func TestExecTimeout(t *testing.T) {
 	require.Equal(t, 60*time.Second, execTimeout(map[string]any{}), "absent -> 60s")
@@ -80,6 +96,119 @@ func TestHandleExec_BlockedCommandIsAudited(t *testing.T) {
 	require.NoError(t, err)
 	require.Contains(t, string(data), "blocked")
 	require.Contains(t, string(data), "exec")
+}
+
+func TestHandleExecAuditsRemoteFailures(t *testing.T) {
+	oldDial := dialExecRemote
+	oldRun := runExecRemoteCommand
+	t.Cleanup(func() {
+		dialExecRemote = oldDial
+		runExecRemoteCommand = oldRun
+	})
+
+	tests := []struct {
+		name      string
+		kind      string
+		wantAudit string
+		secret    string
+		configure func(*testing.T)
+	}{
+		{
+			name: "SSH dial", kind: "ssh", wantAudit: "ssh failed", secret: "dial-secret",
+			configure: func(t *testing.T) {
+				dialExecRemote = func(_ *config.Server, _ sshpkg.BuildOpts) (*sshpkg.Client, error) {
+					return nil, errors.New("dial failed TOKEN=dial-secret")
+				}
+				runExecRemoteCommand = func(_ context.Context, _ *sshpkg.Client, _ string) (*sshpkg.ExecResult, error) {
+					t.Fatal("exec called after dial failure")
+					return nil, nil
+				}
+			},
+		},
+		{
+			name: "SSH exec", kind: "exec", wantAudit: "exec failed", secret: "exec-secret",
+			configure: func(_ *testing.T) {
+				dialExecRemote = func(_ *config.Server, _ sshpkg.BuildOpts) (*sshpkg.Client, error) {
+					return &sshpkg.Client{}, nil
+				}
+				runExecRemoteCommand = func(_ context.Context, _ *sshpkg.Client, _ string) (*sshpkg.ExecResult, error) {
+					return &sshpkg.ExecResult{}, errors.New("session failed TOKEN=exec-secret")
+				}
+			},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			dir := t.TempDir()
+			cfgPath := filepath.Join(dir, "config.toml")
+			auditPath := filepath.Join(dir, "audit.jsonl")
+			cfg := config.New()
+			cfg.Servers["build"] = &config.Server{Host: "example.invalid", User: "builder", Auth: config.AuthAgent}
+			require.NoError(t, config.Save(cfgPath, cfg))
+			tt.configure(t)
+
+			out, err := handleExec(context.Background(), Deps{ConfigPath: cfgPath, AuditPath: auditPath}, map[string]any{
+				"alias": "build", "command": "echo ok", "reason": "test remote failure",
+			})
+			require.NoError(t, err)
+			errorPayload, ok := out.(map[string]any)["error"].(map[string]string)
+			require.True(t, ok)
+			require.Equal(t, tt.kind, errorPayload["kind"])
+
+			entry := requireSingleAuditEntry(t, auditPath)
+			require.Equal(t, "exec", entry.Tool)
+			require.Equal(t, "build", entry.Alias)
+			require.Equal(t, "test remote failure", entry.Reason)
+			require.Equal(t, tt.wantAudit, entry.Result)
+			auditData, readErr := os.ReadFile(auditPath)
+			require.NoError(t, readErr)
+			require.NotContains(t, string(auditData), tt.secret)
+		})
+	}
+}
+
+func TestRunDetachedAuditsLauncherFailures(t *testing.T) {
+	oldRun := runExecRemoteCommand
+	t.Cleanup(func() { runExecRemoteCommand = oldRun })
+
+	tests := []struct {
+		name      string
+		result    *sshpkg.ExecResult
+		err       error
+		wantAudit string
+		secret    string
+	}{
+		{name: "timeout", err: context.DeadlineExceeded, wantAudit: "detach launcher timed out"},
+		{name: "exec error", err: errors.New("launcher failed TOKEN=launcher-secret"), wantAudit: "detach launcher failed", secret: "launcher-secret"},
+		{name: "nonzero exit", result: &sshpkg.ExecResult{ExitCode: 7, Stderr: "failed TOKEN=exit-secret"}, wantAudit: "detach launcher exit 7", secret: "exit-secret"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			auditPath := filepath.Join(t.TempDir(), "audit.jsonl")
+			runExecRemoteCommand = func(_ context.Context, _ *sshpkg.Client, _ string) (*sshpkg.ExecResult, error) {
+				return tt.result, tt.err
+			}
+
+			out, err := runDetached(context.Background(), Deps{AuditPath: auditPath}, &sshpkg.Client{},
+				"build", "echo ok", "test detach failure", false, "windows")
+			require.NoError(t, err)
+			_, ok := out.(map[string]any)["error"]
+			require.True(t, ok)
+
+			entry := requireSingleAuditEntry(t, auditPath)
+			require.Equal(t, "exec", entry.Tool)
+			require.Equal(t, "build", entry.Alias)
+			require.Equal(t, "test detach failure", entry.Reason)
+			require.Equal(t, tt.wantAudit, entry.Result)
+			if tt.secret != "" {
+				auditData, readErr := os.ReadFile(auditPath)
+				require.NoError(t, readErr)
+				require.NotContains(t, string(auditData), tt.secret)
+			}
+		})
+	}
 }
 
 func TestHandleExecMulti_RequiresReason(t *testing.T) {
