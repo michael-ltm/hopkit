@@ -27,8 +27,10 @@ func NewServer(deps Deps) (*server.MCPServer, []string) {
 	s := server.NewMCPServer("sshm", ver)
 	var names []string
 	names = registerReadTools(s, deps, names)
+	names = registerProjectReadTools(s, deps, names)
 	if deps.AllowWrite {
 		names = registerWriteTools(s, deps, names)
+		names = registerProjectWriteTools(s, deps, names)
 		names = registerExecTools(s, deps, names)
 		names = registerOpsTools(s, deps, names)
 		names = registerTransferTools(s, deps, names)
