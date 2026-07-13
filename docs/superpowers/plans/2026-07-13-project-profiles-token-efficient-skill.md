@@ -365,7 +365,8 @@ git commit -m "feat(mcp): execute commands in project workspaces"
 
 **Files:**
 - Modify: `internal/mcp/tools_exec.go`
-- Modify: `internal/mcp/detach_windows_test.go`
+- Delete: `internal/mcp/detach_windows_test.go`
+- Create: `internal/mcp/detach_test.go`
 - Modify: `internal/mcp/tools_ops.go`
 - Modify: `internal/mcp/tools_ops_test.go`
 
@@ -402,15 +403,29 @@ lacks `log=`, return a structured exec error. Preserve POSIX behavior.
 - [ ] **Step 4: Write failing platform-tail tests**
 
 ```go
+func decodePowerShellCommand(t *testing.T, command string) string {
+    t.Helper()
+    fields := strings.Fields(command)
+    require.Contains(t, command, "powershell.exe -NoProfile -NonInteractive -EncodedCommand ")
+    raw, err := base64.StdEncoding.DecodeString(fields[len(fields)-1])
+    require.NoError(t, err)
+    require.Zero(t, len(raw)%2)
+    words := make([]uint16, len(raw)/2)
+    for i := range words {
+        words[i] = binary.LittleEndian.Uint16(raw[i*2:])
+    }
+    return string(utf16.Decode(words))
+}
+
 func TestTailCommandPOSIX(t *testing.T) {
     require.Equal(t, "tail -n 25 '/tmp/a b.log'", tailCommand("posix", "/tmp/a b.log", 25))
 }
 
 func TestTailCommandWindows(t *testing.T) {
     got := tailCommand("windows", `C:\Temp\a b.log`, 25)
-    require.Contains(t, got, "powershell.exe")
-    require.Contains(t, got, "Get-Content")
-    require.Contains(t, got, "-Tail 25")
+    script := decodePowerShellCommand(t, got)
+    require.Contains(t, script, "Get-Content -LiteralPath")
+    require.Contains(t, script, "-Tail 25")
 }
 ```
 
@@ -422,11 +437,16 @@ Expected: compile failure for `tailCommand`.
 
 - [ ] **Step 6: Implement platform-aware `tail_logs`**
 
-Normalize `auto` through `detectRemoteDetachPlatform(ctx, cli)`. Generate POSIX
+Normalize `auto` through `detectRemoteDetachPlatform(ctx, cli)`. Reject values
+outside `auto|posix|windows` with `bad_request` before dialing. Generate POSIX
 `tail -n` or a PowerShell encoded command containing
-`Get-Content -LiteralPath 'C:\Temp\build.log' -Tail 25`. Return the resolved platform and
-add the optional field to the tool schema. Correct exec descriptions so they no
-longer claim detach is POSIX-only.
+`Get-Content -LiteralPath 'C:\Temp\build.log' -Tail 25`. Return the resolved
+platform and add the optional field to the tool schema. If the remote command
+returns a non-zero exit code, return a structured `exec` error containing masked
+stderr; successful return fields remain unchanged. When a Windows detached
+launcher exits zero but omits `log=`, audit the partial launch and return recovery
+metadata including alias, platform, stdout, and any parsed pid. Correct exec
+descriptions so they no longer claim detach is POSIX-only.
 
 - [ ] **Step 7: Verify GREEN**
 
@@ -437,7 +457,7 @@ Expected: all MCP tests pass.
 - [ ] **Step 8: Commit**
 
 ```bash
-git add internal/mcp/tools_exec.go internal/mcp/detach_windows_test.go internal/mcp/tools_ops.go internal/mcp/tools_ops_test.go
+git add internal/mcp/tools_exec.go internal/mcp/detach_windows_test.go internal/mcp/detach_test.go internal/mcp/tools_ops.go internal/mcp/tools_ops_test.go
 git commit -m "fix(mcp): make detached logs readable on Windows"
 ```
 
