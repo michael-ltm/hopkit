@@ -8,7 +8,7 @@ package config
 import "time"
 
 // CurrentVersion is the schema version this build understands.
-const CurrentVersion = 2
+const CurrentVersion = 3
 
 // Auth methods supported by Server.Auth.
 const (
@@ -50,6 +50,19 @@ type Server struct {
 	Forwards     []string  `toml:"forwards,omitempty"`
 }
 
+// Project describes a local-to-remote build workspace and its artifact.
+type Project struct {
+	Server           string `toml:"server"`
+	LocalRoot        string `toml:"local_root,omitempty"`
+	RemoteWorkspace  string `toml:"remote_workspace"`
+	RemoteRuns       string `toml:"remote_runs,omitempty"`
+	ArtifactPath     string `toml:"artifact_path"`
+	LocalArtifactDir string `toml:"local_artifact_dir,omitempty"`
+	Shell            string `toml:"shell,omitempty"`
+	BuildCommand     string `toml:"build_command,omitempty"`
+	VerifyCommand    string `toml:"verify_command,omitempty"`
+}
+
 // UIConfig holds UI rendering preferences.
 type UIConfig struct {
 	Icons string `toml:"icons,omitempty"` // "unicode" | "ascii" | "" (auto)
@@ -58,13 +71,18 @@ type UIConfig struct {
 
 // Config is the top-level on-disk document.
 type Config struct {
-	Version int                `toml:"version"`
-	Default string             `toml:"default,omitempty"`
-	UI      UIConfig           `toml:"ui,omitempty"`
-	Servers map[string]*Server `toml:"servers"`
+	Version  int                 `toml:"version"`
+	Default  string              `toml:"default,omitempty"`
+	UI       UIConfig            `toml:"ui,omitempty"`
+	Servers  map[string]*Server  `toml:"servers"`
+	Projects map[string]*Project `toml:"projects"`
 }
 
 // New returns an empty Config at the current schema version.
 func New() *Config {
-	return &Config{Version: CurrentVersion, Servers: map[string]*Server{}}
+	return &Config{
+		Version:  CurrentVersion,
+		Servers:  map[string]*Server{},
+		Projects: map[string]*Project{},
+	}
 }

@@ -30,12 +30,15 @@ func Load(path string) (*Config, error) {
 	if cfg.Servers == nil {
 		cfg.Servers = map[string]*Server{}
 	}
+	if cfg.Projects == nil {
+		cfg.Projects = map[string]*Project{}
+	}
 	return cfg, nil
 }
 
 // Save atomically writes cfg to path with mode 0600. Creates parent dirs.
 func Save(path string, cfg *Config) error {
-	if cfg.Version == 0 {
+	if cfg.Version < CurrentVersion {
 		cfg.Version = CurrentVersion
 	}
 	if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {

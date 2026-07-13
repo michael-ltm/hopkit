@@ -54,6 +54,31 @@ func TestLoad_RejectsFutureVersion(t *testing.T) {
 	require.Contains(t, err.Error(), "unsupported config version")
 }
 
+func TestLoadV2InitializesProjectsWithoutImplicitMigration(t *testing.T) {
+	p := filepath.Join(t.TempDir(), "config.toml")
+	require.NoError(t, os.WriteFile(p, []byte("version = 2\n[servers]\n"), 0o600))
+	cfg, err := Load(p)
+	require.NoError(t, err)
+	require.Equal(t, 2, cfg.Version)
+	require.NotNil(t, cfg.Projects)
+}
+
+func TestProjectRoundTripAndSaveUpgrade(t *testing.T) {
+	p := filepath.Join(t.TempDir(), "config.toml")
+	cfg := New()
+	cfg.Version = 2
+	cfg.Projects["project_ajie"] = &Project{
+		Server: "pc-e5", RemoteWorkspace: `C:\sshm\workspaces\project_ajie`,
+		ArtifactPath: `C:\sshm\artifacts\project_ajie\latest\ajie_publish_tool.exe`,
+		Shell:        "powershell", BuildCommand: "python build.py onefile",
+	}
+	require.NoError(t, Save(p, cfg))
+	got, err := Load(p)
+	require.NoError(t, err)
+	require.Equal(t, CurrentVersion, got.Version)
+	require.Equal(t, cfg.Projects["project_ajie"], got.Projects["project_ajie"])
+}
+
 // osIsUnix is a test helper — defined inline to avoid a separate _test.go file.
 func osIsUnix() bool {
 	return os.PathSeparator == '/'
