@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/base64"
 	"encoding/binary"
+	"encoding/json"
 	"os"
 	"path/filepath"
 	"strings"
@@ -173,6 +174,56 @@ func TestBuildTailLogsResultPreservesSuccessContract(t *testing.T) {
 	require.Equal(t, map[string]any{
 		"alias": "prod", "path": "/tmp/build.log", "platform": "posix", "lines": "last line\n",
 	}, result)
+}
+
+func TestHandleTailLogsAuditsNonzeroExit(t *testing.T) {
+	oldRunTailLogsRemote := runTailLogsRemote
+	t.Cleanup(func() { runTailLogsRemote = oldRunTailLogsRemote })
+
+	for _, platform := range []string{"posix", "windows"} {
+		t.Run(platform, func(t *testing.T) {
+			dir := t.TempDir()
+			cfgPath := filepath.Join(dir, "config.toml")
+			auditPath := filepath.Join(dir, "audit.jsonl")
+			cfg := config.New()
+			cfg.Servers["build"] = &config.Server{Host: "example.invalid", User: "builder", Auth: config.AuthAgent}
+			require.NoError(t, config.Save(cfgPath, cfg))
+
+			runTailLogsRemote = func(_ context.Context, _ Deps, _ *config.Server, gotPlatform, _ string, _ int) (string, *sshpkg.ExecResult, string, error) {
+				return gotPlatform, &sshpkg.ExecResult{
+					ExitCode: 7,
+					Stderr:   "log read failed TOKEN=topsecret",
+				}, "", nil
+			}
+
+			result, err := handleTailLogs(context.Background(), Deps{
+				ConfigPath: cfgPath, AuditPath: auditPath,
+			}, map[string]any{
+				"alias": "build", "path": "/tmp/build.log", "platform": platform, "reason": "inspect failed build",
+			})
+			require.NoError(t, err)
+			errPayload, ok := result.(map[string]any)["error"].(map[string]string)
+			require.True(t, ok)
+			require.Equal(t, "exec", errPayload["kind"])
+			require.Contains(t, errPayload["message"], "tail command exited 7")
+			require.Contains(t, errPayload["message"], "TOKEN=***")
+			require.NotContains(t, errPayload["message"], "topsecret")
+
+			auditData, err := os.ReadFile(auditPath)
+			require.NoError(t, err)
+			var entry struct {
+				Tool   string `json:"tool"`
+				Alias  string `json:"alias"`
+				Reason string `json:"reason"`
+				Result string `json:"result"`
+			}
+			require.NoError(t, json.Unmarshal(auditData, &entry))
+			require.Equal(t, "tail_logs", entry.Tool)
+			require.Equal(t, "build", entry.Alias)
+			require.Equal(t, "inspect failed build", entry.Reason)
+			require.Equal(t, "exit 7", entry.Result)
+		})
+	}
 }
 
 func TestFinishDetachedLaunchAuditsAndPreservesMissingWindowsMetadata(t *testing.T) {

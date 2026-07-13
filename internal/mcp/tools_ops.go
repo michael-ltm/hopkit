@@ -156,6 +156,8 @@ func clampLines(lines int) int {
 	return lines
 }
 
+var runTailLogsRemote = executeTailLogsRemote
+
 func handleTailLogs(ctx context.Context, deps Deps, args map[string]any) (any, error) {
 	reason, err := requireReason(args)
 	if err != nil {
@@ -188,24 +190,33 @@ func handleTailLogs(ctx context.Context, deps Deps, args map[string]any) (any, e
 	}
 	ctx, cancel := context.WithTimeout(ctx, 30*time.Second)
 	defer cancel()
+	platform, res, errKind, err := runTailLogsRemote(ctx, deps, s, platform, path, n)
+	if err != nil {
+		return errResult(errKind, safety.MaskSecrets(err.Error())), nil
+	}
+	out := buildTailLogsResult(alias, path, platform, res)
+	if _, failed := out["error"]; failed {
+		audit(deps, safety.Entry{Tool: "tail_logs", Alias: alias, Reason: reason, Result: fmt.Sprintf("exit %d", res.ExitCode)})
+		return out, nil
+	}
+	audit(deps, safety.Entry{Tool: "tail_logs", Alias: alias, Reason: reason, Result: "ok"})
+	return out, nil
+}
+
+func executeTailLogsRemote(ctx context.Context, deps Deps, s *config.Server, platform, path string, lines int) (string, *sshpkg.ExecResult, string, error) {
 	cli, err := sshpkg.Dial(s, sshpkg.BuildOpts{ConfigPath: deps.ConfigPath})
 	if err != nil {
-		return errResult("ssh", safety.MaskSecrets(err.Error())), nil
+		return platform, nil, "ssh", err
 	}
 	defer cli.Close()
 	if platform == "auto" {
 		platform = detectRemoteDetachPlatform(ctx, cli)
 	}
-	res, err := cli.Exec(ctx, tailCommand(platform, path, n))
+	res, err := cli.Exec(ctx, tailCommand(platform, path, lines))
 	if err != nil {
-		return errResult("exec", safety.MaskSecrets(err.Error())), nil
+		return platform, res, "exec", err
 	}
-	out := buildTailLogsResult(alias, path, platform, res)
-	if _, failed := out["error"]; failed {
-		return out, nil
-	}
-	audit(deps, safety.Entry{Tool: "tail_logs", Alias: alias, Reason: reason, Result: "ok"})
-	return out, nil
+	return platform, res, "", nil
 }
 
 func tailCommand(platform, path string, lines int) string {
