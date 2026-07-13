@@ -57,7 +57,8 @@ and [docs/security.md](docs/security.md).
 - **v0.3** ✓ — Host-key TOFU verification (strict known_hosts still v1.0), parallel `exec_multi`, `upload`/`download` single files, `exec` timeout + detach — _shipped_
 - **v0.4** ✓ — Proxy/VPN-aware dialing: SOCKS5 (`proxy`), ProxyJump, ProxyCommand; SOCKS5 auto-detected from env; automatic direct fallback — _shipped_
 - **v0.5** ✓ — Secure key provisioning, encrypted key support, large-transfer-safe MCP/CLI file transfer — _shipped_
-- **v0.6** — Import/export `~/.ssh/config`, tags/groups
+- **v0.6** ✓ — Deterministic project profiles, safe project-scoped execution, cross-platform detached logs, token-efficient AI skill — _shipped_
+- **v0.7** — Import/export `~/.ssh/config`, tag/group filtering
 - **v1.0** — Port forwarding, SFTP browse, signed release artifacts, strict known_hosts enforcement
 
 See [docs/specs/2026-05-13-sshm-design.md](docs/specs/2026-05-13-sshm-design.md) for the full design.

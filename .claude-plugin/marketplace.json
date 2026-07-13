@@ -4,13 +4,13 @@
     "name": "michael-ltm"
   },
   "description": "sshm — SSH connection manager plugins.",
-  "version": "0.5.0",
+  "version": "0.6.0",
   "plugins": [
     {
       "name": "sshm-skill",
       "source": "./plugins/sshm-skill",
       "description": "Manage SSH servers with sshm — list, connect, exec, bootstrap, inspect — from any AI assistant.",
-      "version": "0.5.0",
+      "version": "0.6.0",
       "author": {
         "name": "michael-ltm"
       },

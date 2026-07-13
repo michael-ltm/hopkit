@@ -1,34 +1,15 @@
-# sshm AI Patterns
+# sshm Server-Only Patterns
 
-Common multi-step workflows expressed as sshm tool sequences.
+Use these sequences only when no project profile is involved.
 
-## Deploy code to a server
+| Intent | Minimal sequence |
+|---|---|
+| Deploy | `check_ssh` once → `upload` or `exec` → restart with `exec` → `get_status` |
+| Follow a detached job | `exec detach=true` → `tail_logs` using returned `log_path` and `platform` |
+| Diagnose an incident | `get_status` → `tail_logs` → read-only `exec` diagnostics |
+| Apply one command to several hosts | inspect aliases → `exec_multi` → investigate only failed aliases |
+| Move a large file | `transfer_start` → poll `transfer_status` → verify returned SHA-256 |
 
-1. `test_connection` — confirm the host is up.
-2. `exec` with `command: "cd /var/www/app && git pull"`, a `reason`.
-   Alternatively, use `upload` to push a specific file directly (e.g. a
-   compiled binary or config file) without requiring git on the remote.
-3. For long-running build or migration steps, use `exec` with `detach: true`
-   and then poll progress with `tail_logs` on the returned `log_path`.
-4. `exec` with `command: "systemctl restart app"`.
-5. `get_status` — confirm the service is healthy.
-
-## Onboard a fresh server
-
-1. `add_server` with the host details and a `reason`.
-2. `gen_key` to create a dedicated keypair.
-3. Relay the `copy_id` instruction to the user (they run it in a terminal).
-4. `test_connection` to confirm key auth works.
-5. `bootstrap` to install baseline tooling.
-
-## Investigate a slow server
-
-1. `get_status` — look at load, memory, disk.
-2. `tail_logs` on the relevant service log.
-3. `exec` with read-only diagnostics (`ss -s`, `journalctl -p err`).
-
-## Rules of thumb
-
-- One `reason` per write, specific to the change.
-- Read before write: inspect with `get_status` / `tail_logs` first.
-- Never escalate to `unsafe: true` without explicit user confirmation.
+For project builds or artifacts, use
+[project-workflows.md](project-workflows.md). For new-host setup, use
+[onboarding.md](onboarding.md). Load neither unless that workflow applies.

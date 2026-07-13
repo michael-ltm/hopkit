@@ -1,26 +1,32 @@
 # sshm MCP Tool Quick Reference
 
+Mutations, commands, upload/download, `transfer_start`, and `tail_logs` require
+a specific `reason`.
+
 | Tool | Required args | Optional args | Returns |
 |---|---|---|---|
-| `list_servers` | — | — | `{servers: [{alias, host, user, tags, last_status}]}` (sorted by alias) |
-| `get_server` | `alias` | — | full record (host masked) |
-| `test_connection` | `alias` | — | `{reachable, latency_ms, error}` |
-| `check_ssh` | `alias` | `mode` (`tcp`, `handshake`, `auth`, `exec`; default `exec`) | layered `{tcp, ssh, exec, ok}` diagnostics |
-| `get_status` | `alias` | — | `{status: {uptime, load, memory, disk, open_ports, failed_logins}}` |
-| `add_server` | `alias`, `host`, `reason` | `user`, `auth` (default agent), `port`, `key_path`, `proxy`, `proxy_jump`, `proxy_command` | `{added: true}` |
-| `edit_server` | `alias`, `reason` | `host`, `user`, `port`, `auth`, `key_path`, `proxy`, `proxy_jump`, `proxy_command` | `{updated: true}` |
-| `remove_server` | `alias`, `reason` | — | `{removed: true}` |
-| `exec` | `alias`, `command`, `reason` | `unsafe`, `timeout_seconds` (0 = no timeout, default 60), `detach`, `platform` (`auto`, `posix`, `windows`) | `{exit, stdout, stderr}`; on timeout adds `timed_out: true`; large output adds `truncated: true`; with `detach` returns `{detached, platform, log_path}` |
-| `exec_multi` | `aliases[]`, `command`, `reason` | `unsafe`, `timeout_seconds` | `{results: {alias: …}, succeeded: […], failed: {alias: reason}}` |
-| `upload` | `alias`, `local_path`, `remote_path`, `reason` | `resume`, `sha256` | `{uploaded: true, bytes, bytes_total, resumed_from, sha256}` |
-| `download` | `alias`, `remote_path`, `local_path`, `reason` | `resume`, `sha256` | `{downloaded: true, bytes, bytes_total, resumed_from, sha256}` |
-| `transfer_start` | `alias`, `direction`, `remote_path`, `local_path`, `reason` | `resume`, `sha256` | `{id, status, bytes_done, bytes_total}` |
-| `transfer_status` | `transfer_id` | — | `{id, status, bytes_done, bytes_total, error, sha256}` |
+| `list_servers` | — | — | compact servers sorted by alias |
+| `get_server` | `alias` | — | full server record; host masked |
+| `test_connection` | `alias` | — | `{reachable, latency_ms, error}`; TCP only |
+| `check_ssh` | `alias` | `mode=tcp\|handshake\|auth\|exec` (default `exec`) | layered `{tcp, ssh, exec, ok}` |
+| `get_status` | `alias` | — | uptime, load, memory, disk, ports, failed logins |
+| `list_projects` | — | — | compact profiles sorted by project |
+| `get_project` | `project` | — | complete project profile |
+| `upsert_project` | `project`, `reason`; create also needs `server`, `remote_workspace`, `artifact_path` | profile fields on update; `local_root`, `remote_runs`, `local_artifact_dir`, `shell=auto\|posix\|powershell\|cmd`, `build_command`, `verify_command` | `{project, server, created, updated}` |
+| `add_server` | `alias`, `host`, `reason` | `user`, `auth`, `port`, `key_path`, `proxy`, `proxy_jump`, `proxy_command` | `{added}` |
+| `edit_server` | `alias`, `reason` | mutable server fields | `{updated}` |
+| `remove_server` | `alias`, `reason` | — | `{removed}` |
+| `exec` | `alias`, `command`, `reason` | `unsafe`, `timeout_seconds` (0 = none), `detach`, `platform=auto\|posix\|windows` | exit/output; detach adds platform-specific `log_path` and may add `pid` |
+| `exec_project` | `project`, `command`, `reason` | `workdir=workspace\|runs\|artifact_parent`, `unsafe`, `timeout_seconds`, `detach`, `platform` | exec result plus `{project, alias, workdir, shell}` |
+| `exec_multi` | `aliases[]`, `command`, `reason` | `unsafe`, `timeout_seconds` | per-alias results and succeeded/failed sets |
+| `upload` / `download` | `alias`, local/remote paths, `reason` | `resume`, `sha256` | byte counts, resume offset, SHA-256 |
+| `transfer_start` | `alias`, `direction`, local/remote paths, `reason` | `resume`, `sha256` | transfer id and progress |
+| `transfer_status` | `transfer_id` | — | state, byte counts, error, SHA-256 |
+| `tail_logs` | `alias`, `path`, `reason` | `lines` (default 100, max 5000), `platform=auto\|posix\|windows` | `{alias, path, platform, lines}` or structured masked exec error |
 | `bootstrap` | `alias`, `reason` | — | `{completed, sshd_state}` |
-| `gen_key` | `alias`, `path`, `reason` | — | `{key_path, public_key, encrypted, persisted, recovery_file}` |
-| `copy_id` | `alias`, `reason` | — | `{action_required: "<cli instruction>"}` |
-| `tail_logs` | `alias`, `path`, `reason` | `lines` (clamped to [1, 5000]) | `{lines: "<masked tail>"}` |
+| `gen_key` | `alias`, `path`, `reason` | — | key metadata and recovery-file pointer; no passphrase |
+| `copy_id` | `alias`, `reason` | — | terminal-only `action_required` instruction |
 
-## Common onboarding commands
-
-- `sshm provision <alias> [--harden]` — encrypted key + install + test (+ optionally disable password login). The secure default for onboarding.
+`upsert_project` is a partial update: omitted fields stay unchanged; an explicit
+empty string clears an optional field. Project names match
+`^[a-z0-9][a-z0-9._-]*$`.

@@ -4,6 +4,17 @@ All notable changes to this project will be documented in this file. Format: [Ke
 
 ## [Unreleased]
 
+## [0.6.0] — 2026-07-13
+
+### Added
+- Version-3 project profiles with stable local root, remote workspace/run root, artifact path, shell, build command, and verification command fields. New MCP tools `list_projects`, `get_project`, and audited `upsert_project` expose those profiles without guessing paths.
+- `exec_project` runs commands in a profile's `workspace`, `runs`, or `artifact_parent` directory while preserving the existing dangerous-command filter, timeout/detach behavior, masking, audit reason, and host-key verification.
+
+### Changed
+- Detached jobs and `tail_logs` are cross-platform: Windows launch results expose concrete PID/log metadata, while log reads accept `platform=auto|posix|windows` and use the remote platform's native command.
+- The `sshm-server-ops` skill now uses conditional references for project builds, Windows EXE packaging, artifact verification, and onboarding. Its always-loaded core fell from 642 to 383 words; the common project path is 826 words instead of the previous 1199-word default load.
+- Compatibility remains additive: version-2 configuration files load without implicit migration and upgrade only when saved, and existing server-only CLI/MCP tool names and behavior remain available.
+
 ## [0.5.1] — 2026-07-09
 
 ### Added
