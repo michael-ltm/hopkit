@@ -65,9 +65,9 @@ Follow this order for every project build:
    and pass the resulting file as `local_path`, never the directory itself.
    Confirm the local SHA-256 matches the remote evidence.
 
-Report resolved workspace and source evidence, build start, pre/post artifact
-state, promotion, exact remote/local paths, byte count, SHA-256, and the separate
-smoke result.
+Report one compact evidence table: workspace/source, build start, pre/post
+artifact, promotion, exact paths, bytes, SHA-256, smoke. Do not narrate
+successful steps or quote full logs unless requested.
 
 ## Windows builds before detached execution is verified
 

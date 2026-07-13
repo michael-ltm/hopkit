@@ -148,3 +148,16 @@ func TestProjectWorkflowPreservesVerifiedBuildContract(t *testing.T) {
 		}
 	}
 }
+
+func TestProjectWorkflowRequiresCompactReporting(t *testing.T) {
+	workflow := strings.Join(strings.Fields(readSkillFile(t, "project-workflows.md")), " ")
+	for _, phrase := range []string{
+		"one compact evidence table",
+		"Do not narrate successful steps",
+		"quote full logs",
+	} {
+		if !strings.Contains(workflow, phrase) {
+			t.Errorf("project workflow does not contain compact reporting guidance %q", phrase)
+		}
+	}
+}
