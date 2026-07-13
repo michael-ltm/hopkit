@@ -2,11 +2,16 @@ package mcp
 
 import (
 	"context"
+	"encoding/base64"
+	"encoding/binary"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
+	"unicode/utf16"
 
 	"github.com/michael-ltm/sshm/internal/config"
+	sshpkg "github.com/michael-ltm/sshm/internal/ssh"
 	"github.com/stretchr/testify/require"
 )
 
@@ -116,4 +121,108 @@ func TestClampLines(t *testing.T) {
 		got := clampLines(tt.in)
 		require.Equal(t, tt.want, got, "clampLines(%d)", tt.in)
 	}
+}
+
+func TestTailCommandPOSIX(t *testing.T) {
+	require.Equal(t, "tail -n 25 '/tmp/a b.log'", tailCommand("posix", "/tmp/a b.log", 25))
+}
+
+func TestTailCommandWindows(t *testing.T) {
+	got := tailCommand("windows", `C:\Temp\a b.log`, 25)
+
+	require.Contains(t, got, "powershell.exe -NoProfile -NonInteractive -EncodedCommand ")
+	parts := strings.Fields(got)
+	require.NotEmpty(t, parts)
+	decoded, err := base64.StdEncoding.DecodeString(parts[len(parts)-1])
+	require.NoError(t, err)
+	require.Zero(t, len(decoded)%2)
+	words := make([]uint16, len(decoded)/2)
+	for i := range words {
+		words[i] = binary.LittleEndian.Uint16(decoded[i*2:])
+	}
+	script := string(utf16.Decode(words))
+	require.Contains(t, script, "Get-Content")
+	require.Contains(t, script, "-LiteralPath 'C:\\Temp\\a b.log'")
+	require.Contains(t, script, "-Tail 25")
+}
+
+func TestBuildTailLogsResultRejectsNonzeroExit(t *testing.T) {
+	for _, platform := range []string{"posix", "windows"} {
+		t.Run(platform, func(t *testing.T) {
+			result := buildTailLogsResult("pc-e5", `C:\Temp\build.log`, platform, &sshpkg.ExecResult{
+				ExitCode: 1,
+				Stderr:   "log read denied TOKEN=topsecret",
+			})
+
+			errPayload, ok := result["error"].(map[string]string)
+			require.True(t, ok)
+			require.Equal(t, "exec", errPayload["kind"])
+			require.Contains(t, errPayload["message"], "tail command exited 1")
+			require.Contains(t, errPayload["message"], "log read denied TOKEN=***")
+			require.NotContains(t, errPayload["message"], "topsecret")
+		})
+	}
+}
+
+func TestBuildTailLogsResultPreservesSuccessContract(t *testing.T) {
+	result := buildTailLogsResult("prod", "/tmp/build.log", "posix", &sshpkg.ExecResult{
+		ExitCode: 0,
+		Stdout:   "last line\n",
+	})
+
+	require.Equal(t, map[string]any{
+		"alias": "prod", "path": "/tmp/build.log", "platform": "posix", "lines": "last line\n",
+	}, result)
+}
+
+func TestFinishDetachedLaunchAuditsAndPreservesMissingWindowsMetadata(t *testing.T) {
+	auditPath := filepath.Join(t.TempDir(), "audit.jsonl")
+	launcher := buildDetachLauncher("windows", "npm run build", 123)
+	stdout := "pid=4321\r\n"
+
+	result := finishDetachedLaunch(Deps{AuditPath: auditPath}, "pc-e5", "build release", true, launcher, stdout)
+
+	require.Equal(t, "pc-e5", result["alias"])
+	require.Equal(t, true, result["detached"])
+	require.Equal(t, "windows", result["platform"])
+	require.Equal(t, stdout, result["stdout"])
+	require.Equal(t, 4321, result["pid"])
+	errPayload, ok := result["error"].(map[string]string)
+	require.True(t, ok)
+	require.Equal(t, "exec", errPayload["kind"])
+
+	auditData, err := os.ReadFile(auditPath)
+	require.NoError(t, err)
+	require.Contains(t, string(auditData), `"tool":"exec"`)
+	require.Contains(t, string(auditData), `"alias":"pc-e5"`)
+	require.Contains(t, string(auditData), `"reason":"build release"`)
+	require.Contains(t, string(auditData), "metadata")
+	require.Contains(t, string(auditData), "unsafe=true")
+}
+
+func TestHandleTailLogsRejectsUnknownPlatformBeforeDial(t *testing.T) {
+	result, err := handleTailLogs(context.Background(), Deps{
+		ConfigPath: filepath.Join(t.TempDir(), "missing-config.toml"),
+	}, map[string]any{
+		"alias": "missing", "path": "/tmp/build.log", "platform": "plan9", "reason": "inspect build",
+	})
+
+	require.NoError(t, err)
+	errPayload, ok := result.(map[string]any)["error"].(map[string]string)
+	require.True(t, ok)
+	require.Equal(t, map[string]string{
+		"kind": "bad_request", "message": "platform must be auto, posix, or windows",
+	}, errPayload)
+}
+
+func TestTailLogsSchemaConstrainsPlatform(t *testing.T) {
+	s, _ := NewServer(Deps{AllowWrite: true})
+	tool := s.GetTool("tail_logs")
+	require.NotNil(t, tool)
+	property, ok := tool.Tool.InputSchema.Properties["platform"].(map[string]any)
+	require.True(t, ok)
+	values, ok := property["enum"].([]string)
+	require.True(t, ok)
+	require.ElementsMatch(t, []string{"auto", "posix", "windows"}, values)
+	require.NotContains(t, tool.Tool.InputSchema.Required, "platform")
 }

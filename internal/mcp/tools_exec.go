@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -128,9 +129,9 @@ func handleExec(ctx context.Context, deps Deps, args map[string]any) (any, error
 	return out, nil
 }
 
-// runDetached launches command in the background on a POSIX remote and returns
-// immediately. Output is redirected to a log file the caller can poll with
-// tail_logs. timeout_seconds is ignored for detached commands.
+// runDetached launches command in the background and returns immediately.
+// Output is redirected to a log file the caller can poll with tail_logs.
+// timeout_seconds is ignored for detached commands.
 func runDetached(ctx context.Context, deps Deps, cli *sshpkg.Client, alias, command, reason string, unsafe bool, platform string) (any, error) {
 	if strings.TrimSpace(platform) == "" || strings.EqualFold(platform, "auto") {
 		platform = detectRemoteDetachPlatform(ctx, cli)
@@ -150,25 +151,73 @@ func runDetached(ctx context.Context, deps Deps, cli *sshpkg.Client, alias, comm
 		return errResult("exec", safety.MaskSecrets(fmt.Sprintf(
 			"detach launcher exited %d: %s", res.ExitCode, res.Stderr))), nil
 	}
-	result := "detached"
-	if unsafe {
-		result += " (unsafe=true — filter bypassed)"
-	}
-	audit(deps, safety.Entry{Tool: "exec", Alias: alias, Reason: reason, Result: result})
-	return map[string]any{
-		"alias":    alias,
-		"detached": true,
-		"platform": launcher.Platform,
-		"log_path": launcher.LogPath,
-		"stdout":   safety.MaskSecrets(res.Stdout),
-		"note":     "running in background; poll with tail_logs on log_path",
-	}, nil
+	return finishDetachedLaunch(deps, alias, reason, unsafe, launcher, res.Stdout), nil
 }
 
 type detachLauncher struct {
 	Platform string
 	Command  string
 	LogPath  string
+}
+
+func parseDetachMetadata(stdout string) (pid int, logPath string) {
+	for _, rawLine := range strings.Split(stdout, "\n") {
+		line := strings.TrimSpace(rawLine)
+		switch {
+		case strings.HasPrefix(line, "pid="):
+			parsed, err := strconv.Atoi(strings.TrimSpace(strings.TrimPrefix(line, "pid=")))
+			if err == nil {
+				pid = parsed
+			}
+		case strings.HasPrefix(line, "log="):
+			logPath = strings.TrimSpace(strings.TrimPrefix(line, "log="))
+		}
+	}
+	return pid, logPath
+}
+
+func buildDetachedResult(alias string, launcher detachLauncher, stdout string) map[string]any {
+	logPath := launcher.LogPath
+	pid := 0
+	if launcher.Platform == "windows" {
+		pid, logPath = parseDetachMetadata(stdout)
+		if logPath == "" {
+			out := errResult("exec", "Windows detach launcher did not return readable log metadata")
+			out["alias"] = alias
+			out["detached"] = true
+			out["platform"] = launcher.Platform
+			out["stdout"] = safety.MaskSecrets(stdout)
+			if pid > 0 {
+				out["pid"] = pid
+			}
+			return out
+		}
+	}
+	out := map[string]any{
+		"alias":    alias,
+		"detached": true,
+		"platform": launcher.Platform,
+		"log_path": logPath,
+		"stdout":   safety.MaskSecrets(stdout),
+		"note":     "running in background; poll with tail_logs on log_path",
+	}
+	if pid > 0 {
+		out["pid"] = pid
+	}
+	return out
+}
+
+func finishDetachedLaunch(deps Deps, alias, reason string, unsafe bool, launcher detachLauncher, stdout string) map[string]any {
+	out := buildDetachedResult(alias, launcher, stdout)
+	result := "detached"
+	if _, failed := out["error"]; failed {
+		result = "detached (log metadata unavailable)"
+	}
+	if unsafe {
+		result += " (unsafe=true — filter bypassed)"
+	}
+	audit(deps, safety.Entry{Tool: "exec", Alias: alias, Reason: reason, Result: result})
+	return out
 }
 
 func detectRemoteDetachPlatform(ctx context.Context, cli *sshpkg.Client) string {
@@ -306,15 +355,15 @@ func registerExecTools(s *server.MCPServer, deps Deps, names []string) []string 
 	execTool := mcp.NewTool("exec",
 		mcp.WithDescription("Run a command on a server. Dangerous commands are blocked unless unsafe=true. "+
 			"timeout_seconds bounds the run (0 = no timeout, default 60); on timeout the captured partial output is "+
-			"returned with timed_out=true. detach=true runs the command in the background on a POSIX remote and returns "+
-			"a log_path to poll with tail_logs (assumes a POSIX shell; ignores timeout_seconds). Requires reason; audited."),
+			"returned with timed_out=true. detach=true runs the command in the background and returns a platform-specific "+
+			"log_path to poll with tail_logs (ignores timeout_seconds). Requires reason; audited."),
 		mcp.WithString("alias", mcp.Description("server alias")),
 		mcp.WithString("command", mcp.Description("the shell command to run")),
 		mcp.WithString("reason", mcp.Description("why (required, audited)")),
 		mcp.WithBoolean("unsafe", mcp.Description("bypass the dangerous-command filter")),
 		mcp.WithNumber("timeout_seconds", mcp.Description("max seconds before the command is killed; 0 = no timeout; default 60")),
 		mcp.WithString("platform", mcp.Description("detach platform override: auto|posix|windows")),
-		mcp.WithBoolean("detach", mcp.Description("run the command in the background on a POSIX remote and return immediately (poll output with tail_logs)")))
+		mcp.WithBoolean("detach", mcp.Description("run the command in the background and return immediately (poll output with tail_logs)")))
 	s.AddTool(execTool, func(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
 		out, err := handleExec(ctx, deps, req.GetArguments())
 		if err != nil {

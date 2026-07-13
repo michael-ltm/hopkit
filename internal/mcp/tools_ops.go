@@ -2,6 +2,7 @@ package mcp
 
 import (
 	"context"
+	"encoding/base64"
 	"fmt"
 	"strings"
 	"time"
@@ -165,6 +166,14 @@ func handleTailLogs(ctx context.Context, deps Deps, args map[string]any) (any, e
 	if path == "" {
 		return errResult("bad_request", "path is required"), nil
 	}
+	platform := strings.ToLower(strings.TrimSpace(strArg(args, "platform")))
+	switch platform {
+	case "", "auto":
+		platform = "auto"
+	case "posix", "windows":
+	default:
+		return errResult("bad_request", "platform must be auto, posix, or windows"), nil
+	}
 	n := defaultTailLines
 	if v, ok := args["lines"].(float64); ok {
 		n = clampLines(int(v))
@@ -184,12 +193,42 @@ func handleTailLogs(ctx context.Context, deps Deps, args map[string]any) (any, e
 		return errResult("ssh", safety.MaskSecrets(err.Error())), nil
 	}
 	defer cli.Close()
-	res, err := cli.Exec(ctx, fmt.Sprintf("tail -n %d %s", n, shellQuoteArg(path)))
+	if platform == "auto" {
+		platform = detectRemoteDetachPlatform(ctx, cli)
+	}
+	res, err := cli.Exec(ctx, tailCommand(platform, path, n))
 	if err != nil {
 		return errResult("exec", safety.MaskSecrets(err.Error())), nil
 	}
+	out := buildTailLogsResult(alias, path, platform, res)
+	if _, failed := out["error"]; failed {
+		return out, nil
+	}
 	audit(deps, safety.Entry{Tool: "tail_logs", Alias: alias, Reason: reason, Result: "ok"})
-	return map[string]any{"alias": alias, "path": path, "lines": safety.MaskSecrets(res.Stdout)}, nil
+	return out, nil
+}
+
+func tailCommand(platform, path string, lines int) string {
+	if strings.EqualFold(platform, "windows") {
+		script := fmt.Sprintf("Get-Content -LiteralPath %s -Tail %d", powershellSingleQuote(path), lines)
+		encoded := base64.StdEncoding.EncodeToString(utf16LE(script))
+		return "powershell.exe -NoProfile -NonInteractive -EncodedCommand " + encoded
+	}
+	return fmt.Sprintf("tail -n %d %s", lines, shellQuoteArg(path))
+}
+
+func buildTailLogsResult(alias, path, platform string, res *sshpkg.ExecResult) map[string]any {
+	if res.ExitCode != 0 {
+		message := fmt.Sprintf("tail command exited %d", res.ExitCode)
+		if stderr := strings.TrimSpace(res.Stderr); stderr != "" {
+			message += ": " + stderr
+		}
+		return errResult("exec", safety.MaskSecrets(message))
+	}
+	return map[string]any{
+		"alias": alias, "path": path, "platform": platform,
+		"lines": safety.MaskSecrets(res.Stdout),
+	}
 }
 
 // shellQuoteArg single-quotes a path so it survives as one shell argument.
@@ -220,8 +259,10 @@ func registerOpsTools(s *server.MCPServer, deps Deps, names []string) []string {
 	reg("gen_key", "Generate an ed25519 keypair for a server.", handleGenKey,
 		mcp.WithString("path", mcp.Description("private key path")))
 	reg("copy_id", "Get instructions to install the public key (password stays on the CLI).", handleCopyID)
-	reg("tail_logs", "Tail a remote log file.", handleTailLogs,
+	reg("tail_logs", "Tail a remote log file using the remote platform's native command.", handleTailLogs,
 		mcp.WithString("path", mcp.Description("remote log file path")),
+		mcp.WithString("platform", mcp.Description("remote platform override: auto|posix|windows"),
+			mcp.Enum("auto", "posix", "windows")),
 		mcp.WithNumber("lines", mcp.Description("number of trailing lines (default 100, max 5000)")))
 	return names
 }
