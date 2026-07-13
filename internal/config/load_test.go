@@ -81,22 +81,28 @@ func TestProjectRoundTripAndSaveUpgrade(t *testing.T) {
 
 func TestSaveRejectsProjectCredentialsWithoutModifyingDisk(t *testing.T) {
 	fields := []struct {
+		caseName     string
 		name         string
 		credential   string
 		secretNeedle string
 		set          func(*Project, string)
 	}{
-		{name: "local_root", credential: "-----BEGIN PRIVATE KEY-----\nprivate-data\n-----END PRIVATE KEY-----", secretNeedle: "private-data", set: func(p *Project, v string) { p.LocalRoot = v }},
-		{name: "remote_workspace", credential: "ssh://user:workspace-secret@example.com/repo", secretNeedle: "workspace-secret", set: func(p *Project, v string) { p.RemoteWorkspace = v }},
-		{name: "remote_runs", credential: "AKIAIOSFODNN7EXAMPLE", secretNeedle: "AKIAIOSFODNN7EXAMPLE", set: func(p *Project, v string) { p.RemoteRuns = v }},
-		{name: "artifact_path", credential: "/tmp/xoxb-1234567890-abcdefghij", secretNeedle: "xoxb-1234567890-abcdefghij", set: func(p *Project, v string) { p.ArtifactPath = v }},
-		{name: "local_artifact_dir", credential: "eyJhbGciOiJIUzI1NiJ9.payload.signature", secretNeedle: "eyJhbGciOiJIUzI1NiJ9.payload.signature", set: func(p *Project, v string) { p.LocalArtifactDir = v }},
-		{name: "build_command", credential: "builder --client-secret build-secret", secretNeedle: "build-secret", set: func(p *Project, v string) { p.BuildCommand = v }},
-		{name: "verify_command", credential: "token: verify-secret", secretNeedle: "verify-secret", set: func(p *Project, v string) { p.VerifyCommand = v }},
+		{caseName: "PEM local root", name: "local_root", credential: "-----BEGIN PRIVATE KEY-----\nprivate-data\n-----END PRIVATE KEY-----", secretNeedle: "private-data", set: func(p *Project, v string) { p.LocalRoot = v }},
+		{caseName: "URI workspace password", name: "remote_workspace", credential: "ssh://user:workspace-secret@example.com/repo", secretNeedle: "workspace-secret", set: func(p *Project, v string) { p.RemoteWorkspace = v }},
+		{caseName: "AWS remote runs", name: "remote_runs", credential: "AKIAIOSFODNN7EXAMPLE", secretNeedle: "AKIAIOSFODNN7EXAMPLE", set: func(p *Project, v string) { p.RemoteRuns = v }},
+		{caseName: "Slack artifact path", name: "artifact_path", credential: "/tmp/xoxb-1234567890-abcdefghij", secretNeedle: "xoxb-1234567890-abcdefghij", set: func(p *Project, v string) { p.ArtifactPath = v }},
+		{caseName: "JWT local artifact", name: "local_artifact_dir", credential: "eyJhbGciOiJIUzI1NiJ9.payload.signature", secretNeedle: "eyJhbGciOiJIUzI1NiJ9.payload.signature", set: func(p *Project, v string) { p.LocalArtifactDir = v }},
+		{caseName: "secret build flag", name: "build_command", credential: "builder --client-secret build-secret", secretNeedle: "build-secret", set: func(p *Project, v string) { p.BuildCommand = v }},
+		{caseName: "colon verify token", name: "verify_command", credential: "token: verify-secret", secretNeedle: "verify-secret", set: func(p *Project, v string) { p.VerifyCommand = v }},
+		{caseName: "concatenated password", name: "build_command", credential: "DBPASSWORD=db-secret make", secretNeedle: "db-secret", set: func(p *Project, v string) { p.BuildCommand = v }},
+		{caseName: "concatenated token", name: "verify_command", credential: "DEPLOYTOKEN=deploy-secret verify", secretNeedle: "deploy-secret", set: func(p *Project, v string) { p.VerifyCommand = v }},
+		{caseName: "terminal key", name: "local_root", credential: "SIGNING_KEY=signing-secret", secretNeedle: "signing-secret", set: func(p *Project, v string) { p.LocalRoot = v }},
+		{caseName: "mysql short password", name: "build_command", credential: "mysql -uroot -pdb-secret database", secretNeedle: "db-secret", set: func(p *Project, v string) { p.BuildCommand = v }},
+		{caseName: "hardcoded env default", name: "verify_command", credential: "TOKEN=${TOKEN:-default-secret} verify", secretNeedle: "default-secret", set: func(p *Project, v string) { p.VerifyCommand = v }},
 	}
 
 	for _, field := range fields {
-		t.Run(field.name, func(t *testing.T) {
+		t.Run(field.caseName, func(t *testing.T) {
 			path := filepath.Join(t.TempDir(), "config.toml")
 			cfg := New()
 			cfg.Projects["project"] = &Project{
@@ -114,6 +120,38 @@ func TestSaveRejectsProjectCredentialsWithoutModifyingDisk(t *testing.T) {
 			after, readErr := os.ReadFile(path)
 			require.NoError(t, readErr)
 			require.Equal(t, before, after)
+		})
+	}
+}
+
+func TestSaveAllowsBenignCredentialLikeProjectValues(t *testing.T) {
+	tests := []struct {
+		name  string
+		value string
+		set   func(*Project, string)
+		get   func(*Project) string
+	}{
+		{name: "Go parallel flag", value: "go test -parallel=4 ./...", set: func(p *Project, v string) { p.BuildCommand = v }, get: func(p *Project) string { return p.BuildCommand }},
+		{name: "port flag", value: "app -port=8080", set: func(p *Project, v string) { p.VerifyCommand = v }, get: func(p *Project) string { return p.VerifyCommand }},
+		{name: "profile flag", value: "tool -profile=release", set: func(p *Project, v string) { p.VerifyCommand = v }, get: func(p *Project) string { return p.VerifyCommand }},
+		{name: "API key path", value: "API_KEY_PATH=/tmp/api-key build", set: func(p *Project, v string) { p.BuildCommand = v }, get: func(p *Project) string { return p.BuildCommand }},
+		{name: "HTTP username", value: "https://alice@example.com/source", set: func(p *Project, v string) { p.LocalRoot = v }, get: func(p *Project) string { return p.LocalRoot }},
+		{name: "braced PowerShell env", value: "TOKEN=${env:TOKEN} deploy", set: func(p *Project, v string) { p.BuildCommand = v }, get: func(p *Project) string { return p.BuildCommand }},
+		{name: "required POSIX env", value: "TOKEN=${TOKEN:?required} verify", set: func(p *Project, v string) { p.VerifyCommand = v }, get: func(p *Project) string { return p.VerifyCommand }},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			path := filepath.Join(t.TempDir(), "config.toml")
+			cfg := New()
+			project := &Project{Server: "prod", RemoteWorkspace: "/srv/app", ArtifactPath: "/srv/app.tgz"}
+			tt.set(project, tt.value)
+			cfg.Projects["project"] = project
+
+			require.NoError(t, Save(path, cfg))
+			loaded, err := Load(path)
+			require.NoError(t, err)
+			require.Equal(t, tt.value, tt.get(loaded.Projects["project"]))
 		})
 	}
 }

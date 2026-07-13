@@ -104,21 +104,27 @@ func TestUpsertProjectPreservesAbsentAndClearsExplicitEmpty(t *testing.T) {
 
 func TestUpsertProjectRejectsCredentialFieldsWithoutModifyingDisk(t *testing.T) {
 	fields := []struct {
+		caseName     string
 		name         string
 		value        string
 		secretNeedle string
 	}{
-		{name: "local_root", value: "-----BEGIN PRIVATE KEY-----\nprivate-data\n-----END PRIVATE KEY-----", secretNeedle: "private-data"},
-		{name: "remote_workspace", value: "sftp://builder:workspace-secret@example.com/work", secretNeedle: "workspace-secret"},
-		{name: "remote_runs", value: "AKIAIOSFODNN7EXAMPLE", secretNeedle: "AKIAIOSFODNN7EXAMPLE"},
-		{name: "artifact_path", value: "/tmp/xoxb-1234567890-abcdefghij", secretNeedle: "xoxb-1234567890-abcdefghij"},
-		{name: "local_artifact_dir", value: "eyJhbGciOiJIUzI1NiJ9.payload.signature", secretNeedle: "eyJhbGciOiJIUzI1NiJ9.payload.signature"},
-		{name: "build_command", value: "builder --client-secret build-secret", secretNeedle: "build-secret"},
-		{name: "verify_command", value: "token: verify-secret", secretNeedle: "verify-secret"},
+		{caseName: "PEM local root", name: "local_root", value: "-----BEGIN PRIVATE KEY-----\nprivate-data\n-----END PRIVATE KEY-----", secretNeedle: "private-data"},
+		{caseName: "URI workspace password", name: "remote_workspace", value: "sftp://builder:workspace-secret@example.com/work", secretNeedle: "workspace-secret"},
+		{caseName: "AWS remote runs", name: "remote_runs", value: "AKIAIOSFODNN7EXAMPLE", secretNeedle: "AKIAIOSFODNN7EXAMPLE"},
+		{caseName: "Slack artifact path", name: "artifact_path", value: "/tmp/xoxb-1234567890-abcdefghij", secretNeedle: "xoxb-1234567890-abcdefghij"},
+		{caseName: "JWT local artifact", name: "local_artifact_dir", value: "eyJhbGciOiJIUzI1NiJ9.payload.signature", secretNeedle: "eyJhbGciOiJIUzI1NiJ9.payload.signature"},
+		{caseName: "secret build flag", name: "build_command", value: "builder --client-secret build-secret", secretNeedle: "build-secret"},
+		{caseName: "colon verify token", name: "verify_command", value: "token: verify-secret", secretNeedle: "verify-secret"},
+		{caseName: "concatenated password", name: "build_command", value: "DBPASSWORD=db-secret make", secretNeedle: "db-secret"},
+		{caseName: "concatenated token", name: "verify_command", value: "DEPLOYTOKEN=deploy-secret verify", secretNeedle: "deploy-secret"},
+		{caseName: "terminal key", name: "local_root", value: "SIGNING_KEY=signing-secret", secretNeedle: "signing-secret"},
+		{caseName: "mysql short password", name: "build_command", value: "mysql -uroot -pdb-secret database", secretNeedle: "db-secret"},
+		{caseName: "hardcoded env default", name: "verify_command", value: "TOKEN=${TOKEN:-default-secret} verify", secretNeedle: "default-secret"},
 	}
 
 	for _, field := range fields {
-		t.Run(field.name, func(t *testing.T) {
+		t.Run(field.caseName, func(t *testing.T) {
 			cfgPath, auditPath := writeProjectTestConfig(t)
 			before, err := os.ReadFile(cfgPath)
 			require.NoError(t, err)
@@ -138,6 +144,40 @@ func TestUpsertProjectRejectsCredentialFieldsWithoutModifyingDisk(t *testing.T) 
 			after, readErr := os.ReadFile(cfgPath)
 			require.NoError(t, readErr)
 			require.Equal(t, before, after)
+		})
+	}
+}
+
+func TestUpsertProjectAllowsBenignCredentialLikeValues(t *testing.T) {
+	tests := []struct {
+		name  string
+		field string
+		value string
+		get   func(*config.Project) string
+	}{
+		{name: "Go parallel flag", field: "build_command", value: "go test -parallel=4 ./...", get: func(p *config.Project) string { return p.BuildCommand }},
+		{name: "port flag", field: "verify_command", value: "app -port=8080", get: func(p *config.Project) string { return p.VerifyCommand }},
+		{name: "profile flag", field: "verify_command", value: "tool -profile=release", get: func(p *config.Project) string { return p.VerifyCommand }},
+		{name: "API key path", field: "build_command", value: "API_KEY_PATH=/tmp/api-key build", get: func(p *config.Project) string { return p.BuildCommand }},
+		{name: "HTTP username", field: "local_root", value: "https://alice@example.com/source", get: func(p *config.Project) string { return p.LocalRoot }},
+		{name: "braced PowerShell env", field: "build_command", value: "TOKEN=${env:TOKEN} deploy", get: func(p *config.Project) string { return p.BuildCommand }},
+		{name: "required POSIX env", field: "verify_command", value: "TOKEN=${TOKEN:?required} verify", get: func(p *config.Project) string { return p.VerifyCommand }},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			cfgPath, auditPath := writeProjectTestConfig(t)
+			out, err := handleUpsertProject(Deps{ConfigPath: cfgPath, AuditPath: auditPath}, map[string]any{
+				"project": "a", "reason": "test benign credential-like value", tt.field: tt.value,
+			})
+			require.NoError(t, err)
+			result, ok := out.(map[string]any)
+			require.True(t, ok)
+			require.NotContains(t, result, "error")
+
+			cfg, err := config.Load(cfgPath)
+			require.NoError(t, err)
+			require.Equal(t, tt.value, tt.get(cfg.Projects["a"]))
 		})
 	}
 }
