@@ -11,8 +11,8 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-func TestBuildDetachLauncherUsesPowerShellForWindows(t *testing.T) {
-	command := "$payload = @'\nchild data\n'@\nWrite-Output 'pid=999'"
+func TestBuildDetachLauncherUsesNestedEncodedCommandsForWindows(t *testing.T) {
+	command := "$source = 'C:\\Build Root\\app source'\r\n$payload = @'\r\nchild data\r\n'@\r\nWrite-Output first; Write-Output second\r\n# trailing comment"
 	launcher := buildDetachLauncher("windows", command, 123)
 
 	const prefix = "powershell.exe -NoProfile -NonInteractive -EncodedCommand "
@@ -31,18 +31,30 @@ func TestBuildDetachLauncherUsesPowerShellForWindows(t *testing.T) {
 	}
 	outerScript := string(utf16.Decode(words))
 	require.Contains(t, outerScript, "Start-Process")
+	require.Contains(t, outerScript, "'-EncodedCommand',$childEncoded")
 	require.Contains(t, outerScript, "Write-Output ('pid=' + $p.Id)")
 	require.Contains(t, outerScript, "Write-Output ('log=' + $log)")
+	require.NotContains(t, outerScript, "'-File'")
+	require.NotContains(t, outerScript, "Set-Content")
+	require.NotContains(t, outerScript, "sshm-detach-123.ps1")
 	require.NotContains(t, outerScript, command)
 	require.NotContains(t, outerScript, "\n'@\n")
-	require.NotContains(t, outerScript, "Write-Output 'pid=999'")
+	require.NotContains(t, outerScript, `C:\Build Root\app source`)
 
-	match := regexp.MustCompile(`\[Convert\]::FromBase64String\('([A-Za-z0-9+/=]+)'\)`).FindStringSubmatch(outerScript)
+	match := regexp.MustCompile(`\$childEncoded='([A-Za-z0-9+/=]+)'`).FindStringSubmatch(outerScript)
 	require.Len(t, match, 2)
 	innerBytes, err := base64.StdEncoding.DecodeString(match[1])
 	require.NoError(t, err)
-	innerScript := string(innerBytes)
-	require.Equal(t, command+" *> (Join-Path $env:TEMP 'sshm-detach-123.log')", innerScript)
+	require.Zero(t, len(innerBytes)%2)
+	innerWords := make([]uint16, len(innerBytes)/2)
+	for i := range innerWords {
+		innerWords[i] = binary.LittleEndian.Uint16(innerBytes[i*2:])
+	}
+	innerScript := string(utf16.Decode(innerWords))
+	normalizedCommand := strings.ReplaceAll(command, "\r\n", "\n")
+	require.Equal(t, "& {\n"+normalizedCommand+"\n} *> (Join-Path $env:TEMP 'sshm-detach-123.log')", innerScript)
+	require.Contains(t, innerScript, "Write-Output first; Write-Output second")
+	require.Contains(t, innerScript, "# trailing comment\n} *> ")
 	require.Contains(t, launcher.LogPath, `\sshm-detach-123.log`)
 	require.Equal(t, "windows", launcher.Platform)
 }

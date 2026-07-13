@@ -255,15 +255,14 @@ func detectDetachPlatform(stdout, stderr string) string {
 func buildDetachLauncher(platform, command string, nonce int64) detachLauncher {
 	if strings.EqualFold(platform, "windows") {
 		logName := fmt.Sprintf("sshm-detach-%d.log", nonce)
-		scriptName := fmt.Sprintf("sshm-detach-%d.ps1", nonce)
 		logPath := `$env:TEMP\` + logName
 		logExpr := "(Join-Path $env:TEMP " + powershellSingleQuote(logName) + ")"
-		scriptExpr := "(Join-Path $env:TEMP " + powershellSingleQuote(scriptName) + ")"
-		body := strings.ReplaceAll(command, "\r\n", "\n") + " *> " + logExpr
-		encodedBody := base64.StdEncoding.EncodeToString([]byte(body))
+		normalizedCommand := strings.ReplaceAll(command, "\r\n", "\n")
+		body := "& {\n" + normalizedCommand + "\n} *> " + logExpr
+		childEncoded := base64.StdEncoding.EncodeToString(utf16LE(body))
 		wrapper := fmt.Sprintf(
-			"$script=%s; $log=%s; $body=[Text.Encoding]::UTF8.GetString([Convert]::FromBase64String(%s)); Set-Content -LiteralPath $script -Encoding UTF8 -Value $body; $p=Start-Process -FilePath 'powershell.exe' -ArgumentList @('-NoProfile','-ExecutionPolicy','Bypass','-File',$script) -WindowStyle Hidden -PassThru; Write-Output ('pid=' + $p.Id); Write-Output ('log=' + $log)",
-			scriptExpr, logExpr, powershellSingleQuote(encodedBody))
+			"$log=%s; $childEncoded=%s; $p=Start-Process -FilePath 'powershell.exe' -ArgumentList @('-NoProfile','-NonInteractive','-ExecutionPolicy','Bypass','-EncodedCommand',$childEncoded) -WindowStyle Hidden -PassThru; Write-Output ('pid=' + $p.Id); Write-Output ('log=' + $log)",
+			logExpr, powershellSingleQuote(childEncoded))
 		return detachLauncher{Platform: "windows", Command: powershellEncodedCommand(wrapper), LogPath: logPath}
 	}
 
