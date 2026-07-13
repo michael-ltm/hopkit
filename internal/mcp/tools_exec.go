@@ -249,7 +249,7 @@ func buildDetachLauncher(platform, command string, nonce int64) detachLauncher {
 		wrapper := fmt.Sprintf(
 			"$script=%s; $log=%s; Set-Content -LiteralPath $script -Encoding UTF8 -Value @'\n%s\n'@; $p=Start-Process -FilePath 'powershell.exe' -ArgumentList @('-NoProfile','-ExecutionPolicy','Bypass','-File',$script) -WindowStyle Hidden -PassThru; Write-Output ('pid=' + $p.Id); Write-Output ('log=' + $log)",
 			scriptExpr, logExpr, body)
-		return detachLauncher{Platform: "windows", Command: wrapper, LogPath: logPath}
+		return detachLauncher{Platform: "windows", Command: powershellEncodedCommand(wrapper), LogPath: logPath}
 	}
 
 	logPath := fmt.Sprintf("/tmp/sshm-detach-%d.log", nonce)

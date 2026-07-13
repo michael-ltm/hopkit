@@ -5,8 +5,10 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"sort"
 
 	"github.com/BurntSushi/toml"
+	"github.com/michael-ltm/sshm/internal/safety"
 )
 
 // Load reads a Config from path. If the file does not exist, an empty
@@ -38,6 +40,9 @@ func Load(path string) (*Config, error) {
 
 // Save atomically writes cfg to path with mode 0600. Creates parent dirs.
 func Save(path string, cfg *Config) error {
+	if err := validateProjectCredentials(cfg); err != nil {
+		return err
+	}
 	if cfg.Version < CurrentVersion {
 		cfg.Version = CurrentVersion
 	}
@@ -63,6 +68,39 @@ func Save(path string, cfg *Config) error {
 	}
 	if err := os.Rename(tmp.Name(), path); err != nil {
 		return fmt.Errorf("rename config: %w", err)
+	}
+	return nil
+}
+
+func validateProjectCredentials(cfg *Config) error {
+	projectNames := make([]string, 0, len(cfg.Projects))
+	for name := range cfg.Projects {
+		projectNames = append(projectNames, name)
+	}
+	sort.Strings(projectNames)
+
+	for _, name := range projectNames {
+		project := cfg.Projects[name]
+		if project == nil {
+			continue
+		}
+		fields := []struct {
+			name  string
+			value string
+		}{
+			{name: "local_root", value: project.LocalRoot},
+			{name: "remote_workspace", value: project.RemoteWorkspace},
+			{name: "remote_runs", value: project.RemoteRuns},
+			{name: "artifact_path", value: project.ArtifactPath},
+			{name: "local_artifact_dir", value: project.LocalArtifactDir},
+			{name: "build_command", value: project.BuildCommand},
+			{name: "verify_command", value: project.VerifyCommand},
+		}
+		for _, field := range fields {
+			if safety.ContainsCredentialMaterial(field.value) {
+				return fmt.Errorf("project %q field %q contains credential material", name, field.name)
+			}
+		}
 	}
 	return nil
 }

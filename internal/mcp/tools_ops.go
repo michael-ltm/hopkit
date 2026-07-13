@@ -2,7 +2,6 @@ package mcp
 
 import (
 	"context"
-	"encoding/base64"
 	"fmt"
 	"strings"
 	"time"
@@ -222,8 +221,7 @@ func executeTailLogsRemote(ctx context.Context, deps Deps, s *config.Server, pla
 func tailCommand(platform, path string, lines int) string {
 	if strings.EqualFold(platform, "windows") {
 		script := fmt.Sprintf("Get-Content -LiteralPath %s -Tail %d", powershellSingleQuote(path), lines)
-		encoded := base64.StdEncoding.EncodeToString(utf16LE(script))
-		return "powershell.exe -NoProfile -NonInteractive -EncodedCommand " + encoded
+		return powershellEncodedCommand(script)
 	}
 	return fmt.Sprintf("tail -n %d %s", lines, shellQuoteArg(path))
 }

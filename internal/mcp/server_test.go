@@ -44,4 +44,9 @@ func TestNewServerExecProjectSchema(t *testing.T) {
 	} {
 		require.Contains(t, tool.Tool.InputSchema.Properties, field)
 	}
+	platform, ok := tool.Tool.InputSchema.Properties["platform"].(map[string]any)
+	require.True(t, ok)
+	enum, ok := platform["enum"].([]string)
+	require.True(t, ok)
+	require.ElementsMatch(t, []string{"auto", "posix", "windows"}, enum)
 }

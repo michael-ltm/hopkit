@@ -1,8 +1,11 @@
 package mcp
 
 import (
+	"encoding/base64"
+	"encoding/binary"
 	"strings"
 	"testing"
+	"unicode/utf16"
 
 	"github.com/stretchr/testify/require"
 )
@@ -10,8 +13,25 @@ import (
 func TestBuildDetachLauncherUsesPowerShellForWindows(t *testing.T) {
 	launcher := buildDetachLauncher("windows", "npm run build", 123)
 
-	require.Contains(t, launcher.Command, "Start-Process")
-	require.Contains(t, launcher.Command, "powershell.exe")
+	const prefix = "powershell.exe -NoProfile -NonInteractive -EncodedCommand "
+	require.True(t, strings.HasPrefix(launcher.Command, prefix))
+	require.NotContains(t, launcher.Command, "npm run build")
+	require.NotContains(t, launcher.Command, "$script=")
+	require.NotContains(t, launcher.Command, "Start-Process")
+
+	encoded := strings.TrimPrefix(launcher.Command, prefix)
+	decoded, err := base64.StdEncoding.DecodeString(encoded)
+	require.NoError(t, err)
+	require.Zero(t, len(decoded)%2)
+	words := make([]uint16, len(decoded)/2)
+	for i := range words {
+		words[i] = binary.LittleEndian.Uint16(decoded[i*2:])
+	}
+	script := string(utf16.Decode(words))
+	require.Contains(t, script, "Start-Process")
+	require.Contains(t, script, "Write-Output ('pid=' + $p.Id)")
+	require.Contains(t, script, "Write-Output ('log=' + $log)")
+	require.Contains(t, script, "npm run build")
 	require.Contains(t, launcher.LogPath, `\sshm-detach-123.log`)
 	require.Equal(t, "windows", launcher.Platform)
 }

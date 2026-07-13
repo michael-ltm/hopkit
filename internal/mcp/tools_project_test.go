@@ -43,6 +43,21 @@ func TestGetProjectReturnsFullProfile(t *testing.T) {
 	require.Contains(t, js, `"artifact_path": "C:\\out\\a.exe"`)
 }
 
+func TestGetProjectUnknownListsAvailableProjectsSorted(t *testing.T) {
+	cfgPath, auditPath := writeProjectTestConfig(t)
+	out, err := handleGetProject(context.Background(), Deps{
+		ConfigPath: cfgPath, AuditPath: auditPath,
+	}, map[string]any{"project": "missing"})
+	require.NoError(t, err)
+
+	result, ok := out.(map[string]any)
+	require.True(t, ok)
+	errorPayload, ok := result["error"].(map[string]string)
+	require.True(t, ok)
+	require.Equal(t, "not_found", errorPayload["kind"])
+	require.Equal(t, `unknown project "missing"; available projects: a, b`, errorPayload["message"])
+}
+
 func TestUpsertProjectRejectsUnknownServer(t *testing.T) {
 	cfgPath, auditPath := writeProjectTestConfig(t)
 	out, err := handleUpsertProject(Deps{ConfigPath: cfgPath, AuditPath: auditPath}, map[string]any{
@@ -85,6 +100,46 @@ func TestUpsertProjectPreservesAbsentAndClearsExplicitEmpty(t *testing.T) {
 	require.NoError(t, err)
 	require.Empty(t, got.Projects["a"].LocalRoot)
 	require.Equal(t, "python build.py", got.Projects["a"].BuildCommand)
+}
+
+func TestUpsertProjectRejectsCredentialFieldsWithoutModifyingDisk(t *testing.T) {
+	fields := []struct {
+		name         string
+		value        string
+		secretNeedle string
+	}{
+		{name: "local_root", value: "/src/TOKEN=local-root-secret", secretNeedle: "local-root-secret"},
+		{name: "remote_workspace", value: "https://user:workspace-secret@example.com/repo", secretNeedle: "workspace-secret"},
+		{name: "remote_runs", value: "Authorization: Bearer runs-secret", secretNeedle: "runs-secret"},
+		{name: "artifact_path", value: "/tmp/ghp_abcdefghijklmnopqrstuvwxyz0123456789", secretNeedle: "ghp_abcdefghijklmnopqrstuvwxyz0123456789"},
+		{name: "local_artifact_dir", value: "TOKEN=artifact-dir-secret", secretNeedle: "artifact-dir-secret"},
+		{name: "build_command", value: "builder --password build-secret", secretNeedle: "build-secret"},
+		{name: "verify_command", value: "TOKEN=verify-secret go test ./...", secretNeedle: "verify-secret"},
+	}
+
+	for _, field := range fields {
+		t.Run(field.name, func(t *testing.T) {
+			cfgPath, auditPath := writeProjectTestConfig(t)
+			before, err := os.ReadFile(cfgPath)
+			require.NoError(t, err)
+
+			out, err := handleUpsertProject(Deps{ConfigPath: cfgPath, AuditPath: auditPath}, map[string]any{
+				"project": "a", "reason": "test credential rejection", field.name: field.value,
+			})
+			require.NoError(t, err)
+			result, ok := out.(map[string]any)
+			require.True(t, ok)
+			errorPayload, ok := result["error"].(map[string]string)
+			require.True(t, ok)
+			require.Equal(t, "bad_request", errorPayload["kind"])
+			require.Contains(t, errorPayload["message"], field.name)
+			require.NotContains(t, errorPayload["message"], field.secretNeedle)
+
+			after, readErr := os.ReadFile(cfgPath)
+			require.NoError(t, readErr)
+			require.Equal(t, before, after)
+		})
+	}
 }
 
 func TestWrapProjectCommandPOSIX(t *testing.T) {
@@ -300,6 +355,30 @@ func TestHandleExecProjectPreservesExplicitDetachPlatform(t *testing.T) {
 	})
 	require.NoError(t, err)
 	require.Equal(t, "posix", forwarded["platform"])
+}
+
+func TestHandleExecProjectRejectsInvalidPlatformBeforeExec(t *testing.T) {
+	cfgPath, auditPath := writeExecProjectTestConfig(t)
+	oldRunProjectExec := runProjectExec
+	t.Cleanup(func() { runProjectExec = oldRunProjectExec })
+	runProjectExec = func(_ context.Context, _ Deps, _ map[string]any) (any, error) {
+		t.Fatal("exec called with an invalid platform")
+		return nil, nil
+	}
+
+	out, err := handleExecProject(context.Background(), Deps{
+		ConfigPath: cfgPath, AuditPath: auditPath,
+	}, map[string]any{
+		"project": "project_ajie", "command": "echo ok", "reason": "test invalid platform",
+		"platform": "plan9",
+	})
+	require.NoError(t, err)
+	result, ok := out.(map[string]any)
+	require.True(t, ok)
+	errorPayload, ok := result["error"].(map[string]string)
+	require.True(t, ok)
+	require.Equal(t, "bad_request", errorPayload["kind"])
+	require.Equal(t, "platform must be auto, posix, or windows", errorPayload["message"])
 }
 
 func TestHandleExecProjectRejectsUnknownProjectBeforeExec(t *testing.T) {

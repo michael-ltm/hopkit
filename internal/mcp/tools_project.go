@@ -2,14 +2,11 @@ package mcp
 
 import (
 	"context"
-	"encoding/base64"
-	"encoding/binary"
 	"fmt"
 	"path"
 	"regexp"
 	"sort"
 	"strings"
-	"unicode/utf16"
 
 	"github.com/mark3labs/mcp-go/mcp"
 	"github.com/mark3labs/mcp-go/server"
@@ -84,15 +81,6 @@ func resolveProjectShell(configured, workdir string) (string, error) {
 	}
 }
 
-func utf16LE(s string) []byte {
-	words := utf16.Encode([]rune(s))
-	out := make([]byte, len(words)*2)
-	for i, word := range words {
-		binary.LittleEndian.PutUint16(out[i*2:], word)
-	}
-	return out
-}
-
 func wrapProjectCommand(shell, workdir, command string) (string, error) {
 	if workdir == "" {
 		return "", fmt.Errorf("workdir is required")
@@ -107,8 +95,7 @@ func wrapProjectCommand(shell, workdir, command string) (string, error) {
 	case "powershell":
 		script := "Set-Location -LiteralPath " + powershellSingleQuote(workdir) +
 			"; if (-not $?) { exit 1 }; " + command
-		encoded := base64.StdEncoding.EncodeToString(utf16LE(script))
-		return "powershell.exe -NoProfile -NonInteractive -EncodedCommand " + encoded, nil
+		return powershellEncodedCommand(script), nil
 	case "cmd":
 		if strings.Contains(workdir, `"`) {
 			return "", fmt.Errorf("cmd workdir must not contain double quotes")
@@ -120,6 +107,21 @@ func wrapProjectCommand(shell, workdir, command string) (string, error) {
 }
 
 var runProjectExec = handleExec
+
+func unknownProjectResult(name string, projects map[string]*config.Project) map[string]any {
+	available := make([]string, 0, len(projects))
+	for candidate, profile := range projects {
+		if profile != nil {
+			available = append(available, candidate)
+		}
+	}
+	sort.Strings(available)
+	message := fmt.Sprintf("unknown project %q", name)
+	if len(available) > 0 {
+		message += "; available projects: " + strings.Join(available, ", ")
+	}
+	return errResult("not_found", message)
+}
 
 func handleExecProject(ctx context.Context, deps Deps, args map[string]any) (any, error) {
 	reason, err := requireReason(args)
@@ -134,6 +136,12 @@ func handleExecProject(ctx context.Context, deps Deps, args map[string]any) (any
 	if command == "" {
 		return errResult("bad_request", "command is required"), nil
 	}
+	platform := strings.ToLower(strings.TrimSpace(strArg(args, "platform")))
+	switch platform {
+	case "", "auto", "posix", "windows":
+	default:
+		return errResult("bad_request", "platform must be auto, posix, or windows"), nil
+	}
 
 	cfg, err := config.Load(deps.ConfigPath)
 	if err != nil {
@@ -141,18 +149,7 @@ func handleExecProject(ctx context.Context, deps Deps, args map[string]any) (any
 	}
 	project, ok := cfg.Projects[name]
 	if !ok || project == nil {
-		available := make([]string, 0, len(cfg.Projects))
-		for candidate, profile := range cfg.Projects {
-			if profile != nil {
-				available = append(available, candidate)
-			}
-		}
-		sort.Strings(available)
-		message := fmt.Sprintf("unknown project %q", name)
-		if len(available) > 0 {
-			message += "; available projects: " + strings.Join(available, ", ")
-		}
-		return errResult("not_found", message), nil
+		return unknownProjectResult(name, cfg.Projects), nil
 	}
 	if _, ok := cfg.Servers[project.Server]; !ok {
 		return errResult("config", fmt.Sprintf(
@@ -188,13 +185,15 @@ func handleExecProject(ctx context.Context, deps Deps, args map[string]any) (any
 		"alias": project.Server, "command": wrappedCommand,
 		"reason": projectReason,
 	}
-	for _, key := range []string{"unsafe", "timeout_seconds", "detach", "platform"} {
+	for _, key := range []string{"unsafe", "timeout_seconds", "detach"} {
 		if value, present := args[key]; present {
 			execArgs[key] = value
 		}
 	}
+	if platform != "" {
+		execArgs["platform"] = platform
+	}
 	detach, _ := args["detach"].(bool)
-	platform := strArg(args, "platform")
 	if detach && (strings.TrimSpace(platform) == "" || strings.EqualFold(platform, "auto")) &&
 		(shell == "powershell" || shell == "cmd") {
 		execArgs["platform"] = "windows"
@@ -270,7 +269,7 @@ func handleGetProject(_ context.Context, deps Deps, args map[string]any) (any, e
 	}
 	project, ok := cfg.Projects[name]
 	if !ok || project == nil {
-		return errResult("not_found", fmt.Sprintf("unknown project %q", name)), nil
+		return unknownProjectResult(name, cfg.Projects), nil
 	}
 	return map[string]any{
 		"project":            name,
@@ -299,6 +298,15 @@ func handleUpsertProject(deps Deps, args map[string]any) (any, error) {
 	if raw, present := args["shell"]; present {
 		if value, ok := raw.(string); ok && !validProjectShell(value) {
 			return errResult("bad_request", fmt.Sprintf("shell %q must be auto, posix, powershell, or cmd", value)), nil
+		}
+	}
+	for _, field := range []string{
+		"local_root", "remote_workspace", "remote_runs", "artifact_path",
+		"local_artifact_dir", "build_command", "verify_command",
+	} {
+		if value, ok := args[field].(string); ok && safety.ContainsCredentialMaterial(value) {
+			return errResult("bad_request", fmt.Sprintf(
+				"project field %q must not contain credential material", field)), nil
 		}
 	}
 
@@ -423,7 +431,8 @@ func registerProjectExecTool(s *server.MCPServer, deps Deps, names []string) []s
 		mcp.WithBoolean("unsafe", mcp.Description("bypass the dangerous-command filter")),
 		mcp.WithNumber("timeout_seconds", mcp.Description("max seconds before the command is killed; 0 = no timeout; default 60")),
 		mcp.WithBoolean("detach", mcp.Description("run the command in the background and return immediately")),
-		mcp.WithString("platform", mcp.Description("detach platform override: auto|posix|windows")))
+		mcp.WithString("platform", mcp.Description("detach platform override: auto|posix|windows"),
+			mcp.Enum("auto", "posix", "windows")))
 	s.AddTool(tool, func(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
 		out, err := handleExecProject(ctx, deps, req.GetArguments())
 		if err != nil {

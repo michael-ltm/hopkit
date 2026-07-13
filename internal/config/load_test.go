@@ -79,6 +79,44 @@ func TestProjectRoundTripAndSaveUpgrade(t *testing.T) {
 	require.Equal(t, cfg.Projects["project_ajie"], got.Projects["project_ajie"])
 }
 
+func TestSaveRejectsProjectCredentialsWithoutModifyingDisk(t *testing.T) {
+	const credential = "TOKEN=literal-secret"
+	fields := []struct {
+		name string
+		set  func(*Project, string)
+	}{
+		{name: "local_root", set: func(p *Project, v string) { p.LocalRoot = v }},
+		{name: "remote_workspace", set: func(p *Project, v string) { p.RemoteWorkspace = v }},
+		{name: "remote_runs", set: func(p *Project, v string) { p.RemoteRuns = v }},
+		{name: "artifact_path", set: func(p *Project, v string) { p.ArtifactPath = v }},
+		{name: "local_artifact_dir", set: func(p *Project, v string) { p.LocalArtifactDir = v }},
+		{name: "build_command", set: func(p *Project, v string) { p.BuildCommand = v }},
+		{name: "verify_command", set: func(p *Project, v string) { p.VerifyCommand = v }},
+	}
+
+	for _, field := range fields {
+		t.Run(field.name, func(t *testing.T) {
+			path := filepath.Join(t.TempDir(), "config.toml")
+			cfg := New()
+			cfg.Projects["project"] = &Project{
+				Server: "prod", RemoteWorkspace: "/srv/app", ArtifactPath: "/srv/app.tgz",
+			}
+			require.NoError(t, Save(path, cfg))
+			before, err := os.ReadFile(path)
+			require.NoError(t, err)
+
+			field.set(cfg.Projects["project"], credential)
+			err = Save(path, cfg)
+			require.Error(t, err)
+			require.Contains(t, err.Error(), field.name)
+			require.NotContains(t, err.Error(), "literal-secret")
+			after, readErr := os.ReadFile(path)
+			require.NoError(t, readErr)
+			require.Equal(t, before, after)
+		})
+	}
+}
+
 // osIsUnix is a test helper — defined inline to avoid a separate _test.go file.
 func osIsUnix() bool {
 	return os.PathSeparator == '/'

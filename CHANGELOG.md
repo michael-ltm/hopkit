@@ -12,7 +12,7 @@ All notable changes to this project will be documented in this file. Format: [Ke
 
 ### Changed
 - Detached jobs and `tail_logs` are cross-platform: Windows launch results expose concrete PID/log metadata, while log reads accept `platform=auto|posix|windows` and use the remote platform's native command.
-- The `sshm-server-ops` skill now uses conditional references for project builds, Windows EXE packaging, artifact verification, and onboarding. Its always-loaded core fell from 642 to 383 words; the common project path is 826 words instead of the previous 1199-word default load.
+- The `sshm-server-ops` skill now uses conditional references for project builds, Windows EXE packaging, artifact verification, and onboarding. Its always-loaded core fell from 642 to 383 words; the common project path is 1040 words (383 core + 657 workflow) instead of the previous 1199-word default load.
 - Compatibility remains additive: version-2 configuration files load without implicit migration and upgrade only when saved, and existing server-only CLI/MCP tool names and behavior remain available.
 
 ## [0.5.1] — 2026-07-09
