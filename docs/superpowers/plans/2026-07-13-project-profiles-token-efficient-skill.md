@@ -152,8 +152,8 @@ func TestGetProjectReturnsFullProfile(t *testing.T) {
     require.NoError(t, err)
     js, err := jsonResult(out)
     require.NoError(t, err)
-    require.Contains(t, js, `"remote_workspace": "C:\\\\a"`)
-    require.Contains(t, js, `"artifact_path": "C:\\\\out\\\\a.exe"`)
+    require.Contains(t, js, `"remote_workspace": "C:\\a"`)
+    require.Contains(t, js, `"artifact_path": "C:\\out\\a.exe"`)
 }
 
 func TestUpsertProjectRejectsUnknownServer(t *testing.T) {
