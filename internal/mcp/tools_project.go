@@ -147,6 +147,9 @@ func handleExecProject(ctx context.Context, deps Deps, args map[string]any) (any
 	if err != nil {
 		return errResult("config", err.Error()), nil
 	}
+	if err := config.ValidateProjects(cfg); err != nil {
+		return errResult("config", err.Error()), nil
+	}
 	project, ok := cfg.Projects[name]
 	if !ok || project == nil {
 		return unknownProjectResult(name, cfg.Projects), nil
@@ -240,6 +243,9 @@ func handleListProjects(_ context.Context, deps Deps, _ map[string]any) (any, er
 	if err != nil {
 		return errResult("config", err.Error()), nil
 	}
+	if err := config.ValidateProjects(cfg); err != nil {
+		return errResult("config", err.Error()), nil
+	}
 	type entry struct {
 		Project         string `json:"project"`
 		Server          string `json:"server"`
@@ -265,6 +271,9 @@ func handleGetProject(_ context.Context, deps Deps, args map[string]any) (any, e
 	name := strArg(args, "project")
 	cfg, err := config.Load(deps.ConfigPath)
 	if err != nil {
+		return errResult("config", err.Error()), nil
+	}
+	if err := config.ValidateProjects(cfg); err != nil {
 		return errResult("config", err.Error()), nil
 	}
 	project, ok := cfg.Projects[name]
@@ -295,13 +304,22 @@ func handleUpsertProject(deps Deps, args map[string]any) (any, error) {
 	if !projectNamePattern.MatchString(name) {
 		return errResult("bad_request", "project must match ^[a-z0-9][a-z0-9._-]*$"), nil
 	}
+	if safety.ContainsCredentialMaterial(name) {
+		return errResult("bad_request", "project name must not contain credential material"), nil
+	}
+	if server, ok := args["server"].(string); ok && strings.ContainsAny(server, "\x00\r\n") {
+		return errResult("bad_request", "project field \"server\" contains invalid control characters"), nil
+	}
 	if raw, present := args["shell"]; present {
 		if value, ok := raw.(string); ok && !validProjectShell(value) {
-			return errResult("bad_request", fmt.Sprintf("shell %q must be auto, posix, powershell, or cmd", value)), nil
+			if safety.ContainsCredentialMaterial(value) {
+				return errResult("bad_request", "project field \"shell\" must not contain credential material"), nil
+			}
+			return errResult("bad_request", "shell must be auto, posix, powershell, or cmd"), nil
 		}
 	}
 	for _, field := range []string{
-		"local_root", "remote_workspace", "remote_runs", "artifact_path",
+		"server", "shell", "local_root", "remote_workspace", "remote_runs", "artifact_path",
 		"local_artifact_dir", "build_command", "verify_command",
 	} {
 		if value, ok := args[field].(string); ok && safety.ContainsCredentialMaterial(value) {
@@ -375,13 +393,13 @@ func registerProjectReadTools(s *server.MCPServer, deps Deps, names []string) []
 		s.AddTool(tool, func(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
 			out, err := fn(ctx, deps, req.GetArguments())
 			if err != nil {
-				return mcp.NewToolResultError(err.Error()), nil
+				return mcp.NewToolResultError(safety.MaskSecrets(err.Error())), nil
 			}
 			js, err := jsonResult(out)
 			if err != nil {
-				return mcp.NewToolResultError(err.Error()), nil
+				return mcp.NewToolResultError(safety.MaskSecrets(err.Error())), nil
 			}
-			return mcp.NewToolResultText(safety.MaskSecrets(js)), nil
+			return projectToolResult(out, js), nil
 		})
 		names = append(names, tool.Name)
 	}
@@ -410,13 +428,13 @@ func registerProjectWriteTools(s *server.MCPServer, deps Deps, names []string) [
 	s.AddTool(tool, func(_ context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
 		out, err := handleUpsertProject(deps, req.GetArguments())
 		if err != nil {
-			return mcp.NewToolResultError(err.Error()), nil
+			return mcp.NewToolResultError(safety.MaskSecrets(err.Error())), nil
 		}
 		js, err := jsonResult(out)
 		if err != nil {
-			return mcp.NewToolResultError(err.Error()), nil
+			return mcp.NewToolResultError(safety.MaskSecrets(err.Error())), nil
 		}
-		return mcp.NewToolResultText(safety.MaskSecrets(js)), nil
+		return projectToolResult(out, js), nil
 	})
 	return append(names, "upsert_project")
 }
@@ -436,13 +454,29 @@ func registerProjectExecTool(s *server.MCPServer, deps Deps, names []string) []s
 	s.AddTool(tool, func(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
 		out, err := handleExecProject(ctx, deps, req.GetArguments())
 		if err != nil {
-			return mcp.NewToolResultError(err.Error()), nil
+			return mcp.NewToolResultError(safety.MaskSecrets(err.Error())), nil
 		}
 		js, err := jsonResult(out)
 		if err != nil {
-			return mcp.NewToolResultError(err.Error()), nil
+			return mcp.NewToolResultError(safety.MaskSecrets(err.Error())), nil
 		}
-		return mcp.NewToolResultText(safety.MaskSecrets(js)), nil
+		return projectToolResult(out, js), nil
 	})
 	return append(names, "exec_project")
+}
+
+// projectToolResult preserves exact values from validated project-profile
+// successes. Error payloads remain masked because they can include
+// untrusted request values; remote stdout/stderr are already masked by exec.
+func projectToolResult(out any, json string) *mcp.CallToolResult {
+	if result, ok := out.(map[string]any); ok {
+		if _, failed := result["error"]; !failed {
+			return mcp.NewToolResultText(json)
+		}
+	}
+	maskedJSON, err := maskedJSONResult(out)
+	if err != nil {
+		return mcp.NewToolResultError(safety.MaskSecrets(err.Error()))
+	}
+	return mcp.NewToolResultText(maskedJSON)
 }

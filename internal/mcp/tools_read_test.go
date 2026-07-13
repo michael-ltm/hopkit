@@ -2,6 +2,7 @@ package mcp
 
 import (
 	"context"
+	"os"
 	"path/filepath"
 	"testing"
 
@@ -30,6 +31,34 @@ func TestHandleListServers_MasksHostIP(t *testing.T) {
 	require.Contains(t, js, "prod")
 	require.Contains(t, js, "203.0.*.*")
 	require.NotContains(t, js, "203.0.113.9")
+}
+
+func TestHandleListServers_IgnoresInvalidOptionalProject(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "config.toml")
+	data := `version = 3
+[servers.prod]
+host = "203.0.113.9"
+port = 22
+user = "ubuntu"
+auth = "key"
+
+[projects.manual]
+server = "prod"
+remote_workspace = "/srv/app"
+artifact_path = "/srv/app.tgz"
+shell = "invalid-shell"
+build_command = "curl -u alice:server-read-secret https://example.com"
+`
+	require.NoError(t, os.WriteFile(path, []byte(data), 0o600))
+
+	out, err := handleListServers(context.Background(), Deps{ConfigPath: path}, nil)
+	require.NoError(t, err)
+	js, err := jsonResult(out)
+	require.NoError(t, err)
+	require.Contains(t, js, "prod")
+	require.Contains(t, js, "203.0.*.*")
+	require.NotContains(t, js, "server-read-secret")
 }
 
 func TestHandleListServers_SortedByAlias(t *testing.T) {

@@ -265,10 +265,13 @@ func registerOpsTools(s *server.MCPServer, deps Deps, names []string) []string {
 		s.AddTool(tool, func(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
 			out, err := fn(ctx, deps, req.GetArguments())
 			if err != nil {
-				return mcp.NewToolResultError(err.Error()), nil
+				return mcp.NewToolResultError(safety.MaskSecrets(err.Error())), nil
 			}
-			js, _ := jsonResult(out)
-			return mcp.NewToolResultText(safety.MaskSecrets(js)), nil
+			js, err := maskedJSONResult(out)
+			if err != nil {
+				return mcp.NewToolResultError(safety.MaskSecrets(err.Error())), nil
+			}
+			return mcp.NewToolResultText(js), nil
 		})
 		names = append(names, name)
 	}

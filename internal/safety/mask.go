@@ -1,16 +1,14 @@
 package safety
 
-import "regexp"
+import (
+	"net"
+	"regexp"
+)
 
 // redaction is the marker substituted in place of a secret value.
 const redaction = "***"
 
 var (
-	// reEnvAssign matches KEY=value lines for secret-looking keys. The
-	// PASS/SECRET/TOKEN/KEY substrings are intentionally over-inclusive
-	// (e.g. MYKEYBOARD=x is masked) — for a security tool, a false
-	// positive is the safe failure mode.
-	reEnvAssign = regexp.MustCompile(`(?m)\b([A-Z][A-Z0-9_]*(PASS|PASSWORD|SECRET|TOKEN|KEY|APIKEY)[A-Z0-9_]*)=\S+`)
 	// reIPv4 keeps the first two octets, masks the last two. It will also
 	// mask dotted version strings (e.g. 1.2.3.4) — acceptable over-masking.
 	reIPv4 = regexp.MustCompile(`\b(\d{1,3}\.\d{1,3})\.\d{1,3}\.\d{1,3}\b`)
@@ -28,39 +26,22 @@ var (
 	// reJWT matches a three-part base64url JWT beginning with the standard
 	// `{"alg"...}` header prefix `eyJ`.
 	reJWT = regexp.MustCompile(`\beyJ[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+`)
-	// reBearer matches an Authorization-style bearer token; only the token
-	// is redacted, the `Bearer ` keyword is preserved.
-	reBearer = regexp.MustCompile(`\b(Bearer\s+)[A-Za-z0-9._~+/=-]+`)
-
-	// --- key/value secrets (redact the value, keep the key) ---
-
-	// reKVAssign matches `key=value` / `export key=value` for secret-looking
-	// keys, case-insensitive. The key (including any leading `export `) is
-	// preserved and the value redacted.
-	reKVAssign = regexp.MustCompile(`(?im)\b((?:export\s+)?(?:password|passwd|pwd|secret|token|api[_-]?key|access[_-]?key|private[_-]?key|client[_-]?secret))=\S+`)
-	// reKVColon matches `key: value` for secret-looking keys, case-insensitive.
-	reKVColon = regexp.MustCompile(`(?im)\b(password|passwd|pwd|secret|token|api[_-]?key|access[_-]?key|private[_-]?key|client[_-]?secret)\s*:\s*\S+`)
-
 	// --- password-as-flag ---
 
 	// rePasswordLongFlag matches `--password=value` / `--password value`.
-	rePasswordLongFlag = regexp.MustCompile(`(--password)(=|\s+)\S+`)
+	rePasswordLongFlag = regexp.MustCompile(`(--password)(=|\s+)("(?:\\.|\x60.|[^"\\\x60])*"|'(?:''|[^'])*'|[^\s;]+)`)
 	// rePasswordShortFlag matches mysql/redis style `-pVALUE` (no space). It
 	// requires at least one character after `-p` so a bare `-p` (e.g. a port
 	// flag with a following space) is not touched. This intentionally also
 	// catches flag names like -post and -port — masking a flag name is cosmetic,
 	// but leaking a password is a security failure; we accept the false positive.
-	rePasswordShortFlag = regexp.MustCompile(`(^|\s)(-p)\S+`)
+	rePasswordShortFlag = regexp.MustCompile(`(^|\s)(-p)("(?:\\.|\x60.|[^"\\\x60])*"|'(?:''|[^'])*'|[^\s;]+)`)
 
 	// --- IPv6 ---
 
-	// reIPv6 matches IPv6 addresses in either the compressed (::) form or the
-	// full 8-group form (7 colons). This is intentionally tighter than the
-	// previous 3-group heuristic: it avoids false-positives on MAC addresses
-	// (00:11:22:33:44:55) and short hex-colon tokens (abc:def:123). Some
-	// exotic/transitional IPv6 forms may not be caught — that is an accepted
-	// trade-off; false positives (masking non-secrets) matter more here.
-	reIPv6 = regexp.MustCompile(`[0-9A-Fa-f:]*::[0-9A-Fa-f:]*|(?:[0-9A-Fa-f]{1,4}:){7}[0-9A-Fa-f]{1,4}`)
+	// IPv6 candidates are validated with net.ParseIP and identifier boundaries
+	// before masking, so PowerShell's :: member operator is left intact.
+	reIPv6Candidate = regexp.MustCompile(`[0-9A-Fa-f:.]*:[0-9A-Fa-f:.]+`)
 )
 
 // MaskSecrets redacts sensitive data from text that may be shown to an AI
@@ -76,6 +57,17 @@ var (
 // is never partially corrupted; specific token and key/value patterns run
 // before the generic IP patterns to avoid odd double-masking.
 func MaskSecrets(s string) string {
+	s = maskCredentialMaterial(s)
+
+	// Generic network addresses are privacy-sensitive in remote output, but are
+	// deliberately excluded from audit aliases where exact target identity is
+	// required for traceability.
+	s = reIPv4.ReplaceAllString(s, "$1.*.*")
+	s = maskIPv6Addresses(s)
+	return s
+}
+
+func maskCredentialMaterial(s string) string {
 	// 1. Whole-block / highest-specificity first.
 	s = rePrivKey.ReplaceAllString(s, "[redacted private key]")
 
@@ -84,19 +76,122 @@ func MaskSecrets(s string) string {
 	s = reAWSKey.ReplaceAllString(s, redaction)
 	s = reSlackToken.ReplaceAllString(s, redaction)
 	s = reJWT.ReplaceAllString(s, redaction)
-	s = reBearer.ReplaceAllString(s, "${1}"+redaction)
+	s = maskCredentialSubmatch(s, credentialBearerPattern)
 
 	// 3. Key/value + env secrets — keep the key, redact the value.
-	s = reKVAssign.ReplaceAllString(s, "${1}="+redaction)
-	s = reKVColon.ReplaceAllString(s, "${1}: "+redaction)
-	s = reEnvAssign.ReplaceAllString(s, "$1=***")
+	s = maskCredentialValues(s)
 
-	// 4. Password flags.
+	// 4. Contextual command credentials and password flags.
+	s = maskCredentialSubmatch(s, credentialSSHPassPattern)
+	s = maskCredentialSubmatch(s, credentialDockerPassPattern)
+	s = maskCurlCredentials(s)
+	s = maskURIPasswords(s)
 	s = rePasswordLongFlag.ReplaceAllString(s, "$1="+redaction)
 	s = rePasswordShortFlag.ReplaceAllString(s, "${1}${2}"+redaction)
 
-	// 5. Generic network addresses last.
-	s = reIPv4.ReplaceAllString(s, "$1.*.*")
-	s = reIPv6.ReplaceAllString(s, redaction)
+	return s
+}
+
+func maskCredentialValues(s string) string {
+	matches := findCredentialValues(s)
+	for i := len(matches) - 1; i >= 0; i-- {
+		match := matches[i]
+		material := s[match.valueStart:match.valueEnd]
+		if isEnvironmentReference(material) {
+			continue
+		}
+		replacement := redaction
+		if len(material) >= 2 && (material[0] == '\'' || material[0] == '"') && material[len(material)-1] == material[0] {
+			replacement = material[:1] + redaction + material[len(material)-1:]
+		}
+		s = s[:match.valueStart] + replacement + s[match.valueEnd:]
+	}
+	return s
+}
+
+func maskIPv6Addresses(s string) string {
+	matches := reIPv6Candidate.FindAllStringIndex(s, -1)
+	for i := len(matches) - 1; i >= 0; i-- {
+		start, end := matches[i][0], matches[i][1]
+		for start < end && s[start] == '.' {
+			start++
+		}
+		for end > start && s[end-1] == '.' {
+			end--
+		}
+		candidate := s[start:end]
+		if candidate == "::" || net.ParseIP(candidate) == nil ||
+			start > 0 && (isIdentifierByte(s[start-1]) || s[start-1] == ']' && len(candidate) >= 2 && candidate[:2] == "::") ||
+			end < len(s) && isIdentifierByte(s[end]) {
+			continue
+		}
+		s = s[:start] + redaction + s[end:]
+	}
+	return s
+}
+
+func isIdentifierByte(value byte) bool {
+	return value >= 'a' && value <= 'z' || value >= 'A' && value <= 'Z' || value >= '0' && value <= '9' || value == '_'
+}
+
+func maskCurlCredentials(s string) string {
+	for _, pattern := range []*regexp.Regexp{credentialCurlUserPattern, credentialCurlAttachedPattern} {
+		matches := pattern.FindAllStringSubmatchIndex(s, -1)
+		for i := len(matches) - 1; i >= 0; i-- {
+			match := matches[i]
+			if len(match) < 4 || match[2] < 0 || match[3] < 0 {
+				continue
+			}
+			argument := s[match[2]:match[3]]
+			unquoted := trimOuterQuotes(argument)
+			username, password, hasPassword := splitUserPassword(unquoted)
+			if !hasPassword || password == "" || isEnvironmentReference(password) {
+				continue
+			}
+			quote := ""
+			if len(argument) >= 2 && (argument[0] == '\'' || argument[0] == '"') {
+				quote = argument[:1]
+			}
+			replacement := quote + username + ":" + redaction + quote
+			s = s[:match[2]] + replacement + s[match[3]:]
+		}
+	}
+	return s
+}
+
+func maskURIPasswords(s string) string {
+	matches := credentialURIPattern.FindAllStringSubmatchIndex(s, -1)
+	for i := len(matches) - 1; i >= 0; i-- {
+		match := matches[i]
+		if len(match) < 6 || match[4] < 0 || match[5] < 0 {
+			continue
+		}
+		userinfo := s[match[4]:match[5]]
+		username, password, hasPassword := splitUserPassword(userinfo)
+		if !hasPassword || password == "" || isEnvironmentReference(password) {
+			continue
+		}
+		replacement := username + ":" + redaction
+		s = s[:match[4]] + replacement + s[match[5]:]
+	}
+	return s
+}
+
+// maskCredentialSubmatch redacts the first capture group while preserving the
+// surrounding command context. Environment references are intentionally kept:
+// they point at secret storage but are not secret material themselves.
+func maskCredentialSubmatch(s string, pattern *regexp.Regexp) string {
+	matches := pattern.FindAllStringSubmatchIndex(s, -1)
+	for i := len(matches) - 1; i >= 0; i-- {
+		match := matches[i]
+		if len(match) < 4 || match[2] < 0 || match[3] < 0 {
+			continue
+		}
+		material := s[match[2]:match[3]]
+		if isEnvironmentReference(material) {
+			continue
+		}
+		s = s[:match[2]] + redaction + s[match[3]:]
+	}
 	return s
 }

@@ -10,6 +10,7 @@ import (
 	"testing"
 	"time"
 
+	markmcp "github.com/mark3labs/mcp-go/mcp"
 	"github.com/michael-ltm/sshm/internal/config"
 	"github.com/michael-ltm/sshm/internal/safety"
 	sshpkg "github.com/michael-ltm/sshm/internal/ssh"
@@ -32,6 +33,50 @@ func TestExecTimeout(t *testing.T) {
 	require.Equal(t, time.Duration(0), execTimeout(map[string]any{"timeout_seconds": float64(0)}), "0 -> no timeout")
 	require.Equal(t, 120*time.Second, execTimeout(map[string]any{"timeout_seconds": float64(120)}), "120 -> 120s")
 	require.Equal(t, 60*time.Second, execTimeout(map[string]any{"timeout_seconds": float64(-5)}), "negative -> 60s")
+}
+
+func TestRegisteredExecMasksStructuredOutputBeforeJSONMarshal(t *testing.T) {
+	dir := t.TempDir()
+	cfgPath := filepath.Join(dir, "config.toml")
+	cfg := config.New()
+	cfg.Servers["build"] = &config.Server{Host: "example.invalid", User: "builder", Auth: config.AuthAgent}
+	require.NoError(t, config.Save(cfgPath, cfg))
+
+	oldDial := dialExecRemote
+	oldRun := runExecRemoteCommand
+	t.Cleanup(func() {
+		dialExecRemote = oldDial
+		runExecRemoteCommand = oldRun
+	})
+	dialExecRemote = func(_ *config.Server, _ sshpkg.BuildOpts) (*sshpkg.Client, error) {
+		return &sshpkg.Client{}, nil
+	}
+	runExecRemoteCommand = func(_ context.Context, _ *sshpkg.Client, _ string) (*sshpkg.ExecResult, error) {
+		return &sshpkg.ExecResult{ExitCode: 0, Stdout: "TOKEN=literal-secret"}, nil
+	}
+
+	s, _ := NewServer(Deps{
+		ConfigPath: cfgPath,
+		AuditPath:  filepath.Join(dir, "audit.jsonl"),
+		AllowWrite: true,
+	})
+	tool := s.GetTool("exec")
+	require.NotNil(t, tool)
+	result, err := tool.Handler(context.Background(), markmcp.CallToolRequest{Params: markmcp.CallToolParams{
+		Name: "exec",
+		Arguments: map[string]any{
+			"alias": "build", "command": "echo ok", "reason": "test structured masking",
+		},
+	}})
+	require.NoError(t, err)
+	require.Len(t, result.Content, 1)
+	content, ok := result.Content[0].(markmcp.TextContent)
+	require.True(t, ok)
+	require.NotContains(t, content.Text, "literal-secret")
+
+	var payload map[string]any
+	require.NoError(t, json.Unmarshal([]byte(content.Text), &payload))
+	require.Equal(t, "TOKEN=***", payload["stdout"])
 }
 
 func TestHandleExec_BlocksDangerousCommand(t *testing.T) {

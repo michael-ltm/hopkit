@@ -16,7 +16,7 @@ import (
 // a mutex is the correct solution.
 var auditMu sync.Mutex
 
-// Entry is one audit record. Reason is masked before being written.
+// Entry is one audit record. Untrusted string fields are masked before write.
 type Entry struct {
 	Time   string `json:"time"`
 	Tool   string `json:"tool"`
@@ -41,6 +41,7 @@ func (a *AuditLog) Append(e Entry) error {
 		return fmt.Errorf("mkdir audit dir: %w", err)
 	}
 	e.Time = time.Now().UTC().Format(time.RFC3339)
+	e.Alias = maskCredentialMaterial(e.Alias)
 	e.Reason = MaskSecrets(e.Reason)
 	e.Result = MaskSecrets(e.Result)
 

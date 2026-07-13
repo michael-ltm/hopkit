@@ -17,6 +17,10 @@ var mu sync.Mutex
 //
 // If fn returns a non-nil error, Save is not called and fn's error is
 // returned to the caller unchanged.
+//
+// Load deliberately leaves optional project validation to its consumer, so fn
+// may repair a hand-edited profile. Save still validates the complete project
+// set before replacing the file.
 func Update(path string, fn func(*Config) error) error {
 	mu.Lock()
 	defer mu.Unlock()

@@ -28,21 +28,32 @@ func TestAuditLog_AppendWritesLine(t *testing.T) {
 	require.Contains(t, lines[1], "exec")
 }
 
-func TestAuditLog_AppendMasksReasonAndResult(t *testing.T) {
+func TestAuditLog_AppendMasksAliasReasonAndResult(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "audit.log")
 	a := NewAuditLog(path)
 	require.NoError(t, a.Append(Entry{
 		Tool:   "exec",
-		Alias:  "h",
+		Alias:  "ghp_abcdefghijklmnopqrstuvwxyz0123456789",
 		Reason: "set DB_PASS=hunter2",
 		Result: "API_KEY=leakedsecret done",
 	}))
 	data, err := os.ReadFile(path)
 	require.NoError(t, err)
 	s := string(data)
-	require.NotContains(t, s, "hunter2")      // Reason masked
-	require.NotContains(t, s, "leakedsecret") // Result masked
-	require.Contains(t, s, `"time":"`)        // timestamp stamped
+	require.NotContains(t, s, "ghp_abcdefghijklmnopqrstuvwxyz0123456789") // Alias masked
+	require.NotContains(t, s, "hunter2")                                  // Reason masked
+	require.NotContains(t, s, "leakedsecret")                             // Result masked
+	require.Contains(t, s, `"time":"`)                                    // timestamp stamped
+}
+
+func TestAuditLog_PreservesExactIPAddressAlias(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "audit.log")
+	a := NewAuditLog(path)
+	require.NoError(t, a.Append(Entry{Tool: "exec", Alias: "10.0.0.5", Reason: "trace exact target"}))
+
+	data, err := os.ReadFile(path)
+	require.NoError(t, err)
+	require.Contains(t, string(data), `"alias":"10.0.0.5"`)
 }
 
 func TestAuditLog_FileIsModeSixZeroZero(t *testing.T) {

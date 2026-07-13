@@ -221,13 +221,13 @@ func registerWriteTools(s *server.MCPServer, deps Deps, names []string) []string
 		s.AddTool(tool, func(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
 			out, err := fn(deps, req.GetArguments())
 			if err != nil {
-				return mcp.NewToolResultError(err.Error()), nil
+				return mcp.NewToolResultError(safety.MaskSecrets(err.Error())), nil
 			}
-			js, err := jsonResult(out)
+			js, err := maskedJSONResult(out)
 			if err != nil {
-				return mcp.NewToolResultError(err.Error()), nil
+				return mcp.NewToolResultError(safety.MaskSecrets(err.Error())), nil
 			}
-			return mcp.NewToolResultText(safety.MaskSecrets(js)), nil
+			return mcp.NewToolResultText(js), nil
 		})
 		names = append(names, name)
 	}

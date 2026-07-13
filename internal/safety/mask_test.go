@@ -83,6 +83,9 @@ func TestMaskSecrets_RedactsPasswordFlags(t *testing.T) {
 		{"redis -a style -p", "redis-cli -pMyRedisPass ping", "MyRedisPass"},
 		{"--password=", "tool --password=topsecret run", "topsecret"},
 		{"--password space", "tool --password topsecret run", "topsecret"},
+		{"--password quoted space", `tool --password "two word secret" run`, "two word secret"},
+		{"--password escaped quote", `tool --password "two \"word\" secret" run`, `two \"word\" secret`},
+		{"attached quoted short password", `mysql -uroot -p"two word secret" dbname`, "two word secret"},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
@@ -91,6 +94,66 @@ func TestMaskSecrets_RedactsPasswordFlags(t *testing.T) {
 			require.Contains(t, out, "***")
 		})
 	}
+}
+
+func TestMaskSecrets_RedactsCompleteQuotedValuesAndURIPasswords(t *testing.T) {
+	tests := []struct {
+		name   string
+		input  string
+		secret string
+	}{
+		{name: "environment assignment", input: `TOKEN="two word secret" deploy`, secret: "two word secret"},
+		{name: "escaped quote environment assignment", input: `TOKEN="two \"word\" secret" deploy`, secret: `two \"word\" secret`},
+		{name: "PowerShell environment assignment", input: `$env:DB_PASSWORD = "two word secret"`, secret: "two word secret"},
+		{name: "spaced bare environment assignment", input: `DB_PASSWORD = "two word secret"`, secret: "two word secret"},
+		{name: "PowerShell escaped quote assignment", input: "$env:TOKEN = \"two `\"word`\" secret\"", secret: "two `\"word`\" secret"},
+		{name: "PowerShell escaped single quote assignment", input: `$env:TOKEN = 'two ''word'' secret'`, secret: `two ''word'' secret`},
+		{name: "lowercase assignment", input: `password='two word secret' deploy`, secret: "two word secret"},
+		{name: "colon value", input: `password: "two word secret"`, secret: "two word secret"},
+		{name: "URI password", input: "fetch https://alice:uri-secret@example.com/repo", secret: "uri-secret"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			out := MaskSecrets(tt.input)
+			require.NotContains(t, out, tt.secret)
+			require.Contains(t, out, "***")
+		})
+	}
+}
+
+func TestMaskSecrets_RedactsContextualCommandPasswords(t *testing.T) {
+	tests := []struct {
+		name     string
+		input    string
+		secret   string
+		preserve string
+	}{
+		{name: "sshpass separated password", input: "sshpass -p sshpass-secret ssh example.com", secret: "sshpass-secret", preserve: "sshpass -p ***"},
+		{name: "docker login separated password", input: "docker login -u alice -p docker-secret", secret: "docker-secret", preserve: "docker login -u alice -p ***"},
+		{name: "docker global config attached password", input: "docker --config /tmp/cfg login -u alice -pdocker-secret", secret: "docker-secret", preserve: "login -u alice -p***"},
+		{name: "curl short user password", input: "curl -u alice:curl-secret https://example.com", secret: "curl-secret", preserve: "curl -u alice:***"},
+		{name: "curl attached user password", input: "curl -ualice:curl-secret https://example.com", secret: "curl-secret", preserve: "curl -ualice:***"},
+		{name: "curl proxy user password", input: "curl --proxy-user alice:proxy-secret https://example.com", secret: "proxy-secret", preserve: "curl --proxy-user alice:***"},
+		{name: "curl attached proxy user password", input: "curl -Ualice:proxy-secret https://example.com", secret: "proxy-secret", preserve: "curl -Ualice:***"},
+		{name: "PowerShell quoted curl executable", input: `& 'C:\Program Files\curl\curl.exe' --user alice:literal-secret https://example.com`, secret: "literal-secret", preserve: "--user alice:***"},
+		{name: "curl long user password", input: "curl --user alice:curl-secret https://example.com", secret: "curl-secret", preserve: "curl --user alice:***"},
+		{name: "curl quoted password with space", input: `curl --user="alice:curl secret" https://example.com`, secret: "curl secret", preserve: `curl --user="alice:***"`},
+		{name: "curl quoted password with shell punctuation", input: `curl -u "alice:two word;&secret" https://example.com`, secret: "two word;&secret", preserve: `curl -u "alice:***"`},
+		{name: "curl escaped quote password", input: `curl -u "alice:two \"word\" secret" https://example.com`, secret: `two \"word\" secret`, preserve: `curl -u "alice:***"`},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			out := MaskSecrets(tt.input)
+			require.NotContains(t, out, tt.secret)
+			require.Contains(t, out, tt.preserve)
+		})
+	}
+}
+
+func TestMaskSecrets_PreservesPowerShellCurlEnvironmentReferences(t *testing.T) {
+	input := `curl --user '${env:CURL_USER}:${env:CURL_PASSWORD}' https://example.com`
+	require.Equal(t, input, MaskSecrets(input))
 }
 
 func TestMaskSecrets_RedactsTokens(t *testing.T) {
@@ -171,4 +234,98 @@ func TestMaskSecrets_DoesNotOverMaskBenignText(t *testing.T) {
 		out := MaskSecrets(in)
 		require.Equal(t, in, out, "benign text must be unchanged: %q", in)
 	}
+}
+
+func TestMaskSecrets_RedactsShellAndSerializedCredentialForms(t *testing.T) {
+	tests := []struct {
+		name   string
+		input  string
+		secret string
+	}{
+		{name: "PowerShell braced environment assignment", input: `${env:TOKEN}='literal-secret'`, secret: "literal-secret"},
+		{name: "composite quoted environment reference plus literal", input: `TOKEN="$TOKEN"-literal-secret`, secret: "literal-secret"},
+		{name: "POSIX ANSI-C quoted literal", input: `TOKEN=$'two word secret'`, secret: "two word secret"},
+		{name: "PowerShell single quoted here-string", input: "$env:TOKEN = @'\nliteral-secret\n'@", secret: "literal-secret"},
+		{name: "quoted bearer token", input: `Authorization: Bearer "literal token"`, secret: "literal token"},
+		{name: "POSIX assignment prefix before docker", input: `DOCKER_CONFIG=/tmp docker login -u alice -p docker-secret`, secret: "docker-secret"},
+		{name: "env prefix before sshpass", input: `env LC_ALL=C sshpass -p ssh-secret ssh example.com`, secret: "ssh-secret"},
+		{name: "sudo options before mysql", input: `sudo -n -- mysql -uroot -pmysql-secret database`, secret: "mysql-secret"},
+		{name: "cmd wrapper around attached curl credentials", input: `cmd.exe /d /s /c "curl -ualice:cmd-secret https://example.com"`, secret: "cmd-secret"},
+		{name: "JSON quoted password key", input: `{"password":"json-secret"}`, secret: "json-secret"},
+		{name: "JSON quoted token key", input: `{"token": "json-token"}`, secret: "json-token"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			out := MaskSecrets(tt.input)
+			require.NotContains(t, out, tt.secret)
+			require.Contains(t, out, redaction)
+		})
+	}
+}
+
+func TestMaskSecrets_PreservesSSHPassPromptAndPowerShellTypeOperator(t *testing.T) {
+	tests := []string{
+		`sshpass -P "Enter Password:" -e ssh example.com`,
+		`[System.Management.Automation.LanguagePrimitives]::ConvertTo('value')`,
+		`[System.Type]::Add()`,
+		`[System.Type]::`,
+		`::`,
+	}
+
+	for _, input := range tests {
+		t.Run(input, func(t *testing.T) {
+			require.Equal(t, input, MaskSecrets(input))
+		})
+	}
+}
+
+func TestMaskSecrets_RedactsIPv6BeforeSentencePunctuation(t *testing.T) {
+	out := MaskSecrets("host fe80::1.")
+	require.Equal(t, "host ***.", out)
+}
+
+func TestMaskSecrets_ReviewExactReproductions(t *testing.T) {
+	secretCases := []struct {
+		name    string
+		input   string
+		secrets []string
+	}{
+		{name: "POSIX composite single quote", input: `TOKEN='alpha'\''bravo charlie'`, secrets: []string{"alpha", "bravo charlie"}},
+		{name: "POSIX ANSI-C quote", input: `TOKEN=$'alpha bravo charlie'`, secrets: []string{"alpha bravo charlie"}},
+		{name: "PowerShell here-string", input: "$env:TOKEN = @'\nalpha bravo charlie\n'@", secrets: []string{"alpha bravo charlie"}},
+		{name: "quoted bearer", input: `Authorization: Bearer "alpha bravo charlie"`, secrets: []string{"alpha bravo charlie"}},
+		{name: "docker assignment prefix", input: `DOCKER_CONFIG=/tmp/docker docker login -u alice -p docker-secret`, secrets: []string{"docker-secret"}},
+		{name: "sshpass assignment prefix", input: `FOO=bar sshpass -p ssh-secret ssh example.com`, secrets: []string{"ssh-secret"}},
+		{name: "docker sudo option prefix", input: `sudo -E docker login -u alice -p docker-secret`, secrets: []string{"docker-secret"}},
+		{name: "mysql PATH assignment prefix", input: `PATH=/usr/local/bin:/usr/bin mysql -uroot -pmysql-secret database`, secrets: []string{"mysql-secret"}},
+		{name: "cmd curl wrapper", input: `cmd.exe /d /s /c "curl -ualice:cmd-secret https://example.com"`, secrets: []string{"cmd-secret"}},
+		{name: "JSON password and token", input: `{"password":"hunter2","token":"literal-token"}`, secrets: []string{"hunter2", "literal-token"}},
+	}
+
+	for _, tt := range secretCases {
+		t.Run(tt.name, func(t *testing.T) {
+			out := MaskSecrets(tt.input)
+			for _, secret := range tt.secrets {
+				require.NotContains(t, out, secret)
+			}
+			require.Contains(t, out, redaction)
+		})
+	}
+
+	preserved := []string{
+		`sshpass -P "Enter Password:" -e ssh example.com`,
+		`[System.IO.Path]::GetTempPath()`,
+		`[System.Type]::`,
+		`operator :: remains syntax`,
+	}
+	for _, input := range preserved {
+		t.Run(input, func(t *testing.T) {
+			require.Equal(t, input, MaskSecrets(input))
+		})
+	}
+
+	t.Run("redaction is idempotent", func(t *testing.T) {
+		require.Equal(t, `TOKEN=***`, MaskSecrets(`TOKEN=***`))
+	})
 }

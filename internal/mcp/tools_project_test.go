@@ -2,11 +2,13 @@ package mcp
 
 import (
 	"context"
+	"encoding/json"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
 
+	"github.com/mark3labs/mcp-go/mcp"
 	"github.com/michael-ltm/sshm/internal/config"
 	"github.com/stretchr/testify/require"
 )
@@ -58,6 +60,134 @@ func TestGetProjectUnknownListsAvailableProjectsSorted(t *testing.T) {
 	require.Equal(t, `unknown project "missing"; available projects: a, b`, errorPayload["message"])
 }
 
+func TestProjectReadHandlersRejectHandEditedCredentialsWithoutLeakingSecret(t *testing.T) {
+	tests := []struct {
+		name          string
+		projectFields string
+		field         string
+		secret        string
+		handler       func(context.Context, Deps, map[string]any) (any, error)
+		args          map[string]any
+	}{
+		{name: "list URI password", projectFields: "remote_workspace = \"https://alice:list-load-secret@example.com/repo\"\n", field: "remote_workspace", secret: "list-load-secret", handler: handleListProjects},
+		{name: "get curl password", projectFields: "remote_workspace = \"/srv/app\"\nbuild_command = \"curl -u alice:get-load-secret https://example.com\"\n", field: "build_command", secret: "get-load-secret", handler: handleGetProject, args: map[string]any{"project": "manual"}},
+		{name: "exec sshpass password", projectFields: "remote_workspace = \"/srv/app\"\nverify_command = \"sshpass -p exec-load-secret ssh example.com\"\n", field: "verify_command", secret: "exec-load-secret", handler: handleExecProject, args: map[string]any{"project": "manual", "command": "echo ok", "reason": "test unsafe manual config"}},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			dir := t.TempDir()
+			cfgPath := filepath.Join(dir, "config.toml")
+			data := "version = 3\n[servers.prod]\nhost = \"example.com\"\nport = 22\nuser = \"builder\"\nauth = \"key\"\n[projects.manual]\nserver = \"prod\"\nartifact_path = \"/srv/app.tgz\"\n" + tt.projectFields
+			require.NoError(t, os.WriteFile(cfgPath, []byte(data), 0o600))
+
+			oldRunProjectExec := runProjectExec
+			t.Cleanup(func() { runProjectExec = oldRunProjectExec })
+			execCalled := false
+			runProjectExec = func(_ context.Context, _ Deps, _ map[string]any) (any, error) {
+				execCalled = true
+				return map[string]any{"exit": 0}, nil
+			}
+
+			out, err := tt.handler(context.Background(), Deps{ConfigPath: cfgPath}, tt.args)
+			require.NoError(t, err)
+			require.False(t, execCalled, "exec_project must stop before remote execution")
+			js, err := jsonResult(out)
+			require.NoError(t, err)
+			require.NotContains(t, js, tt.secret)
+			result, ok := out.(map[string]any)
+			require.True(t, ok)
+			errorPayload, ok := result["error"].(map[string]string)
+			require.True(t, ok)
+			require.Equal(t, "config", errorPayload["kind"])
+			require.Contains(t, errorPayload["message"], tt.field)
+			require.NotContains(t, errorPayload["message"], tt.secret)
+		})
+	}
+}
+
+func TestRegisteredProjectToolsPreserveValidatedProfilesExactly(t *testing.T) {
+	dir := t.TempDir()
+	cfgPath := filepath.Join(dir, "config.toml")
+	data := `version = 3
+[servers."10.0.0.5"]
+host = "example.com"
+port = 22
+user = "builder"
+auth = "key"
+
+[projects.safe]
+server = "10.0.0.5"
+remote_workspace = '\\10.0.0.5\share'
+artifact_path = '\\10.0.0.5\share\app.exe'
+build_command = 'TOKEN_FILE=/run/secrets/token API_KEY_PATH=/run/secrets/api-key TOKEN=$TOKEN mysql -p$MYSQL_PASSWORD database'
+verify_command = 'sshpass -p $SSHPASS ssh example.com && curl -u alice:$CURL_PASSWORD http://10.0.0.5/health'
+`
+	require.NoError(t, os.WriteFile(cfgPath, []byte(data), 0o600))
+
+	oldRunProjectExec := runProjectExec
+	t.Cleanup(func() { runProjectExec = oldRunProjectExec })
+	runProjectExec = func(_ context.Context, _ Deps, _ map[string]any) (any, error) {
+		return map[string]any{"exit": 0, "stdout": "ok", "stderr": ""}, nil
+	}
+
+	s, _ := NewServer(Deps{ConfigPath: cfgPath, AllowWrite: true})
+	call := func(name string, args map[string]any) string {
+		t.Helper()
+		tool := s.GetTool(name)
+		require.NotNil(t, tool)
+		result, err := tool.Handler(context.Background(), mcp.CallToolRequest{Params: mcp.CallToolParams{Name: name, Arguments: args}})
+		require.NoError(t, err)
+		require.Len(t, result.Content, 1)
+		content, ok := result.Content[0].(mcp.TextContent)
+		require.True(t, ok)
+		return content.Text
+	}
+
+	getText := call("get_project", map[string]any{"project": "safe"})
+	var profile map[string]any
+	require.NoError(t, json.Unmarshal([]byte(getText), &profile))
+	require.Equal(t, `\\10.0.0.5\share`, profile["remote_workspace"])
+	require.Equal(t, "TOKEN_FILE=/run/secrets/token API_KEY_PATH=/run/secrets/api-key TOKEN=$TOKEN mysql -p$MYSQL_PASSWORD database", profile["build_command"])
+	require.Equal(t, "sshpass -p $SSHPASS ssh example.com && curl -u alice:$CURL_PASSWORD http://10.0.0.5/health", profile["verify_command"])
+
+	listText := call("list_projects", nil)
+	var listResult struct {
+		Projects []struct {
+			Server          string `json:"server"`
+			RemoteWorkspace string `json:"remote_workspace"`
+		} `json:"projects"`
+	}
+	require.NoError(t, json.Unmarshal([]byte(listText), &listResult))
+	require.Len(t, listResult.Projects, 1)
+	require.Equal(t, "10.0.0.5", listResult.Projects[0].Server)
+	require.Equal(t, `\\10.0.0.5\share`, listResult.Projects[0].RemoteWorkspace)
+
+	upsertText := call("upsert_project", map[string]any{
+		"project": "safe", "reason": "verify exact registered upsert response",
+	})
+	var upsertResult map[string]any
+	require.NoError(t, json.Unmarshal([]byte(upsertText), &upsertResult))
+	require.Equal(t, "10.0.0.5", upsertResult["server"])
+
+	execText := call("exec_project", map[string]any{"project": "safe", "command": "echo ok", "reason": "test exact project serialization"})
+	var execResult map[string]any
+	require.NoError(t, json.Unmarshal([]byte(execText), &execResult))
+	require.Equal(t, `\\10.0.0.5\share`, execResult["workdir"])
+	require.Equal(t, "10.0.0.5", execResult["alias"])
+
+	githubToken := "ghp_abcdefghijklmnopqrstuvwxyz0123456789"
+	errorText := call("get_project", map[string]any{"project": githubToken})
+	require.NotContains(t, errorText, githubToken)
+	require.Contains(t, errorText, "***")
+	var maskedError map[string]any
+	require.NoError(t, json.Unmarshal([]byte(errorText), &maskedError))
+
+	assignmentErrorText := call("get_project", map[string]any{"project": "TOKEN=literal-secret"})
+	require.NotContains(t, assignmentErrorText, "literal-secret")
+	require.NoError(t, json.Unmarshal([]byte(assignmentErrorText), &maskedError))
+}
+
 func TestUpsertProjectRejectsUnknownServer(t *testing.T) {
 	cfgPath, auditPath := writeProjectTestConfig(t)
 	out, err := handleUpsertProject(Deps{ConfigPath: cfgPath, AuditPath: auditPath}, map[string]any{
@@ -102,7 +232,51 @@ func TestUpsertProjectPreservesAbsentAndClearsExplicitEmpty(t *testing.T) {
 	require.Equal(t, "python build.py", got.Projects["a"].BuildCommand)
 }
 
+func TestUpsertProjectRepairsInvalidExistingProfile(t *testing.T) {
+	dir := t.TempDir()
+	cfgPath := filepath.Join(dir, "config.toml")
+	auditPath := filepath.Join(dir, "audit.jsonl")
+	data := `version = 3
+[servers.pc-e5]
+host = "example.com"
+port = 22
+user = "builder"
+auth = "key"
+
+[projects.a]
+server = "pc-e5"
+remote_workspace = "C:\\sshm\\workspaces\\a"
+artifact_path = "C:\\sshm\\artifacts\\a.exe"
+shell = "invalid-shell"
+build_command = "curl -u alice:repair-secret https://example.com"
+`
+	require.NoError(t, os.WriteFile(cfgPath, []byte(data), 0o600))
+
+	before, err := config.Load(cfgPath)
+	require.NoError(t, err, "unsafe optional profile must remain loadable for repair")
+	require.Error(t, config.ValidateProjects(before))
+
+	out, err := handleUpsertProject(Deps{ConfigPath: cfgPath, AuditPath: auditPath}, map[string]any{
+		"project":       "a",
+		"shell":         "powershell",
+		"build_command": "",
+		"reason":        "repair hand-edited project profile",
+	})
+	require.NoError(t, err)
+	result, ok := out.(map[string]any)
+	require.True(t, ok)
+	require.NotContains(t, result, "error")
+	require.NotContains(t, result, "repair-secret")
+
+	after, err := config.Load(cfgPath)
+	require.NoError(t, err)
+	require.NoError(t, config.ValidateProjects(after))
+	require.Equal(t, "powershell", after.Projects["a"].Shell)
+	require.Empty(t, after.Projects["a"].BuildCommand)
+}
+
 func TestUpsertProjectRejectsCredentialFieldsWithoutModifyingDisk(t *testing.T) {
+	githubToken := "ghp_abcdefghijklmnopqrstuvwxyz0123456789"
 	fields := []struct {
 		caseName     string
 		name         string
@@ -111,6 +285,8 @@ func TestUpsertProjectRejectsCredentialFieldsWithoutModifyingDisk(t *testing.T) 
 	}{
 		{caseName: "PEM local root", name: "local_root", value: "-----BEGIN PRIVATE KEY-----\nprivate-data\n-----END PRIVATE KEY-----", secretNeedle: "private-data"},
 		{caseName: "URI workspace password", name: "remote_workspace", value: "sftp://builder:workspace-secret@example.com/work", secretNeedle: "workspace-secret"},
+		{caseName: "token server", name: "server", value: githubToken, secretNeedle: githubToken},
+		{caseName: "token shell", name: "shell", value: githubToken, secretNeedle: githubToken},
 		{caseName: "AWS remote runs", name: "remote_runs", value: "AKIAIOSFODNN7EXAMPLE", secretNeedle: "AKIAIOSFODNN7EXAMPLE"},
 		{caseName: "Slack artifact path", name: "artifact_path", value: "/tmp/xoxb-1234567890-abcdefghij", secretNeedle: "xoxb-1234567890-abcdefghij"},
 		{caseName: "JWT local artifact", name: "local_artifact_dir", value: "eyJhbGciOiJIUzI1NiJ9.payload.signature", secretNeedle: "eyJhbGciOiJIUzI1NiJ9.payload.signature"},
@@ -120,6 +296,12 @@ func TestUpsertProjectRejectsCredentialFieldsWithoutModifyingDisk(t *testing.T) 
 		{caseName: "concatenated token", name: "verify_command", value: "DEPLOYTOKEN=deploy-secret verify", secretNeedle: "deploy-secret"},
 		{caseName: "terminal key", name: "local_root", value: "SIGNING_KEY=signing-secret", secretNeedle: "signing-secret"},
 		{caseName: "mysql short password", name: "build_command", value: "mysql -uroot -pdb-secret database", secretNeedle: "db-secret"},
+		{caseName: "sshpass separated password", name: "build_command", value: "sshpass -p sshpass-secret ssh example.com", secretNeedle: "sshpass-secret"},
+		{caseName: "docker login separated password", name: "build_command", value: "docker login -u alice -p docker-secret", secretNeedle: "docker-secret"},
+		{caseName: "curl user password", name: "verify_command", value: "curl -u alice:curl-secret https://example.com", secretNeedle: "curl-secret"},
+		{caseName: "multiline mysql short password", name: "build_command", value: "echo preflight\nmysql -uroot -pmultiline-secret database", secretNeedle: "multiline-secret"},
+		{caseName: "subshell mysql short password", name: "verify_command", value: "(mysql -uroot -psubshell-secret database)", secretNeedle: "subshell-secret"},
+		{caseName: "concatenated pass", name: "build_command", value: "DBPASS=dbpass-secret deploy", secretNeedle: "dbpass-secret"},
 		{caseName: "hardcoded env default", name: "verify_command", value: "TOKEN=${TOKEN:-default-secret} verify", secretNeedle: "default-secret"},
 	}
 
@@ -148,6 +330,50 @@ func TestUpsertProjectRejectsCredentialFieldsWithoutModifyingDisk(t *testing.T) 
 	}
 }
 
+func TestUpsertProjectRejectsTokenShapedNameWithoutModifyingDisk(t *testing.T) {
+	githubToken := "ghp_abcdefghijklmnopqrstuvwxyz0123456789"
+	cfgPath, auditPath := writeProjectTestConfig(t)
+	before, err := os.ReadFile(cfgPath)
+	require.NoError(t, err)
+
+	out, err := handleUpsertProject(Deps{ConfigPath: cfgPath, AuditPath: auditPath}, map[string]any{
+		"project": githubToken, "server": "pc-e5", "remote_workspace": "/srv/app",
+		"artifact_path": "/srv/app.tgz", "reason": "test token project name",
+	})
+	require.NoError(t, err)
+	result, ok := out.(map[string]any)
+	require.True(t, ok)
+	errorPayload, ok := result["error"].(map[string]string)
+	require.True(t, ok)
+	require.Equal(t, "bad_request", errorPayload["kind"])
+	require.Contains(t, errorPayload["message"], "project name")
+	require.NotContains(t, errorPayload["message"], githubToken)
+
+	after, readErr := os.ReadFile(cfgPath)
+	require.NoError(t, readErr)
+	require.Equal(t, before, after)
+}
+
+func TestUpsertProjectRejectsServerControlCharactersWithoutLeakingValue(t *testing.T) {
+	cfgPath, auditPath := writeProjectTestConfig(t)
+	before, err := os.ReadFile(cfgPath)
+	require.NoError(t, err)
+
+	out, err := handleUpsertProject(Deps{ConfigPath: cfgPath, AuditPath: auditPath}, map[string]any{
+		"project": "a", "server": "prod\nsecret-tail", "reason": "test invalid server control characters",
+	})
+	require.NoError(t, err)
+	result := out.(map[string]any)
+	errorPayload := result["error"].(map[string]string)
+	require.Equal(t, "bad_request", errorPayload["kind"])
+	require.Contains(t, errorPayload["message"], "server")
+	require.NotContains(t, errorPayload["message"], "secret-tail")
+
+	after, readErr := os.ReadFile(cfgPath)
+	require.NoError(t, readErr)
+	require.Equal(t, before, after)
+}
+
 func TestUpsertProjectAllowsBenignCredentialLikeValues(t *testing.T) {
 	tests := []struct {
 		name  string
@@ -158,6 +384,15 @@ func TestUpsertProjectAllowsBenignCredentialLikeValues(t *testing.T) {
 		{name: "Go parallel flag", field: "build_command", value: "go test -parallel=4 ./...", get: func(p *config.Project) string { return p.BuildCommand }},
 		{name: "port flag", field: "verify_command", value: "app -port=8080", get: func(p *config.Project) string { return p.VerifyCommand }},
 		{name: "profile flag", field: "verify_command", value: "tool -profile=release", get: func(p *config.Project) string { return p.VerifyCommand }},
+		{name: "mysql password prompt", field: "build_command", value: "mysql -uroot -p database", get: func(p *config.Project) string { return p.BuildCommand }},
+		{name: "sshpass env password", field: "verify_command", value: "sshpass -p $SSHPASS ssh example.com", get: func(p *config.Project) string { return p.VerifyCommand }},
+		{name: "pass suffix words", field: "build_command", value: "COMPASS=true BYPASS=false build", get: func(p *config.Project) string { return p.BuildCommand }},
+		{name: "ambiguous bare key", field: "build_command", value: "KEY=bare-key-secret build", get: func(p *config.Project) string { return p.BuildCommand }},
+		{name: "Docker password stdin", field: "build_command", value: "docker login --password-stdin registry.example.com", get: func(p *config.Project) string { return p.BuildCommand }},
+		{name: "credential file references", field: "build_command", value: "TOKEN_FILE=/run/secrets/token deploy --secret-file /run/secrets/token", get: func(p *config.Project) string { return p.BuildCommand }},
+		{name: "Docker BuildKit source secret", field: "build_command", value: "docker build --secret id=npmrc,src=/run/secrets/npmrc .", get: func(p *config.Project) string { return p.BuildCommand }},
+		{name: "Docker BuildKit environment secret", field: "build_command", value: "docker build --secret id=npmrc,env=NPM_TOKEN .", get: func(p *config.Project) string { return p.BuildCommand }},
+		{name: "curl env password", field: "verify_command", value: "curl -u alice:$CURL_PASSWORD https://example.com", get: func(p *config.Project) string { return p.VerifyCommand }},
 		{name: "API key path", field: "build_command", value: "API_KEY_PATH=/tmp/api-key build", get: func(p *config.Project) string { return p.BuildCommand }},
 		{name: "HTTP username", field: "local_root", value: "https://alice@example.com/source", get: func(p *config.Project) string { return p.LocalRoot }},
 		{name: "braced PowerShell env", field: "build_command", value: "TOKEN=${env:TOKEN} deploy", get: func(p *config.Project) string { return p.BuildCommand }},
