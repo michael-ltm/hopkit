@@ -34,6 +34,17 @@ func TestCoreSkillBudget(t *testing.T) {
 	}
 }
 
+func TestCommonProjectBuildContextBudget(t *testing.T) {
+	core := readSkillFile(t, "SKILL.md")
+	workflow := readSkillFile(t, "project-workflows.md")
+	if words := len(strings.Fields(core)) + len(strings.Fields(workflow)); words > 1150 {
+		t.Fatalf("common project-build context has %d words; want at most 1150", words)
+	}
+	if bytes := len(core) + len(workflow); bytes > 8000 {
+		t.Fatalf("common project-build context has %d bytes; want at most 8000", bytes)
+	}
+}
+
 func TestCoreSkillRequiredGuidance(t *testing.T) {
 	core := readSkillFile(t, "SKILL.md")
 	for _, phrase := range []string{
@@ -47,6 +58,28 @@ func TestCoreSkillRequiredGuidance(t *testing.T) {
 		if !strings.Contains(core, phrase) {
 			t.Errorf("SKILL.md does not contain %q", phrase)
 		}
+	}
+}
+
+func TestCoreSkillDefaultsToLineEfficientPlans(t *testing.T) {
+	core := strings.Join(strings.Fields(readSkillFile(t, "SKILL.md")), " ")
+	for _, phrase := range []string{"one short line per call", "one failure line", "one completion line"} {
+		if !strings.Contains(core, phrase) {
+			t.Errorf("SKILL.md does not contain compact plan rule %q", phrase)
+		}
+	}
+}
+
+func TestProjectLookupAvoidsRedundantList(t *testing.T) {
+	core := strings.Join(strings.Fields(readSkillFile(t, "SKILL.md")), " ")
+	workflow := strings.Join(strings.Fields(readSkillFile(t, "project-workflows.md")), " ")
+	for _, phrase := range []string{"call `get_project` directly", "`list_projects` only", "do not call `list_projects` again"} {
+		if !strings.Contains(core, phrase) {
+			t.Errorf("SKILL.md does not contain profile lookup rule %q", phrase)
+		}
+	}
+	if !strings.Contains(workflow, "core profile lookup rule") {
+		t.Error("project-workflows.md does not reuse the core profile lookup rule")
 	}
 }
 
@@ -103,7 +136,7 @@ func TestProjectWorkflowPreservesVerifiedBuildContract(t *testing.T) {
 		t.Errorf("project workflow mentions check_ssh %d times; want exactly once", count)
 	}
 	requirePhrasesInOrder(t, workflow,
-		"Resolve the profile once",
+		"Resolve once using the core profile lookup rule",
 		"Run exactly one `check_ssh(mode=exec)`",
 		"print the resolved workspace path",
 		"verify expected project markers",

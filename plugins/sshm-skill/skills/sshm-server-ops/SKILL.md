@@ -1,53 +1,57 @@
 ---
 name: sshm-server-ops
-description: Use when the user asks to manage a server, deploy code, run a remote project build, package a Windows EXE, transfer or verify an artifact, inspect status or logs, restart a service, execute a remote command, add an SSH host, or bootstrap a machine.
+description: "Use for SSH server operations through sshm MCP: status, commands, deploys and builds (including Windows EXE), artifact transfer, services, onboarding, or hardening."
 ---
 
 # sshm Server Operations
 
-Use sshm MCP tools instead of raw `ssh`. They preserve auditing, secret masking,
-the dangerous-command filter, and host-key verification.
+Use sshm MCP, not raw `ssh`, to retain auditing, masking, command filtering,
+and host-key verification.
 
-## Choose the narrowest tool
+## Tool routing
 
-- Inventory and health: `list_servers`, `get_server`, `get_status`.
-- Real SSH readiness: `check_ssh`; `test_connection` proves TCP reachability only.
-- Project profiles: `list_projects`, then `get_project` for the full profile.
-  Create or correct a user-confirmed profile with `upsert_project`.
-- Commands: use `exec_project` for a configured project and `exec` / `exec_multi`
-  for server-only work.
-- Files: `upload` / `download`; use `transfer_start` / `transfer_status` when a
-  large transfer could exceed one tool call.
-- Operations: `tail_logs`, `bootstrap`, `gen_key`, `copy_id`.
+- Inventory/health: `list_servers`, `get_server`, `get_status`; `check_ssh`
+  proves real SSH readiness, while `test_connection` proves TCP only.
+- Named project: call `get_project` directly; `list_projects` only discovers
+  names or resolves initial ambiguity. Confirm changes before `upsert_project`.
+- Commands: `exec_project` for profiles; `exec` / `exec_multi` otherwise.
+- Files: `upload` / `download`; large transfers use
+  `transfer_start` / `transfer_status`. Other operations: `tail_logs`,
+  `bootstrap`, `gen_key`, `copy_id`.
 
 ## Operating contract
 
-1. For an existing alias, run one `check_ssh` preflight with `mode=exec` before
-   the first SSH-dependent command or mutation. Initial `add_server` is exempt;
-   preflight after the alias exists. Reuse the result unless connectivity changes.
-2. When a request names a project, build, workspace, run, or artifact, reuse its
-   profile. Never infer a local path, remote workspace, run root, artifact path,
-   shell, build command, or verification command. If required data is absent,
-   ask the user; then call `upsert_project` with a specific `reason`.
-3. Pass a clear `reason` to every write, command, transfer, and log operation.
-4. Errors: surface the exact masked error; **do not retry the same failed mutation blindly**.
-   Switch to read-only diagnosis such as
-   `get_status`, `check_ssh`, or `tail_logs`, then change the plan from evidence.
-5. Never set `unsafe=true` without explicit confirmation of the destructive
-   command. Never expose private-key bytes, passphrases, or recovery contents.
-6. TOFU pins unknown hosts. A **changed host key** may indicate MITM: stop and
-   ask the user to verify it; never bypass verification without confirmation.
-7. Relay `copy_id`'s CLI instruction verbatim; passwords stay outside AI tools.
+1. Before an existing alias's first SSH-dependent action, run one
+   `check_ssh(mode=exec)` and reuse it unless connectivity changes. For
+   `add_server`, check after creation.
+2. Resolve a named project once and reuse it. If direct lookup is unknown, use
+   the returned names; do not call `list_projects` again. Never infer paths,
+   shell, build, or verification commands. Ask for missing values, then
+   `upsert_project` with a reason.
+3. Give every write, command, transfer, and log call a specific `reason`.
+4. Surface the exact masked error; **do not retry the same failed mutation blindly**.
+   Diagnose read-only (`get_status`, `check_ssh`, `tail_logs`) and adapt from evidence.
+5. Set `unsafe=true` only after explicit confirmation of that destructive
+   command. Never expose key bytes, passphrases, passwords, or recovery data.
+6. A **changed host key** may be MITM: stop for user verification; never bypass
+   it silently. Relay `copy_id` instructions verbatim so passwords stay outside AI tools.
+
+## Output discipline
+
+Plans default to one short line per call, one failure line, and one completion
+line; expand only when a gate would be ambiguous or the user asks. Include no
+sample JSON, schema restatement, or repeated rationale. List only skill files
+actually read. After execution, report evidence instead of narration.
 
 ## Conditional references
 
-Read only the relevant file; do not preload every reference:
+Read only the needed reference:
 
 - Remote project build, deployment, Windows EXE packaging, or artifact transfer:
   [project-workflows.md](project-workflows.md)
 - New host, key installation, provisioning, or SSH hardening:
   [onboarding.md](onboarding.md)
-- Exact tool arguments and result shapes:
+- Exact arguments/results only when live MCP information is insufficient:
   [quick-reference.md](quick-reference.md)
 - Server-only deploy and diagnostic sequences:
   [ai-patterns.md](ai-patterns.md)

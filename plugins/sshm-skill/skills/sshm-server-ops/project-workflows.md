@@ -1,19 +1,15 @@
 # Project Build and Artifact Workflows
 
-Project profiles make paths and commands deterministic. Treat the profile as
-the contract; never reconstruct it from a repository name, temporary directory,
-another machine, or earlier run.
+Project profiles are the path/command contract; never reconstruct one from a
+repository name, temporary directory, another machine, or earlier run.
 
 ## Resolve or create the profile
 
-1. Resolve the profile once: call `list_projects`, then `get_project`, and reuse
-   the returned values throughout the task.
-2. If it is absent or stale, obtain exact values from the user or an
-   authoritative project config. Use `upsert_project` only with confirmed
-   values and a specific `reason`.
-3. A new profile requires an existing server alias, `remote_workspace`, and
-   `artifact_path`. Optional fields are `local_root`, `remote_runs`,
-   `local_artifact_dir`, `shell`, `build_command`, and `verify_command`.
+1. Resolve once using the core profile lookup rule. If absent or stale, obtain
+   exact values from the user or authoritative config; use `upsert_project`
+   only with confirmed values and a reason.
+2. New profiles require an existing server alias, `remote_workspace`, and
+   `artifact_path`; other fields are optional.
 
 ## Stable path contract
 
@@ -24,8 +20,7 @@ another machine, or earlier run.
   child so concurrent or previous evidence is not overwritten.
 - `artifact_path` is the canonical published artifact, not merely a build
   output guess. Validate a candidate before deliberately replacing this path.
-- `local_root` and `local_artifact_dir` are local contracts. Ask when a needed
-  path is absent instead of choosing one.
+- `local_root` and `local_artifact_dir` are local contracts; ask if needed and absent.
 
 `exec_project` defaults to `workdir=workspace`; it also supports `runs` and
 `artifact_parent`. It resolves profile shell quoting while preserving normal
