@@ -23,21 +23,28 @@ func handleListServers(ctx context.Context, deps Deps, _ map[string]any) (any, e
 		return errResult("config", err.Error()), nil
 	}
 	type entry struct {
-		Alias      string   `json:"alias"`
-		Host       string   `json:"host"`
-		User       string   `json:"user"`
-		Tags       []string `json:"tags,omitempty"`
-		LastStatus string   `json:"last_status,omitempty"`
+		Alias              string   `json:"alias"`
+		Host               string   `json:"host"`
+		User               string   `json:"user"`
+		Description        string   `json:"description,omitempty"`
+		DescriptionMissing bool     `json:"description_missing,omitempty"`
+		Group              string   `json:"group,omitempty"`
+		Tags               []string `json:"tags,omitempty"`
+		LastStatus         string   `json:"last_status,omitempty"`
 	}
 	var list []entry
 	for alias, s := range cfg.Servers {
+		if s == nil {
+			continue
+		}
 		list = append(list, entry{
 			Alias: alias, Host: safety.MaskSecrets(s.Host), User: s.User,
+			Description: s.Description, DescriptionMissing: strings.TrimSpace(s.Description) == "", Group: s.Group,
 			Tags: s.Tags, LastStatus: s.LastStatus,
 		})
 	}
 	sort.Slice(list, func(i, j int) bool { return list[i].Alias < list[j].Alias })
-	return map[string]any{"servers": list}, nil
+	return map[string]any{"servers": list, "metadata_untrusted": true}, nil
 }
 
 // handleGetServer returns one server record (host masked).
@@ -48,14 +55,66 @@ func handleGetServer(ctx context.Context, deps Deps, args map[string]any) (any, 
 		return errResult("config", err.Error()), nil
 	}
 	s, ok := cfg.Servers[alias]
-	if !ok {
+	if !ok || s == nil {
 		return errResult("not_found", fmt.Sprintf("unknown server %q", alias)), nil
 	}
 	return map[string]any{
 		"alias": alias, "host": safety.MaskSecrets(s.Host), "port": s.Port,
-		"user": s.User, "auth": s.Auth, "tags": s.Tags, "group": s.Group,
+		"user": s.User, "auth": s.Auth, "label": s.Label,
+		"description": s.Description, "description_missing": strings.TrimSpace(s.Description) == "",
+		"notes_present": strings.TrimSpace(s.Notes) != "",
+		"tags":          s.Tags, "group": s.Group,
 		"init_state": s.InitState, "last_status": s.LastStatus,
+		"metadata_untrusted": true,
 	}, nil
+}
+
+// handleFindServers performs an intent lookup over aliases and descriptive
+// metadata so an AI does not need to load the full inventory just to locate a
+// suitable host.
+func handleFindServers(_ context.Context, deps Deps, args map[string]any) (any, error) {
+	query := strings.TrimSpace(strArg(args, "query"))
+	if query == "" {
+		return errResult("bad_request", "query is required"), nil
+	}
+	limit := 5
+	if raw, present := args["limit"]; present {
+		value, ok := raw.(float64)
+		if !ok || value < 1 || value > 20 || value != float64(int(value)) {
+			return errResult("bad_request", "limit must be an integer in 1..20"), nil
+		}
+		limit = int(value)
+	}
+
+	cfg, err := config.Load(deps.ConfigPath)
+	if err != nil {
+		return errResult("config", err.Error()), nil
+	}
+	matches := config.SearchServers(cfg.Servers, query)
+	if len(matches) > limit {
+		matches = matches[:limit]
+	}
+	type entry struct {
+		Alias       string   `json:"alias"`
+		Description string   `json:"description,omitempty"`
+		Group       string   `json:"group,omitempty"`
+		Tags        []string `json:"tags,omitempty"`
+		User        string   `json:"user"`
+		Host        string   `json:"host"`
+		LastStatus  string   `json:"last_status,omitempty"`
+		Score       int      `json:"score"`
+		MatchedOn   []string `json:"matched_on"`
+	}
+	list := make([]entry, 0, len(matches))
+	for _, match := range matches {
+		list = append(list, entry{
+			Alias: match.Alias, Description: match.Server.Description,
+			Group: match.Server.Group, Tags: match.Server.Tags, User: match.Server.User,
+			Host: safety.MaskSecrets(match.Server.Host), LastStatus: match.Server.LastStatus,
+			Score: match.Score, MatchedOn: match.MatchedOn,
+		})
+	}
+	return map[string]any{"query": query, "matches": list, "metadata_untrusted": true}, nil
 }
 
 // handleTestConnection probes a server's reachability.
@@ -66,7 +125,7 @@ func handleTestConnection(ctx context.Context, deps Deps, args map[string]any) (
 		return errResult("config", err.Error()), nil
 	}
 	s, ok := cfg.Servers[alias]
-	if !ok {
+	if !ok || s == nil {
 		return errResult("not_found", fmt.Sprintf("unknown server %q", alias)), nil
 	}
 	r := status.Probe(ctx, s, 5*time.Second)
@@ -108,7 +167,7 @@ func handleCheckSSH(ctx context.Context, deps Deps, args map[string]any) (any, e
 		return errResult("config", err.Error()), nil
 	}
 	s, ok := cfg.Servers[alias]
-	if !ok {
+	if !ok || s == nil {
 		return errResult("not_found", fmt.Sprintf("unknown server %q", alias)), nil
 	}
 
@@ -183,7 +242,7 @@ func handleGetStatus(ctx context.Context, deps Deps, args map[string]any) (any, 
 		return errResult("config", err.Error()), nil
 	}
 	s, ok := cfg.Servers[alias]
-	if !ok {
+	if !ok || s == nil {
 		return errResult("not_found", fmt.Sprintf("unknown server %q", alias)), nil
 	}
 	ctx, cancel := context.WithTimeout(ctx, 20*time.Second)
@@ -215,6 +274,22 @@ func registerReadTools(s *server.MCPServer, deps Deps, names []string) []string 
 		names = append(names, name)
 	}
 	reg("list_servers", "List all configured servers (host IPs masked).", handleListServers)
+	findTool := mcp.NewTool("find_servers",
+		mcp.WithDescription("Find the best servers for an intent using AI-safe alias, description, group, tags, user, and host metadata. Private notes are excluded."),
+		mcp.WithString("query", mcp.Required(), mcp.Description("intent or capability query, e.g. 'windows dynamic-debug cdb'")),
+		mcp.WithNumber("limit", mcp.Description("maximum results, 1..20; default 5")))
+	s.AddTool(findTool, func(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+		out, err := handleFindServers(ctx, deps, req.GetArguments())
+		if err != nil {
+			return mcp.NewToolResultError(safety.MaskSecrets(err.Error())), nil
+		}
+		js, err := maskedJSONResult(out)
+		if err != nil {
+			return mcp.NewToolResultError(safety.MaskSecrets(err.Error())), nil
+		}
+		return mcp.NewToolResultText(js), nil
+	})
+	names = append(names, "find_servers")
 	reg("get_server", "Get one server's configuration.", handleGetServer)
 	reg("test_connection", "TCP-probe a server's reachability.", handleTestConnection)
 	checkTool := mcp.NewTool("check_ssh",

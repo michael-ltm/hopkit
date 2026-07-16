@@ -31,6 +31,9 @@ func ValidateHost(h string) error {
 	if strings.TrimSpace(h) == "" {
 		return errors.New("host cannot be empty")
 	}
+	if strings.ContainsAny(h, "\x00\r\n") {
+		return errors.New("host must be a single line")
+	}
 	return nil
 }
 
@@ -55,6 +58,7 @@ type AddInput struct {
 	Auth        string
 	KeyPath     string
 	GenerateKey bool
+	Description string
 	Tags        string
 	Group       string
 	TestAfter   bool
@@ -102,6 +106,8 @@ func RunAdd(existingAliases []string) (*AddInput, error) {
 			return in.Auth == config.AuthPassword || in.Auth == config.AuthAgent
 		}),
 		huh.NewGroup(
+			huh.NewInput().Title("Description / purpose").Description("Helps people and AI choose the right server").Value(&in.Description).
+				Validate(config.ValidateDescription),
 			huh.NewInput().Title("Tags (comma separated)").Value(&in.Tags),
 			huh.NewInput().Title("Group").Value(&in.Group),
 			huh.NewConfirm().Title("Test connection after save?").Value(&in.TestAfter),

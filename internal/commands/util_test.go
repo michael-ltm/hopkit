@@ -1,6 +1,8 @@
 package commands
 
 import (
+	"bytes"
+	"encoding/json"
 	"path/filepath"
 	"testing"
 
@@ -18,6 +20,24 @@ func TestLoadConfig_UsesOverride(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, path, p)
 	require.Equal(t, config.CurrentVersion, cfg.Version)
+}
+
+func TestWriteJSONRedactedMasksSecretsAndPaths(t *testing.T) {
+	flagRedacted = true
+	t.Cleanup(func() { flagRedacted = false })
+	var out bytes.Buffer
+	require.NoError(t, writeJSON(&out, map[string]any{
+		"host":    "203.0.113.9",
+		"KeyPath": "/Users/alice/.ssh/id_ed25519",
+		"Notes":   "customer identity and private topology",
+		"command": "curl --password hunter2 https://example.com",
+	}))
+	var got map[string]any
+	require.NoError(t, json.Unmarshal(out.Bytes(), &got))
+	require.Equal(t, "203.0.*.*", got["host"])
+	require.Equal(t, "<redacted path>", got["KeyPath"])
+	require.Equal(t, "<redacted private notes>", got["Notes"])
+	require.NotContains(t, got["command"], "hunter2")
 }
 
 func TestResolveServer_ErrorsOnUnknownAlias(t *testing.T) {

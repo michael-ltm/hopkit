@@ -15,7 +15,7 @@ func TestShow_PrintsServerDetail(t *testing.T) {
 	cfg := config.New()
 	cfg.Servers["aliyun"] = &config.Server{
 		Host: "1.2.3.4", Port: 22, User: "ming", Auth: config.AuthKey, KeyPath: "/k",
-		Tags: []string{"prod"}, Notes: "primary",
+		Tags: []string{"prod"}, Description: "primary production server", Notes: "owner: ops",
 	}
 	require.NoError(t, config.Save(cfgPath, cfg))
 	flagConfigPath = cfgPath
@@ -25,7 +25,7 @@ func TestShow_PrintsServerDetail(t *testing.T) {
 	var out bytes.Buffer
 	cmd.SetOut(&out)
 	require.NoError(t, cmd.RunE(cmd, []string{"aliyun"}))
-	for _, want := range []string{"aliyun", "1.2.3.4", "ming", "prod", "primary"} {
+	for _, want := range []string{"aliyun", "1.2.3.4", "ming", "prod", "primary production server", "owner: ops"} {
 		require.Contains(t, out.String(), want)
 	}
 }

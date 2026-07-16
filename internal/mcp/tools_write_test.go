@@ -59,11 +59,105 @@ func TestHandleRemoveServer_Deletes(t *testing.T) {
 	require.NoError(t, config.Save(cfgPath, cfg))
 	deps := Deps{ConfigPath: cfgPath, AuditPath: auditPath, AllowWrite: true}
 
-	_, err := handleRemoveServer(deps, map[string]any{"alias": "gone", "reason": "decommissioned"})
+	_, err := handleRemoveServer(deps, map[string]any{"alias": "gone", "confirm_alias": "gone", "reason": "decommissioned"})
 	require.NoError(t, err)
 	reloaded, err := config.Load(cfgPath)
 	require.NoError(t, err)
 	require.NotContains(t, reloaded.Servers, "gone")
+}
+
+func TestHandleRemoveServerRequiresExactAliasConfirmation(t *testing.T) {
+	dir := t.TempDir()
+	cfgPath := filepath.Join(dir, "config.toml")
+	cfg := config.New()
+	cfg.Servers["keep"] = &config.Server{Host: "1.2.3.4"}
+	require.NoError(t, config.Save(cfgPath, cfg))
+	deps := Deps{ConfigPath: cfgPath, AuditPath: filepath.Join(dir, "audit.log"), AllowWrite: true}
+
+	out, err := handleRemoveServer(deps, map[string]any{
+		"alias": "keep", "confirm_alias": "wrong", "reason": "test confirmation",
+	})
+	require.NoError(t, err)
+	js, _ := jsonResult(out)
+	require.Contains(t, js, "confirmation_required")
+	reloaded, err := config.Load(cfgPath)
+	require.NoError(t, err)
+	require.Contains(t, reloaded.Servers, "keep")
+}
+
+func TestHandleRemoveServerRefusesReferencedAlias(t *testing.T) {
+	dir := t.TempDir()
+	cfgPath := filepath.Join(dir, "config.toml")
+	cfg := config.New()
+	cfg.Servers["builder"] = &config.Server{Host: "1.2.3.4"}
+	cfg.Projects["app"] = &config.Project{Server: "builder", RemoteWorkspace: "/srv/app", ArtifactPath: "/srv/app.tgz"}
+	require.NoError(t, config.Save(cfgPath, cfg))
+	deps := Deps{ConfigPath: cfgPath, AuditPath: filepath.Join(dir, "audit.log"), AllowWrite: true}
+
+	out, err := handleRemoveServer(deps, map[string]any{
+		"alias": "builder", "confirm_alias": "builder", "reason": "decommission",
+	})
+	require.NoError(t, err)
+	js, _ := jsonResult(out)
+	require.Contains(t, js, "conflict")
+	require.Contains(t, js, "app")
+}
+
+func TestHandleEditServerRequiresConfirmationForConnectionChanges(t *testing.T) {
+	deps := Deps{ConfigPath: writeTestConfig(t), AuditPath: filepath.Join(t.TempDir(), "audit.log"), AllowWrite: true}
+	out, err := handleEditServer(deps, map[string]any{
+		"alias": "prod", "host": "198.51.100.10", "reason": "move host",
+	})
+	require.NoError(t, err)
+	js, _ := jsonResult(out)
+	require.Contains(t, js, "confirmation_required")
+}
+
+func TestHandleAddServerRejectsCredentialInProxy(t *testing.T) {
+	dir := t.TempDir()
+	cfgPath := filepath.Join(dir, "config.toml")
+	require.NoError(t, config.Save(cfgPath, config.New()))
+	deps := Deps{ConfigPath: cfgPath, AuditPath: filepath.Join(dir, "audit.log"), AllowWrite: true}
+	out, err := handleAddServer(deps, map[string]any{
+		"alias": "proxybox", "host": "example.com", "reason": "test",
+		"proxy": "socks5://alice:plaintext@example.net:1080",
+	})
+	require.NoError(t, err)
+	js, _ := jsonResult(out)
+	require.Contains(t, js, "bad_request")
+	require.NotContains(t, js, "plaintext")
+}
+
+func TestHandleEditServerUpdatesAndClearsDiscoveryMetadata(t *testing.T) {
+	dir := t.TempDir()
+	cfgPath := filepath.Join(dir, "config.toml")
+	cfg := config.New()
+	cfg.Servers["lab"] = &config.Server{Host: "1.2.3.4", Description: "old", Tags: []string{"old"}}
+	require.NoError(t, config.Save(cfgPath, cfg))
+	deps := Deps{ConfigPath: cfgPath, AuditPath: filepath.Join(dir, "audit.log"), AllowWrite: true}
+
+	_, err := handleEditServer(deps, map[string]any{
+		"alias": "lab", "reason": "document reverse lab",
+		"description": "Windows x64 dynamic debugging lab", "tags": []any{"windows", "dynamic-debug"},
+		"group": "reverse",
+	})
+	require.NoError(t, err)
+	reloaded, err := config.Load(cfgPath)
+	require.NoError(t, err)
+	require.Equal(t, "Windows x64 dynamic debugging lab", reloaded.Servers["lab"].Description)
+	require.Equal(t, []string{"windows", "dynamic-debug"}, reloaded.Servers["lab"].Tags)
+	require.Equal(t, "reverse", reloaded.Servers["lab"].Group)
+
+	_, err = handleEditServer(deps, map[string]any{
+		"alias": "lab", "reason": "clear stale discovery metadata",
+		"description": "", "tags": []any{}, "group": "",
+	})
+	require.NoError(t, err)
+	reloaded, err = config.Load(cfgPath)
+	require.NoError(t, err)
+	require.Empty(t, reloaded.Servers["lab"].Description)
+	require.Empty(t, reloaded.Servers["lab"].Tags)
+	require.Empty(t, reloaded.Servers["lab"].Group)
 }
 
 func TestHandleEditServer_AppliesAuthAndKeyPath(t *testing.T) {
@@ -76,7 +170,7 @@ func TestHandleEditServer_AppliesAuthAndKeyPath(t *testing.T) {
 
 	_, err := handleEditServer(deps, map[string]any{
 		"alias": "h", "reason": "switch to key auth",
-		"auth": "key", "key_path": "/home/u/.ssh/id",
+		"auth": "key", "key_path": "/home/u/.ssh/id", "confirm_alias": "h",
 	})
 	require.NoError(t, err)
 	reloaded, err := config.Load(cfgPath)
@@ -156,7 +250,7 @@ func TestHandleEditServer_UpdatesProxyFields(t *testing.T) {
 	// Only proxy_jump is provided; proxy must be left untouched (matches the
 	// overwrite-only-when-non-empty convention used by other optional fields).
 	_, err := handleEditServer(deps, map[string]any{
-		"alias": "h", "reason": "add bastion", "proxy_jump": "jump.example",
+		"alias": "h", "reason": "add bastion", "proxy_jump": "jump.example", "confirm_alias": "h",
 	})
 	require.NoError(t, err)
 	reloaded, err := config.Load(cfgPath)
@@ -167,7 +261,7 @@ func TestHandleEditServer_UpdatesProxyFields(t *testing.T) {
 	// Now set proxy and proxy_command.
 	_, err = handleEditServer(deps, map[string]any{
 		"alias": "h", "reason": "set socks", "proxy": "socks5://127.0.0.1:1080",
-		"proxy_command": "nc %h %p",
+		"proxy_command": "nc %h %p", "confirm_alias": "h",
 	})
 	require.NoError(t, err)
 	reloaded, err = config.Load(cfgPath)

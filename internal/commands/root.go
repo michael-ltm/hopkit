@@ -10,6 +10,7 @@ var (
 	flagJSON       bool
 	flagConfigPath string
 	flagNoColor    bool
+	flagRedacted   bool
 )
 
 // NewRoot constructs the cobra root command with all subcommands attached.
@@ -24,6 +25,7 @@ func NewRoot() *cobra.Command {
 	root.PersistentFlags().BoolVar(&flagJSON, "json", false, "emit JSON output (where supported)")
 	root.PersistentFlags().StringVar(&flagConfigPath, "config", "", "override config.toml path")
 	root.PersistentFlags().BoolVar(&flagNoColor, "no-color", false, "disable colored output")
+	root.PersistentFlags().BoolVar(&flagRedacted, "redacted", false, "mask secrets, IPs, and sensitive paths in JSON output")
 
 	root.AddCommand(
 		newVersionCmd(),
@@ -33,6 +35,7 @@ func NewRoot() *cobra.Command {
 		newRmCmd(),
 		newAddCmd(),
 		newEditCmd(),
+		newPasswordCmd(),
 		newConnectCmd(),
 		newExecCmd(),
 		newUploadCmd(),

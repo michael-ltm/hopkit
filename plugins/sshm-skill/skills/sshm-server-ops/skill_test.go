@@ -48,6 +48,7 @@ func TestCommonProjectBuildContextBudget(t *testing.T) {
 func TestCoreSkillRequiredGuidance(t *testing.T) {
 	core := readSkillFile(t, "SKILL.md")
 	for _, phrase := range []string{
+		"find_servers",
 		"list_projects",
 		"get_project",
 		"upsert_project",
@@ -92,8 +93,8 @@ func TestCoreConditionalReferencesExist(t *testing.T) {
 
 	linkPattern := regexp.MustCompile(`\[[^]]+\]\(([^)#?]+\.md)\)`)
 	links := linkPattern.FindAllStringSubmatch(core[sectionStart:], -1)
-	if len(links) < 4 {
-		t.Fatalf("SKILL.md Conditional references contains %d documentation links; want at least 4", len(links))
+	if len(links) < 5 {
+		t.Fatalf("SKILL.md Conditional references contains %d documentation links; want at least 5", len(links))
 	}
 
 	seen := make(map[string]bool, len(links))
@@ -110,6 +111,25 @@ func TestCoreConditionalReferencesExist(t *testing.T) {
 		seen[reference] = true
 		if _, err := os.Stat(filepath.Join(skillDir(t), reference)); err != nil {
 			t.Errorf("conditional reference %s: %v", link[1], err)
+		}
+	}
+}
+
+func TestReverseWorkflowRoutesToolsAndProtectsLabs(t *testing.T) {
+	workflow := strings.Join(strings.Fields(readSkillFile(t, "reverse-workflows.md")), " ")
+	for _, phrase := range []string{
+		"jadx-analyze",
+		"ida-export",
+		"dynamic-reverse",
+		"find_servers",
+		"disposable lab/VM",
+		"never a production server",
+		"live `doctor`/capability output",
+		"unique session directory",
+		"target and tool SHA-256",
+	} {
+		if !strings.Contains(workflow, phrase) {
+			t.Errorf("reverse-workflows.md does not contain %q", phrase)
 		}
 	}
 }

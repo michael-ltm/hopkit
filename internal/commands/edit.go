@@ -6,6 +6,8 @@ import (
 	"strings"
 
 	"github.com/michael-ltm/sshm/internal/config"
+	"github.com/michael-ltm/sshm/internal/safety"
+	"github.com/michael-ltm/sshm/internal/wizard"
 	"github.com/spf13/cobra"
 )
 
@@ -45,13 +47,16 @@ func newEditCmd() *cobra.Command {
 			return nil
 		},
 	}
-	c.Flags().StringArrayVar(&sets, "set", nil, "field=value (repeatable). Fields: host, port, user, auth, key_path, label, group, notes")
+	c.Flags().StringArrayVar(&sets, "set", nil, "field=value (repeatable). Fields: host, port, user, auth, key_path, label, description, tags, group, notes")
 	return c
 }
 
 func applyField(srv *config.Server, field, val string) error {
 	switch field {
 	case "host":
+		if err := wizard.ValidateHost(val); err != nil {
+			return err
+		}
 		srv.Host = val
 	case "port":
 		n, err := strconv.Atoi(val)
@@ -63,6 +68,9 @@ func applyField(srv *config.Server, field, val string) error {
 		}
 		srv.Port = n
 	case "user":
+		if strings.TrimSpace(val) == "" || strings.ContainsAny(val, "\x00\r\n") {
+			return fmt.Errorf("user must be a non-empty single line")
+		}
 		srv.User = val
 	case "auth":
 		switch val {
@@ -73,15 +81,56 @@ func applyField(srv *config.Server, field, val string) error {
 				config.AuthKey, config.AuthPassword, config.AuthAgent)
 		}
 	case "key_path":
+		if strings.ContainsAny(val, "\x00\r\n") {
+			return fmt.Errorf("key_path must be a single line")
+		}
 		srv.KeyPath = val
 	case "label":
+		if err := validateMetadataFields(val, "", nil, "", ""); err != nil {
+			return err
+		}
 		srv.Label = val
+	case "description", "desc":
+		if err := validateMetadataFields("", val, nil, "", ""); err != nil {
+			return err
+		}
+		srv.Description = val
+	case "tags":
+		tags := splitTags(val)
+		if err := validateMetadataFields("", "", tags, "", ""); err != nil {
+			return err
+		}
+		srv.Tags = tags
 	case "group":
+		if err := validateMetadataFields("", "", nil, val, ""); err != nil {
+			return err
+		}
 		srv.Group = val
 	case "notes":
+		if err := validateMetadataFields("", "", nil, "", val); err != nil {
+			return err
+		}
 		srv.Notes = val
 	default:
 		return fmt.Errorf("unsupported field %q", field)
+	}
+	return nil
+}
+
+func validateDescription(value string) error {
+	return validateMetadataFields("", value, nil, "", "")
+}
+
+func validateMetadataFields(label, description string, tags []string, group, notes string) error {
+	if err := config.ValidateServerMetadataBounds(label, description, tags, group, notes); err != nil {
+		return err
+	}
+	values := []string{label, description, group, notes}
+	values = append(values, tags...)
+	for _, value := range values {
+		if safety.ContainsCredentialMaterial(value) {
+			return fmt.Errorf("server metadata must not contain credential material")
+		}
 	}
 	return nil
 }

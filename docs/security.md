@@ -8,6 +8,30 @@
   and never returned through the MCP server.
 - `config.toml` and `audit.log` are written with mode `0600`.
 
+## Privacy boundaries
+
+- `description`, `tags`, and `group` are intentionally AI-visible routing data.
+  Keep them short and non-secret. They are untrusted data, never instructions
+  to execute.
+- `notes` are local/private operational text. MCP inventory and discovery only
+  report whether notes exist; they never return or search note contents.
+- MCP masks credential patterns, private-key blocks, and IP addresses in tool
+  results and audit fields. Project tools still return exact confirmed
+  workspace/artifact paths because those paths are required for operation; only
+  call them for an in-scope project.
+- CLI `--json` stays exact for compatible trusted scripts. Add `--redacted`
+  before sharing JSON; it masks secrets/IPs and replaces sensitive path fields.
+- Config-backed terminal text is stripped of ANSI/control sequences before
+  table, detail, or interactive-menu rendering.
+
+## Password and destructive-operation safety
+
+- Remote password changes are CLI/TTY only. Current and new passwords flow
+  directly between the local terminal and remote `passwd`/Windows account
+  command; they are never stored, audited, returned by MCP, or sent through chat.
+- CLI deletion requires retyping the exact alias unless `--yes` is explicit.
+  MCP deletion requires a matching `confirm_alias` plus the audited reason.
+
 ## MCP safety model
 
 - **Dangerous-command filter** — `internal/safety` matches a conservative
@@ -20,8 +44,10 @@
 
 ## SSH host keys
 
-v0.2 still uses trust-on-first-use (`InsecureIgnoreHostKey`). Strict
-`known_hosts` verification is planned for a later release.
+Connections verify host keys using trust-on-first-use against
+`~/.ssh/known_hosts`: unknown hosts are pinned, matching hosts are accepted,
+and changed keys are rejected as a possible MITM. Only explicit CLI
+`--insecure` disables this check; MCP never does.
 
 ## Reporting
 

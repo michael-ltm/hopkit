@@ -14,7 +14,8 @@ func TestRenderServerTable_IncludesAllExpectedColumns(t *testing.T) {
 		"prod-web": {
 			Host: "1.2.3.4", Port: 22, User: "ubuntu", Auth: config.AuthKey,
 			Tags: []string{"prod", "web"}, LastStatus: config.StatusOnline,
-			LastSeen: time.Now().Add(-2 * time.Minute),
+			Description: "primary production web server",
+			LastSeen:    time.Now().Add(-2 * time.Minute),
 		},
 		"staging": {
 			Host: "1.2.3.5", Port: 22, User: "ubuntu", Auth: config.AuthKey,
@@ -23,7 +24,7 @@ func TestRenderServerTable_IncludesAllExpectedColumns(t *testing.T) {
 	}
 	out := RenderServerTable(servers, ASCIIIcons(), false /* no color */)
 
-	for _, want := range []string{"ID", "STATUS", "HOST", "USER", "AUTH", "prod-web", "staging", "[OK] on", "[X] off"} {
+	for _, want := range []string{"ID", "STATUS", "DESCRIPTION", "HOST", "USER", "AUTH", "prod-web", "primary production web server", "staging", "[OK] on", "[X] off"} {
 		require.Contains(t, out, want, "table missing %q", want)
 	}
 	// Aliases sorted alphabetically.

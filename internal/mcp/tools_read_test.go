@@ -114,3 +114,33 @@ func TestHandleGetServer_UnknownAliasReturnsError(t *testing.T) {
 	require.Contains(t, js, "error")
 	require.Contains(t, js, "unknown")
 }
+
+func TestHandleFindServersUsesDescriptionAndTags(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "config.toml")
+	cfg := config.New()
+	cfg.Servers["pc-e5"] = &config.Server{
+		Host: "192.0.2.55", User: "Administrator",
+		Description: "Windows x64 reverse engineering lab with CDB",
+		Tags:        []string{"windows", "dynamic-debug", "cdb"}, Group: "reverse",
+	}
+	cfg.Servers["prod"] = &config.Server{Host: "192.0.2.10", Description: "Linux production web"}
+	require.NoError(t, config.Save(path, cfg))
+
+	out, err := handleFindServers(context.Background(), Deps{ConfigPath: path}, map[string]any{
+		"query": "windows dynamic-debug", "limit": float64(3),
+	})
+	require.NoError(t, err)
+	js, err := jsonResult(out)
+	require.NoError(t, err)
+	require.Contains(t, js, "pc-e5")
+	require.Contains(t, js, "description")
+	require.NotContains(t, js, "prod")
+}
+
+func TestHandleFindServersRejectsEmptyQuery(t *testing.T) {
+	out, err := handleFindServers(context.Background(), Deps{ConfigPath: writeTestConfig(t)}, nil)
+	require.NoError(t, err)
+	js, _ := jsonResult(out)
+	require.Contains(t, js, "bad_request")
+}

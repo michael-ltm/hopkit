@@ -23,6 +23,7 @@ func TestSaveAndLoad_RoundTrip(t *testing.T) {
 	cfg.Servers["my-host"] = &Server{
 		Host: "1.2.3.4", Port: 22, User: "ming", Auth: AuthKey,
 		KeyPath: "~/.ssh/id_ed25519", Tags: []string{"prod", "aliyun"},
+		Description: "primary production server",
 	}
 
 	require.NoError(t, Save(path, cfg))
@@ -43,6 +44,7 @@ func TestSaveAndLoad_RoundTrip(t *testing.T) {
 	require.Equal(t, "1.2.3.4", loaded.Servers["my-host"].Host)
 	require.Equal(t, 22, loaded.Servers["my-host"].Port)
 	require.Equal(t, []string{"prod", "aliyun"}, loaded.Servers["my-host"].Tags)
+	require.Equal(t, "primary production server", loaded.Servers["my-host"].Description)
 }
 
 func TestLoad_RejectsFutureVersion(t *testing.T) {
@@ -62,6 +64,17 @@ func TestLoadV2InitializesProjectsWithoutImplicitMigration(t *testing.T) {
 	require.Equal(t, 2, cfg.Version)
 	require.NotNil(t, cfg.Projects)
 	require.Empty(t, cfg.Projects)
+}
+
+func TestLoadV3DescriptionUpgradeIsDeferredUntilSave(t *testing.T) {
+	p := filepath.Join(t.TempDir(), "config.toml")
+	require.NoError(t, os.WriteFile(p, []byte("version = 3\n[servers.lab]\nhost = \"127.0.0.1\"\ndescription = \"reverse lab\"\n"), 0o600))
+	cfg, err := Load(p)
+	require.NoError(t, err)
+	require.Equal(t, 3, cfg.Version)
+	require.Equal(t, "reverse lab", cfg.Servers["lab"].Description)
+	require.NoError(t, Save(p, cfg))
+	require.Equal(t, CurrentVersion, cfg.Version)
 }
 
 func TestLoadV3ProjectWithoutCredentials(t *testing.T) {

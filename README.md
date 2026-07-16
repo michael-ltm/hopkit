@@ -17,7 +17,8 @@
 
 ```
 sshm add               # interactive wizard
-sshm ls                # see all servers + status
+sshm list              # interactive server picker + safe action menu
+sshm ls --plain        # script-friendly server table
 sshm c my-host         # interactive shell
 sshm exec my-host 'uptime'
 sshm test --all        # parallel reachability check
@@ -27,16 +28,21 @@ sshm download my-host /tmp/app.zip ./app.zip --resume --sha256 <hash>
 ## Features
 
 - TOML config at `~/.config/sshm/config.toml` (XDG) or `%APPDATA%\sshm\config.toml` (Windows)
-- `add` (huh wizard) / `edit` / `rm` / `show` / `ls`
+- Interactive `list`/`ls`: arrow-key server picker with connect, reachability,
+  description editing, remote password change, default selection, and guarded delete
+- First-class descriptions, groups, and tags for human browsing and AI intent lookup
+- `add` (huh wizard) / `edit` / `rm` / `show`; exact-alias confirmation for destructive removal
 - `connect` (interactive shell) / `exec` (one-off) / `test` (single + --all)
 - `status` (remote resource snapshot) / `init` (baseline hardening)
 - `gen-key` (ed25519) / `copy-id` (one-shot password, never stored)
 - `upload` / `download` (single-file SFTP with `.part`, resume, SHA-256)
 - **`mcp` — built-in MCP server** so AI assistants (Claude Code, Cursor,
   Codex, Gemini CLI) can manage your servers — including layered SSH checks,
+  intent-based `find_servers` discovery,
   background file transfer (`transfer_start`/`transfer_status`) and host-key
   verification (TOFU). See [docs/ai-integration.md](docs/ai-integration.md).
 - `--json` on every command for scripting and AI integration
+- `--redacted` masks secrets, IPs, and sensitive paths before JSON is shared
 - Pretty list with unicode/ascii icons (auto-detected)
 - Proxy/jump-host connections: per-host SOCKS5 (`proxy`), ProxyJump (`proxy_jump`), ProxyCommand (`proxy_command`); SOCKS5 auto-detected from `ALL_PROXY`/`HTTPS_PROXY` env vars (zero-config); failed proxy attempts fall back to direct
 
@@ -58,7 +64,8 @@ and [docs/security.md](docs/security.md).
 - **v0.4** ✓ — Proxy/VPN-aware dialing: SOCKS5 (`proxy`), ProxyJump, ProxyCommand; SOCKS5 auto-detected from env; automatic direct fallback — _shipped_
 - **v0.5** ✓ — Secure key provisioning, encrypted key support, large-transfer-safe MCP/CLI file transfer — _shipped_
 - **v0.6** ✓ — Deterministic project profiles, safe project-scoped execution, cross-platform detached logs, token-efficient AI skill — _shipped_
-- **v0.7** — Import/export `~/.ssh/config`, tag/group filtering
+- **v0.7** ✓ — Interactive inventory manager, server descriptions, ranked AI host discovery, guarded password/removal workflows, remote reverse-lab guidance — _shipped_
+- **v0.8** — Import/export `~/.ssh/config`, tag/group filtering
 - **v1.0** — Port forwarding, SFTP browse, signed release artifacts, strict known_hosts enforcement
 
 See [docs/specs/2026-05-13-sshm-design.md](docs/specs/2026-05-13-sshm-design.md) for the full design.

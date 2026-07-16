@@ -25,7 +25,8 @@ The wizard prompts for:
 | Port | default 22 |
 | User | unix user on the remote |
 | Auth method | existing key / generate / password / agent |
-| Tags, Group | optional |
+| Description | purpose, OS/tooling, and constraints; used by humans and AI to choose a host |
+| Tags, Group | optional capability and organization metadata |
 | Test connection after save? | runs a TCP probe and reports |
 | Push public key to remote now? | recommended if you have a password |
 
@@ -36,26 +37,32 @@ The new server is written to `~/.config/sshm/config.toml`.
 ```
 sshm add --quick prod-web \
   --user ubuntu --host 1.2.3.4 --port 22 \
-  -i ~/.ssh/id_ed25519_prod
+  -i ~/.ssh/id_ed25519_prod \
+  --description "Linux production web server; Docker; deploy only" \
+  --tags linux,production,docker --group production
 ```
 
 ## Daily commands
 
 | Need | Command |
 |---|---|
-| Show all servers + status | `sshm ls` |
+| Browse/select/manage servers | `sshm list` (↑/↓, Enter, `/` to filter) |
+| Print all servers as a table | `sshm ls --plain` |
 | Connect | `sshm c <alias>` (alias `connect`) |
 | One-off command | `sshm exec <alias> 'uptime'` |
 | Reachability check | `sshm test <alias>` or `sshm test --all` |
 | Install your key on remote | `sshm copy-id <alias>` |
 | New key for one host | `sshm gen-key <alias>` |
 | Update a field | `sshm edit <alias> --set user=ubuntu` |
+| Add/update a description | `sshm edit <alias> --set description="Windows x64 reverse lab; CDB"` |
+| Change remote login password | `sshm password <alias>` (terminal only; exact-alias confirmation) |
 | JSON for scripts/AI | append `--json` to any command |
+| Share-safe JSON | append `--json --redacted` (exact JSON remains available to trusted scripts) |
 
 ## Config layout
 
 ```
-version = 2
+version = 4
 default = "prod-web"
 
 [servers.prod-web]
@@ -64,6 +71,7 @@ port = 22
 user = "ubuntu"
 auth = "key"
 key_path = "~/.ssh/id_ed25519_prod"
+description = "Linux production web server; Docker; deploy only"
 tags = ["prod", "aws"]
 ```
 

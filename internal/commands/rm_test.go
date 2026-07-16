@@ -73,7 +73,7 @@ func TestRm_InteractiveAbortKeepsServer(t *testing.T) {
 
 	cmd := newRmCmd()
 	cmd.SetArgs([]string{"aliyun"})
-	cmd.SetIn(strings.NewReader("n\n"))
+	cmd.SetIn(strings.NewReader("not-aliyun\n"))
 	var out bytes.Buffer
 	cmd.SetOut(&out)
 	require.NoError(t, cmd.Execute())
@@ -82,4 +82,25 @@ func TestRm_InteractiveAbortKeepsServer(t *testing.T) {
 	reloaded, err := config.Load(cfgPath)
 	require.NoError(t, err)
 	require.Contains(t, reloaded.Servers, "aliyun") // still there
+}
+
+func TestRm_RefusesServerReferencedByProject(t *testing.T) {
+	dir := t.TempDir()
+	cfgPath := filepath.Join(dir, "config.toml")
+	cfg := config.New()
+	cfg.Servers["builder"] = &config.Server{Host: "1.2.3.4"}
+	cfg.Projects["app"] = &config.Project{Server: "builder", RemoteWorkspace: "/srv/app", ArtifactPath: "/srv/app.tgz"}
+	require.NoError(t, config.Save(cfgPath, cfg))
+	flagConfigPath = cfgPath
+	t.Cleanup(func() { flagConfigPath = "" })
+
+	cmd := newRmCmd()
+	cmd.SetArgs([]string{"builder", "-y"})
+	cmd.SetOut(&bytes.Buffer{})
+	err := cmd.Execute()
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "project profiles: app")
+	reloaded, loadErr := config.Load(cfgPath)
+	require.NoError(t, loadErr)
+	require.Contains(t, reloaded.Servers, "builder")
 }

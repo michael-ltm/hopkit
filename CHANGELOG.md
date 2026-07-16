@@ -4,6 +4,30 @@ All notable changes to this project will be documented in this file. Format: [Ke
 
 ## [Unreleased]
 
+## [0.7.0] — 2026-07-16
+
+### Added
+- Interactive `sshm list` / `sshm ls` server manager for keyboard selection,
+  details, reachability checks, connect, add/edit descriptions, remote password
+  changes, default selection, server creation, and guarded deletion. `--plain`
+  preserves deterministic table output for scripts and redirected commands.
+- First-class server `description` metadata with legacy `notes` fallback, quick
+  add/edit support, table/detail display, and MCP read/write exposure.
+- Read-only `find_servers` MCP tool ranks aliases by description, group, tags,
+  user, and host so AI clients can locate capability-appropriate hosts
+  without guessing or loading the full inventory.
+- Remote reverse-engineering workflow guidance that connects sshm project
+  profiles with jadx, IDA export, and live dynamic-reverse capability evidence.
+
+### Security
+- CLI server removal now requires typing the exact alias unless `--yes` is
+  explicitly supplied; MCP removal requires a matching `confirm_alias`.
+- Remote password changes run `passwd` or the Windows account command under a
+  direct SSH PTY. Password bytes never enter MCP, config, audit logs, or chat.
+- AI-visible descriptions/tags/groups are bounded and reject credential-like
+  material; private notes are excluded from MCP results and discovery. Terminal
+  rendering strips control sequences, and `--redacted` provides share-safe JSON.
+
 ## [0.6.0] — 2026-07-13
 
 ### Added

@@ -6,6 +6,7 @@ import (
 	"strings"
 
 	"github.com/michael-ltm/sshm/internal/config"
+	"github.com/michael-ltm/sshm/internal/ui"
 	"github.com/spf13/cobra"
 )
 
@@ -42,6 +43,7 @@ func renderServerDetail(w io.Writer, alias string, s *config.Server) error {
 	}{
 		{"Alias", alias, true},
 		{"Label", s.Label, true},
+		{"Description", config.EffectiveDescription(s), config.EffectiveDescription(s) != ""},
 		{"Host", s.Host, true},
 		{"Port", fmt.Sprintf("%d", defaultInt(s.Port, 22)), true},
 		{"User", s.User, true},
@@ -57,7 +59,7 @@ func renderServerDetail(w io.Writer, alias string, s *config.Server) error {
 		if !l.show {
 			continue
 		}
-		if _, err := fmt.Fprintf(w, "%-12s %s\n", l.label, l.val); err != nil {
+		if _, err := fmt.Fprintf(w, "%-12s %s\n", l.label, ui.SanitizeTerminalText(l.val)); err != nil {
 			return err
 		}
 	}

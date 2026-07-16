@@ -5,10 +5,29 @@
 // from the OS keychain or prompt at connect time.
 package config
 
-import "time"
+import (
+	"fmt"
+	"sort"
+	"strings"
+	"time"
+	"unicode/utf8"
+)
 
 // CurrentVersion is the schema version this build understands.
-const CurrentVersion = 3
+const CurrentVersion = 4
+
+// MaxDescriptionRunes keeps server descriptions useful in terminal menus and
+// MCP results without allowing an accidental pasted document to bloat every
+// inventory lookup.
+const MaxDescriptionRunes = 500
+
+const (
+	MaxLabelRunes = 100
+	MaxGroupRunes = 100
+	MaxTags       = 32
+	MaxTagRunes   = 64
+	MaxNotesRunes = 4000
+)
 
 // Auth methods supported by Server.Auth.
 const (
@@ -33,6 +52,7 @@ const (
 // Server is one managed remote host.
 type Server struct {
 	Label        string    `toml:"label,omitempty"`
+	Description  string    `toml:"description,omitempty"`
 	Host         string    `toml:"host"`
 	Port         int       `toml:"port"`
 	User         string    `toml:"user"`
@@ -48,6 +68,87 @@ type Server struct {
 	ProxyCommand string    `toml:"proxy_command,omitempty"`
 	Proxy        string    `toml:"proxy,omitempty"` // e.g. "socks5://127.0.0.1:7890"
 	Forwards     []string  `toml:"forwards,omitempty"`
+}
+
+// ProjectsUsingServer returns sorted project profiles that would become
+// orphaned if alias were removed.
+func ProjectsUsingServer(cfg *Config, alias string) []string {
+	if cfg == nil {
+		return nil
+	}
+	projects := make([]string, 0)
+	for name, project := range cfg.Projects {
+		if project != nil && project.Server == alias {
+			projects = append(projects, name)
+		}
+	}
+	sort.Strings(projects)
+	return projects
+}
+
+// EffectiveDescription preserves the value of older configs that used Notes
+// as their only human-readable server description. New writes should use
+// Description; Notes remains available for longer operational details.
+func EffectiveDescription(server *Server) string {
+	if server == nil {
+		return ""
+	}
+	if description := strings.TrimSpace(server.Description); description != "" {
+		return description
+	}
+	return strings.TrimSpace(server.Notes)
+}
+
+// ValidateDescription rejects terminal-control content and unreasonably long
+// descriptions. Credential-like content is rejected at the CLI/MCP boundary,
+// where the safety package is available and can return a masked error.
+func ValidateDescription(description string) error {
+	if strings.ContainsAny(description, "\x00\r\n") {
+		return fmt.Errorf("description must be a single line")
+	}
+	if utf8.RuneCountInString(description) > MaxDescriptionRunes {
+		return fmt.Errorf("description must be at most %d characters", MaxDescriptionRunes)
+	}
+	return nil
+}
+
+// ValidateServerMetadataBounds limits AI-visible metadata and local notes so
+// accidental clipboard dumps cannot turn routine inventory reads into a data
+// leak. This validates shape/size only; callers separately reject credentials.
+func ValidateServerMetadataBounds(label, description string, tags []string, group, notes string) error {
+	if err := ValidateDescription(description); err != nil {
+		return err
+	}
+	for name, field := range map[string]struct {
+		value string
+		limit int
+	}{
+		"label": {label, MaxLabelRunes},
+		"group": {group, MaxGroupRunes},
+		"notes": {notes, MaxNotesRunes},
+	} {
+		if strings.ContainsRune(field.value, '\x00') {
+			return fmt.Errorf("%s must not contain NUL", name)
+		}
+		if name != "notes" && strings.ContainsAny(field.value, "\r\n") {
+			return fmt.Errorf("%s must be a single line", name)
+		}
+		if utf8.RuneCountInString(field.value) > field.limit {
+			return fmt.Errorf("%s must be at most %d characters", name, field.limit)
+		}
+	}
+	if len(tags) > MaxTags {
+		return fmt.Errorf("tags must contain at most %d values", MaxTags)
+	}
+	for _, tag := range tags {
+		if strings.TrimSpace(tag) == "" || strings.ContainsAny(tag, "\x00\r\n") {
+			return fmt.Errorf("tags must contain non-empty single-line values")
+		}
+		if utf8.RuneCountInString(tag) > MaxTagRunes {
+			return fmt.Errorf("each tag must be at most %d characters", MaxTagRunes)
+		}
+	}
+	return nil
 }
 
 // Project describes a local-to-remote build workspace and its artifact.

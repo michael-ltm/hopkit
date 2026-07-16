@@ -18,29 +18,50 @@ func RenderServerTable(servers map[string]*config.Server, ic IconSet, color bool
 	}
 
 	aliases := make([]string, 0, len(servers))
-	for a := range servers {
-		aliases = append(aliases, a)
+	for a, server := range servers {
+		if server != nil {
+			aliases = append(aliases, a)
+		}
+	}
+	if len(aliases) == 0 {
+		return "No servers yet. Add one with: sshm add\n"
 	}
 	sort.Strings(aliases)
 
-	rows := [][]string{{"ID", "STATUS", "HOST", "USER", "AUTH", "TAGS", "LAST SEEN"}}
+	rows := [][]string{{"ID", "STATUS", "DESCRIPTION", "HOST", "USER", "AUTH", "TAGS", "LAST SEEN"}}
 	for _, a := range aliases {
 		s := servers[a]
 		statusIcon, statusLabel, statusStyle := statusGlyph(s.LastStatus, ic)
 		authIcon := authGlyph(s.Auth, ic)
 		row := []string{
-			a,
+			SanitizeTerminalText(a),
 			renderCell(statusIcon+" "+statusLabel, statusStyle, color),
-			s.Host,
-			s.User,
+			compactDescription(config.EffectiveDescription(s), 48),
+			SanitizeTerminalText(s.Host),
+			SanitizeTerminalText(s.User),
 			authIcon,
-			strings.Join(s.Tags, ", "),
+			SanitizeTerminalText(strings.Join(s.Tags, ", ")),
 			humanizeSince(s.LastSeen),
 		}
 		rows = append(rows, row)
 	}
 
 	return formatTable(rows, color)
+}
+
+func compactDescription(value string, limit int) string {
+	value = strings.Join(strings.Fields(SanitizeTerminalText(value)), " ")
+	if value == "" {
+		return "—"
+	}
+	runes := []rune(value)
+	if len(runes) <= limit {
+		return value
+	}
+	if limit <= 1 {
+		return "…"
+	}
+	return string(runes[:limit-1]) + "…"
 }
 
 func statusGlyph(s string, ic IconSet) (icon, label string, style lipgloss.Style) {

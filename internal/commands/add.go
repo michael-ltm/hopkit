@@ -17,11 +17,14 @@ import (
 
 func newAddCmd() *cobra.Command {
 	var quick struct {
-		alias   string
-		user    string
-		host    string
-		port    int
-		keyPath string
+		alias       string
+		user        string
+		host        string
+		port        int
+		keyPath     string
+		description string
+		tags        string
+		group       string
 	}
 	c := &cobra.Command{
 		Use:   "add [--quick alias user@host[:port]]",
@@ -32,7 +35,7 @@ func newAddCmd() *cobra.Command {
 				return err
 			}
 			if quick.alias != "" {
-				return addQuick(cmd, cfg, quick.alias, quick.user, quick.host, quick.port, quick.keyPath)
+				return addQuick(cmd, cfg, quick.alias, quick.user, quick.host, quick.port, quick.keyPath, quick.description, quick.tags, quick.group)
 			}
 			return addWizard(cmd, cfg)
 		},
@@ -42,10 +45,13 @@ func newAddCmd() *cobra.Command {
 	c.Flags().StringVar(&quick.host, "host", "", "host (with --quick)")
 	c.Flags().IntVar(&quick.port, "port", 22, "port (with --quick)")
 	c.Flags().StringVarP(&quick.keyPath, "identity", "i", "", "key path (with --quick)")
+	c.Flags().StringVarP(&quick.description, "description", "d", "", "server purpose/description (with --quick)")
+	c.Flags().StringVar(&quick.tags, "tags", "", "comma-separated discovery tags (with --quick)")
+	c.Flags().StringVar(&quick.group, "group", "", "server group (with --quick)")
 	return c
 }
 
-func addQuick(cmd *cobra.Command, cfg *config.Config, alias, user, host string, port int, keyPath string) error {
+func addQuick(cmd *cobra.Command, cfg *config.Config, alias, user, host string, port int, keyPath, description, tags, group string) error {
 	if err := wizard.ValidateAlias(alias); err != nil {
 		return err
 	}
@@ -55,14 +61,22 @@ func addQuick(cmd *cobra.Command, cfg *config.Config, alias, user, host string, 
 	if user == "" || host == "" {
 		return fmt.Errorf("--user and --host required with --quick")
 	}
+	if strings.ContainsAny(user, "\x00\r\n") {
+		return fmt.Errorf("user must be a single line")
+	}
 	if err := wizard.ValidateHost(host); err != nil {
 		return err
 	}
 	if err := wizard.ValidatePort(strconv.Itoa(port)); err != nil {
 		return err
 	}
+	tagList := splitTags(tags)
+	if err := validateMetadataFields("", description, tagList, group, ""); err != nil {
+		return err
+	}
 	srv := &config.Server{
 		Host: host, Port: port, User: user, Auth: config.AuthKey, KeyPath: keyPath,
+		Description: description, Tags: tagList, Group: group,
 	}
 	if keyPath == "" {
 		srv.Auth = config.AuthAgent
@@ -86,11 +100,14 @@ func addWizard(cmd *cobra.Command, cfg *config.Config) error {
 	if err != nil {
 		return err
 	}
+	if err := validateMetadataFields("", in.Description, splitTags(in.Tags), in.Group, ""); err != nil {
+		return err
+	}
 
 	port, _ := strconv.Atoi(in.Port)
 	srv := &config.Server{
 		Host: in.Host, Port: port, User: in.User, Auth: in.Auth,
-		KeyPath: in.KeyPath, Group: in.Group,
+		KeyPath: in.KeyPath, Group: in.Group, Description: in.Description,
 		Tags: splitTags(in.Tags),
 	}
 

@@ -13,6 +13,20 @@ import (
 // AttachInteractive opens an interactive shell on the connected client,
 // wiring the local TTY to the remote PTY. Returns when the user logs out.
 func (c *Client) AttachInteractive() error {
+	return c.attachInteractive("")
+}
+
+// AttachInteractiveCommand runs one command under a remote PTY. It is used
+// for terminal-owned sensitive workflows such as passwd, so secret input goes
+// directly from the user's keyboard to the remote server.
+func (c *Client) AttachInteractiveCommand(command string) error {
+	if command == "" {
+		return errors.New("interactive command is required")
+	}
+	return c.attachInteractive(command)
+}
+
+func (c *Client) attachInteractive(command string) error {
 	if c.conn == nil {
 		return errors.New("not connected")
 	}
@@ -55,8 +69,12 @@ func (c *Client) AttachInteractive() error {
 
 	go func() { _, _ = io.Copy(stdin, os.Stdin) }()
 
-	if err := sess.Shell(); err != nil {
-		return fmt.Errorf("start shell: %w", err)
+	if command == "" {
+		if err := sess.Shell(); err != nil {
+			return fmt.Errorf("start shell: %w", err)
+		}
+	} else if err := sess.Start(command); err != nil {
+		return fmt.Errorf("start interactive command: %w", err)
 	}
 	return sess.Wait()
 }
