@@ -2,8 +2,10 @@ package mcp
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"strings"
+	"time"
 
 	"github.com/mark3labs/mcp-go/mcp"
 	"github.com/mark3labs/mcp-go/server"
@@ -180,6 +182,10 @@ func handleAddServer(deps Deps, args map[string]any) (any, error) {
 	if err != nil {
 		return errResult("bad_request", err.Error()), nil
 	}
+	platform, err := config.NormalizePlatform(strArg(args, "platform"))
+	if err != nil {
+		return errResult("bad_request", err.Error()), nil
+	}
 	port := 22
 	if p, ok := portArg(args); ok {
 		port = p
@@ -197,8 +203,9 @@ func handleAddServer(deps Deps, args map[string]any) (any, error) {
 			Host: host, Port: port, User: strArg(args, "user"),
 			Auth: auth, KeyPath: keyPath,
 			Label: strArg(args, "label"), Description: strArg(args, "description"),
-			Tags: tags, Group: strArg(args, "group"),
-			Proxy: strArg(args, "proxy"), ProxyJump: strArg(args, "proxy_jump"),
+			Tags: tags, Group: strArg(args, "group"), Platform: platform,
+			CreatedAt: time.Now().UTC(),
+			Proxy:     strArg(args, "proxy"), ProxyJump: strArg(args, "proxy_jump"),
 			ProxyCommand: strArg(args, "proxy_command"),
 		}
 		return nil
@@ -238,18 +245,24 @@ func handleEditServer(deps Deps, args map[string]any) (any, error) {
 			return errResult("bad_request", "port must be an integer in 1..65535"), nil
 		}
 	}
+	platform, err := config.NormalizePlatform(strArg(args, "platform"))
+	if err != nil {
+		return errResult("bad_request", err.Error()), nil
+	}
 	tags, tagsPresent, err := validateServerMetadata(args)
 	if err != nil {
 		return errResult("bad_request", err.Error()), nil
 	}
 
 	var notFound bool
+	identityChangedAt := time.Now().UTC()
 	err = config.Update(deps.ConfigPath, func(cfg *config.Config) error {
 		s, ok := cfg.Servers[alias]
 		if !ok || s == nil {
 			notFound = true
 			return fmt.Errorf("unknown server %q", alias)
 		}
+		oldHost, oldPort, oldUser := s.Host, s.Port, s.User
 		if v := strArg(args, "host"); v != "" {
 			s.Host = v
 		}
@@ -265,6 +278,9 @@ func handleEditServer(deps Deps, args map[string]any) (any, error) {
 		if p, ok := portArg(args); ok {
 			s.Port = p
 		}
+		if _, present := args["platform"]; present {
+			s.Platform = platform
+		}
 		if v := strArg(args, "proxy"); v != "" {
 			s.Proxy = v
 		}
@@ -279,6 +295,9 @@ func handleEditServer(deps Deps, args map[string]any) (any, error) {
 		assignString(args, "group", &s.Group)
 		if tagsPresent {
 			s.Tags = tags
+		}
+		if s.Host != oldHost || s.Port != oldPort || s.User != oldUser {
+			config.ClearServerActivity(s, identityChangedAt)
 		}
 		return nil
 	})
@@ -302,29 +321,15 @@ func handleRemoveServer(deps Deps, args map[string]any) (any, error) {
 		return errResult("confirmation_required", "confirm_alias must exactly match alias before removal"), nil
 	}
 
-	var notFound bool
-	var dependentProjects []string
 	err = config.Update(deps.ConfigPath, func(cfg *config.Config) error {
-		if _, ok := cfg.Servers[alias]; !ok {
-			notFound = true
-			return fmt.Errorf("unknown server %q", alias)
-		}
-		if dependentProjects = config.ProjectsUsingServer(cfg, alias); len(dependentProjects) > 0 {
-			return fmt.Errorf("server %q is used by project profiles", alias)
-		}
-		delete(cfg.Servers, alias)
-		if cfg.Default == alias {
-			cfg.Default = ""
-		}
-		return nil
+		return config.RemoveServer(cfg, alias)
 	})
-	if notFound {
-		return errResult("not_found", fmt.Sprintf("unknown server %q", alias)), nil
-	}
-	if len(dependentProjects) > 0 {
-		return errResult("conflict", fmt.Sprintf(
-			"server %q is used by project profiles: %s; update those profiles first",
-			alias, strings.Join(dependentProjects, ", "))), nil
+	var removalErr *config.ServerRemovalError
+	if errors.As(err, &removalErr) {
+		if removalErr.NotFound {
+			return errResult("not_found", removalErr.Error()), nil
+		}
+		return errResult("conflict", removalErr.Error()), nil
 	}
 	if err != nil {
 		return errResult("config", err.Error()), nil
@@ -368,6 +373,7 @@ func registerWriteTools(s *server.MCPServer, deps Deps, names []string) []string
 		}
 	}
 	metadataFields := []mcp.ToolOption{
+		mcp.WithString("platform", mcp.Description("windows|linux|macos target metadata")),
 		mcp.WithString("label", mcp.Description("short display label")),
 		mcp.WithString("description", mcp.Description("single-line AI-visible purpose/capabilities; never credentials or instructions")),
 		mcp.WithArray("tags", mcp.Description("AI-visible discovery/capability tags"), mcp.WithStringItems()),

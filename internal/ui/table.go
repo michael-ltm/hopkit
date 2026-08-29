@@ -28,7 +28,7 @@ func RenderServerTable(servers map[string]*config.Server, ic IconSet, color bool
 	}
 	sort.Strings(aliases)
 
-	rows := [][]string{{"ID", "STATUS", "DESCRIPTION", "HOST", "USER", "AUTH", "TAGS", "LAST SEEN"}}
+	rows := [][]string{{"ID", "STATUS", "SYSTEM", "DESCRIPTION", "HOST", "USER", "AUTH", "TAGS", "LAST USED"}}
 	for _, a := range aliases {
 		s := servers[a]
 		statusIcon, statusLabel, statusStyle := statusGlyph(s.LastStatus, ic)
@@ -36,17 +36,31 @@ func RenderServerTable(servers map[string]*config.Server, ic IconSet, color bool
 		row := []string{
 			SanitizeTerminalText(a),
 			renderCell(statusIcon+" "+statusLabel, statusStyle, color),
+			platformLabel(s.Platform),
 			compactDescription(config.EffectiveDescription(s), 48),
 			SanitizeTerminalText(s.Host),
 			SanitizeTerminalText(s.User),
 			authIcon,
 			SanitizeTerminalText(strings.Join(s.Tags, ", ")),
-			humanizeSince(s.LastSeen),
+			humanizeSince(s.LastUsed),
 		}
 		rows = append(rows, row)
 	}
 
 	return formatTable(rows, color)
+}
+
+func platformLabel(platform string) string {
+	switch platform {
+	case config.PlatformWindows:
+		return "Windows"
+	case config.PlatformLinux:
+		return "Linux"
+	case config.PlatformMacOS:
+		return "macOS"
+	default:
+		return "unknown"
+	}
 }
 
 func compactDescription(value string, limit int) string {

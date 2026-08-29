@@ -6,6 +6,7 @@ import (
 	"sort"
 	"time"
 
+	"github.com/michael-ltm/sshm/internal/config"
 	"github.com/michael-ltm/sshm/internal/status"
 	"github.com/michael-ltm/sshm/internal/ui"
 	"github.com/spf13/cobra"
@@ -18,7 +19,7 @@ func newTestCmd() *cobra.Command {
 	)
 	c := &cobra.Command{
 		Use:   "test [<alias>]",
-		Short: "Test connectivity to one or all servers",
+		Short: "Test direct TCP reachability to one or all servers",
 		Args:  cobra.MaximumNArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			cfg, _, err := loadConfig()
@@ -30,6 +31,13 @@ func newTestCmd() *cobra.Command {
 			icons := ui.ResolveIcons(cfg.UI.Icons)
 			if all || len(args) == 0 {
 				res := status.ProbeMany(ctx, cfg.Servers, to)
+				probes := make(map[string]config.ProbeObservation, len(res))
+				for alias, result := range res {
+					probes[alias] = config.NewProbeObservation(cfg.Servers[alias], result.Reachable, result.ObservedAt)
+				}
+				if err := config.RecordProbes(configPath(), probes); err != nil {
+					return err
+				}
 				if flagJSON {
 					return writeJSON(cmd.OutOrStdout(), res)
 				}
@@ -50,14 +58,19 @@ func newTestCmd() *cobra.Command {
 				return err
 			}
 			r := status.Probe(ctx, s, to)
+			if err := config.RecordProbes(configPath(), map[string]config.ProbeObservation{
+				args[0]: config.NewProbeObservation(s, r.Reachable, r.ObservedAt),
+			}); err != nil {
+				return err
+			}
 			if flagJSON {
 				return writeJSON(cmd.OutOrStdout(), map[string]status.Result{args[0]: r})
 			}
 			return printProbe(cmd, args[0], r, icons)
 		},
 	}
-	c.Flags().BoolVar(&all, "all", false, "test every configured server in parallel")
-	c.Flags().IntVarP(&timeout, "timeout", "t", 3, "per-server timeout (seconds)")
+	c.Flags().BoolVar(&all, "all", false, "test every configured server with a direct TCP probe")
+	c.Flags().IntVarP(&timeout, "timeout", "t", 3, "per-server direct TCP timeout (seconds)")
 	return c
 }
 

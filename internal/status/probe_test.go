@@ -25,6 +25,7 @@ func TestProbe_UnreachableHostReturnsOffline(t *testing.T) {
 	r := Probe(context.Background(), srv, 500*time.Millisecond)
 	require.False(t, r.Reachable)
 	require.NotEmpty(t, r.Error)
+	require.False(t, r.ObservedAt.IsZero())
 }
 
 func TestProbe_TCPOnlyMode_ReachableLocalListener(t *testing.T) {
@@ -37,6 +38,7 @@ func TestProbe_TCPOnlyMode_ReachableLocalListener(t *testing.T) {
 	r := Probe(context.Background(), srv, 500*time.Millisecond)
 	require.True(t, r.Reachable)
 	require.Empty(t, r.Error)
+	require.False(t, r.ObservedAt.IsZero())
 	// Latency must be non-negative. It is NOT asserted strictly positive:
 	// a localhost connect can complete faster than the platform clock's
 	// granularity (notably on Windows), legitimately measuring as 0.
@@ -72,9 +74,7 @@ func TestProbeMany_EmptyMapReturnsEmpty(t *testing.T) {
 }
 
 // TestProbeMany_CancelledContext verifies that an already-cancelled context
-// causes ProbeMany to stop launching probes and return promptly. The number of
-// results may be anywhere from 0 to N (races are fine — we only assert < N for
-// a large-enough N to make accidental full completion vanishingly unlikely).
+// causes ProbeMany to launch no probes and return promptly.
 func TestProbeMany_CancelledContext(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel() // cancel before calling
@@ -96,7 +96,5 @@ func TestProbeMany_CancelledContext(t *testing.T) {
 	// In practice it should be <50ms; allow 3s to be generous on slow CI.
 	require.Less(t, elapsed, 3*time.Second, "ProbeMany took too long with cancelled ctx")
 
-	// Must return fewer results than total servers (context stopped launching).
-	require.Less(t, len(results), len(servers),
-		"expected fewer than %d results with cancelled ctx, got %d", len(servers), len(results))
+	require.Empty(t, results, "a pre-cancelled context must not launch any probes")
 }

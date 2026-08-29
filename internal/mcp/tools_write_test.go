@@ -5,6 +5,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/michael-ltm/sshm/internal/config"
 	"github.com/stretchr/testify/require"
@@ -103,6 +104,29 @@ func TestHandleRemoveServerRefusesReferencedAlias(t *testing.T) {
 	require.Contains(t, js, "app")
 }
 
+func TestHandleRemoveServerRefusesProxyJumpAliasWithDependentAliases(t *testing.T) {
+	dir := t.TempDir()
+	cfgPath := filepath.Join(dir, "config.toml")
+	cfg := config.New()
+	cfg.Servers["gateway"] = &config.Server{Host: "10.0.0.1"}
+	cfg.Servers["zeta"] = &config.Server{Host: "10.0.0.2", ProxyJump: "gateway"}
+	cfg.Servers["alpha"] = &config.Server{Host: "10.0.0.3", ProxyJump: "gateway"}
+	require.NoError(t, config.Save(cfgPath, cfg))
+	deps := Deps{ConfigPath: cfgPath, AuditPath: filepath.Join(dir, "audit.log"), AllowWrite: true}
+
+	out, err := handleRemoveServer(deps, map[string]any{
+		"alias": "gateway", "confirm_alias": "gateway", "reason": "decommission",
+	})
+	require.NoError(t, err)
+	js, _ := jsonResult(out)
+	require.Contains(t, js, "conflict")
+	require.Contains(t, js, "servers using it as ProxyJump: alpha, zeta")
+
+	reloaded, loadErr := config.Load(cfgPath)
+	require.NoError(t, loadErr)
+	require.Contains(t, reloaded.Servers, "gateway")
+}
+
 func TestHandleEditServerRequiresConfirmationForConnectionChanges(t *testing.T) {
 	deps := Deps{ConfigPath: writeTestConfig(t), AuditPath: filepath.Join(t.TempDir(), "audit.log"), AllowWrite: true}
 	out, err := handleEditServer(deps, map[string]any{
@@ -111,6 +135,81 @@ func TestHandleEditServerRequiresConfirmationForConnectionChanges(t *testing.T) 
 	require.NoError(t, err)
 	js, _ := jsonResult(out)
 	require.Contains(t, js, "confirmation_required")
+}
+
+func TestHandleEditServerConnectionIdentityChangeClearsActivityButKeepsCreatedAt(t *testing.T) {
+	for _, test := range []struct {
+		name  string
+		field string
+		value any
+	}{
+		{name: "host", field: "host", value: "5.6.7.8"},
+		{name: "port", field: "port", value: float64(2222)},
+		{name: "user", field: "user", value: "new"},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			dir := t.TempDir()
+			cfgPath := filepath.Join(dir, "config.toml")
+			created := time.Date(2026, 1, 2, 3, 4, 5, 0, time.UTC)
+			active := created.Add(time.Hour)
+			cfg := config.New()
+			cfg.Servers["h"] = &config.Server{
+				Host: "1.2.3.4", Port: 22, User: "old", Auth: config.AuthAgent,
+				CreatedAt: created, LastUsed: active, LastSeen: active,
+				LastChecked: active, LastStatus: config.StatusOnline,
+			}
+			require.NoError(t, config.Save(cfgPath, cfg))
+			deps := Deps{ConfigPath: cfgPath, AuditPath: filepath.Join(dir, "audit.log"), AllowWrite: true}
+
+			args := map[string]any{
+				"alias": "h", "reason": "change connection identity", "confirm_alias": "h",
+				test.field: test.value,
+			}
+			beforeEdit := time.Now().UTC()
+			_, err := handleEditServer(deps, args)
+			require.NoError(t, err)
+			afterEdit := time.Now().UTC()
+
+			loaded, err := config.Load(cfgPath)
+			require.NoError(t, err)
+			server := loaded.Servers["h"]
+			require.Equal(t, created, server.CreatedAt)
+			require.False(t, server.IdentityChangedAt.Before(beforeEdit))
+			require.False(t, server.IdentityChangedAt.After(afterEdit))
+			require.True(t, server.LastUsed.IsZero())
+			require.True(t, server.LastSeen.IsZero())
+			require.True(t, server.LastChecked.IsZero())
+			require.Empty(t, server.LastStatus)
+		})
+	}
+}
+
+func TestHandleEditServerMetadataAndSameIdentityPreserveActivity(t *testing.T) {
+	dir := t.TempDir()
+	cfgPath := filepath.Join(dir, "config.toml")
+	active := time.Date(2026, 1, 2, 3, 4, 5, 0, time.UTC)
+	cfg := config.New()
+	cfg.Servers["h"] = &config.Server{
+		Host: "1.2.3.4", Port: 22, User: "old", Auth: config.AuthAgent,
+		LastUsed: active, LastSeen: active, LastChecked: active, LastStatus: config.StatusOnline,
+	}
+	require.NoError(t, config.Save(cfgPath, cfg))
+	deps := Deps{ConfigPath: cfgPath, AuditPath: filepath.Join(dir, "audit.log"), AllowWrite: true}
+
+	_, err := handleEditServer(deps, map[string]any{
+		"alias": "h", "reason": "refresh description", "confirm_alias": "h",
+		"host": "1.2.3.4", "description": "updated",
+	})
+	require.NoError(t, err)
+
+	loaded, err := config.Load(cfgPath)
+	require.NoError(t, err)
+	server := loaded.Servers["h"]
+	require.Equal(t, active, server.LastUsed)
+	require.Equal(t, active, server.LastSeen)
+	require.Equal(t, active, server.LastChecked)
+	require.Equal(t, config.StatusOnline, server.LastStatus)
+	require.True(t, server.IdentityChangedAt.IsZero())
 }
 
 func TestHandleAddServerRejectsCredentialInProxy(t *testing.T) {

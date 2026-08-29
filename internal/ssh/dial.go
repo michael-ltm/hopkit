@@ -73,9 +73,9 @@ func Dial(s *config.Server, opts BuildOpts) (*Client, error) {
 	client, auxClosers, kind, err := dialOnce(false)
 	if err != nil && kind != kindDirect {
 		// A proxy/jump was selected and failed; fall back to a direct dial.
-		directClient, directAux, _, directErr := dialOnce(true)
+		directClient, directAux, directKind, directErr := dialOnce(true)
 		if directErr == nil {
-			client, auxClosers, err = directClient, directAux, nil
+			client, auxClosers, kind, err = directClient, directAux, directKind, nil
 		} else {
 			err = fmt.Errorf("connect %s failed via %s (%v) and direct fallback (%w)",
 				Address(s), kind, err, directErr)
@@ -87,6 +87,15 @@ func Dial(s *config.Server, opts BuildOpts) (*Client, error) {
 	}
 
 	closers := append([]io.Closer{closer}, auxClosers...)
+	activityPath := opts.ConfigPath
+	if activityPath == "" {
+		activityPath = config.ConfigPath()
+	}
+	if opts.Alias != "" {
+		if err := config.RecordSSHUse(activityPath, opts.Alias, s, time.Now()); err != nil {
+			reportActivityError(opts, err)
+		}
+	}
 	return &Client{server: s, conn: client, closers: closers}, nil
 }
 

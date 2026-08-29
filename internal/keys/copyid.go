@@ -37,7 +37,7 @@ trap 'rm -f ~/.ssh/authorized_keys.tmp' EXIT && awk '!seen[$0]++' ~/.ssh/authori
 
 // CopyID reads the local public key (keyPath + ".pub") and installs it on
 // the remote via SSH using the provided password (one-shot, never persisted).
-func CopyID(ctx context.Context, srv *config.Server, password, keyPath string) error {
+func CopyID(ctx context.Context, srv *config.Server, password, keyPath string, options ...sshpkg.BuildOpts) error {
 	pubPath := keyPath + ".pub"
 	pubData, err := os.ReadFile(pubPath)
 	if err != nil {
@@ -51,7 +51,12 @@ func CopyID(ctx context.Context, srv *config.Server, password, keyPath string) e
 	// server entry on disk stays as auth=key.
 	transient := *srv
 	transient.Auth = config.AuthPassword
-	cli, err := sshpkg.Dial(&transient, sshpkg.BuildOpts{Password: password})
+	opts := sshpkg.BuildOpts{Password: password}
+	if len(options) > 0 {
+		opts = options[0]
+		opts.Password = password
+	}
+	cli, err := sshpkg.Dial(&transient, opts)
 	if err != nil {
 		return fmt.Errorf("connect for copy-id: %w", err)
 	}

@@ -3,9 +3,11 @@
 package keystore
 
 import (
+	"context"
 	"fmt"
 	"os"
 	"os/exec"
+	"time"
 )
 
 // runSSHAdd runs `ssh-add <args...>`, feeding passphrase through a one-shot
@@ -37,13 +39,18 @@ func defaultRunSSHAdd(passphrase string, args ...string) error {
 	}
 	defer os.Remove(askpass)
 
-	cmd := exec.Command("ssh-add", args...)
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+	cmd := exec.CommandContext(ctx, "ssh-add", args...)
 	cmd.Env = append(os.Environ(),
 		"SSH_ASKPASS="+askpass,
 		"SSH_ASKPASS_REQUIRE=force",
 		"DISPLAY=", // some ssh-add builds require DISPLAY set for askpass
 	)
 	if out, err := cmd.CombinedOutput(); err != nil {
+		if ctx.Err() != nil {
+			return fmt.Errorf("ssh-add timed out: %w", ctx.Err())
+		}
 		return fmt.Errorf("ssh-add: %w: %s", err, out)
 	}
 	return nil

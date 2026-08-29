@@ -190,7 +190,7 @@ func TestHandleTailLogsAuditsNonzeroExit(t *testing.T) {
 			cfg.Servers["build"] = &config.Server{Host: "example.invalid", User: "builder", Auth: config.AuthAgent}
 			require.NoError(t, config.Save(cfgPath, cfg))
 
-			runTailLogsRemote = func(_ context.Context, _ Deps, _ *config.Server, gotPlatform, _ string, _ int) (string, *sshpkg.ExecResult, string, error) {
+			runTailLogsRemote = func(_ context.Context, _ Deps, _ string, _ *config.Server, gotPlatform, _ string, _ int) (string, *sshpkg.ExecResult, string, error) {
 				return gotPlatform, &sshpkg.ExecResult{
 					ExitCode: 7,
 					Stderr:   "log read failed TOKEN=topsecret",
@@ -247,7 +247,7 @@ func TestHandleTailLogsAuditsRemoteErrors(t *testing.T) {
 			cfg.Servers["build"] = &config.Server{Host: "example.invalid", User: "builder", Auth: config.AuthAgent}
 			require.NoError(t, config.Save(cfgPath, cfg))
 
-			runTailLogsRemote = func(_ context.Context, _ Deps, _ *config.Server, platform, _ string, _ int) (string, *sshpkg.ExecResult, string, error) {
+			runTailLogsRemote = func(_ context.Context, _ Deps, _ string, _ *config.Server, platform, _ string, _ int) (string, *sshpkg.ExecResult, string, error) {
 				return platform, nil, tt.kind, errors.New("remote failure TOKEN=" + tt.secret)
 			}
 			out, err := handleTailLogs(context.Background(), Deps{ConfigPath: cfgPath, AuditPath: auditPath}, map[string]any{

@@ -40,6 +40,7 @@ func SearchServers(servers map[string]*Server, query string) []ServerMatch {
 			{name: "alias", value: alias, weight: 100},
 			{name: "label", value: server.Label, weight: 80},
 			{name: "description", value: server.Description, weight: 60},
+			{name: "platform", value: server.Platform, weight: 55},
 			{name: "tags", value: strings.Join(server.Tags, " "), weight: 50},
 			{name: "group", value: server.Group, weight: 40},
 			{name: "user", value: server.User, weight: 20},

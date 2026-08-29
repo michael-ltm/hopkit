@@ -76,7 +76,7 @@ func handleExec(ctx context.Context, deps Deps, args map[string]any) (any, error
 	if !ok {
 		return errResult("not_found", fmt.Sprintf("unknown server %q", alias)), nil
 	}
-	cli, err := dialExecRemote(s, sshpkg.BuildOpts{ConfigPath: deps.ConfigPath})
+	cli, err := dialExecRemote(s, sshpkg.BuildOpts{ConfigPath: deps.ConfigPath, Alias: alias})
 	if err != nil {
 		audit(deps, safety.Entry{Tool: "exec", Alias: alias, Reason: reason, Result: "ssh failed"})
 		return errResult("ssh", safety.MaskSecrets(err.Error())), nil

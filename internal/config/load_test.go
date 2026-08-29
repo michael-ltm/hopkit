@@ -77,6 +77,16 @@ func TestLoadV3DescriptionUpgradeIsDeferredUntilSave(t *testing.T) {
 	require.Equal(t, CurrentVersion, cfg.Version)
 }
 
+func TestLoadV4CarriesLegacyLastSeenIntoUsageEvidence(t *testing.T) {
+	p := filepath.Join(t.TempDir(), "config.toml")
+	data := "version = 4\n[servers.pc]\nhost = \"pc\"\nport = 22\nuser = \"u\"\nauth = \"agent\"\nlast_seen = 2026-08-01T02:03:04Z\n"
+	require.NoError(t, os.WriteFile(p, []byte(data), 0o600))
+	cfg, err := Load(p)
+	require.NoError(t, err)
+	require.Equal(t, cfg.Servers["pc"].LastSeen, cfg.Servers["pc"].LastUsed)
+	require.False(t, cfg.Servers["pc"].LastUsed.IsZero())
+}
+
 func TestLoadV3ProjectWithoutCredentials(t *testing.T) {
 	p := filepath.Join(t.TempDir(), "config.toml")
 	data := "version = 3\n[projects.safe]\nserver = \"prod\"\nremote_workspace = \"/srv/app\"\nartifact_path = \"/srv/app.tgz\"\nbuild_command = \"go test -parallel=4 ./...\"\n"

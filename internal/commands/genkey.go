@@ -5,6 +5,7 @@ import (
 	"path/filepath"
 	"strings"
 
+	"github.com/michael-ltm/sshm/internal/config"
 	"github.com/michael-ltm/sshm/internal/keys"
 	"github.com/michael-ltm/sshm/internal/keystore"
 	sshpkg "github.com/michael-ltm/sshm/internal/ssh"
@@ -23,7 +24,7 @@ func newGenKeyCmd() *cobra.Command {
 			if err != nil {
 				return err
 			}
-			s, err := resolveServer(cfg, args[0])
+			_, err = resolveServer(cfg, args[0])
 			if err != nil {
 				return err
 			}
@@ -64,8 +65,14 @@ func newGenKeyCmd() *cobra.Command {
 				}
 			}
 
-			s.KeyPath = actualPath
-			if err := saveConfig(cfg); err != nil {
+			if err := config.Update(configPath(), func(latest *config.Config) error {
+				server, ok := latest.Servers[args[0]]
+				if !ok || server == nil {
+					return fmt.Errorf("unknown server %q", args[0])
+				}
+				server.KeyPath = actualPath
+				return nil
+			}); err != nil {
 				keys.RemoveGenerated(expanded)
 				return fmt.Errorf("save config after generating %s: %w", expanded, err)
 			}

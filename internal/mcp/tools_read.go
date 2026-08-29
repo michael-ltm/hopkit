@@ -23,14 +23,16 @@ func handleListServers(ctx context.Context, deps Deps, _ map[string]any) (any, e
 		return errResult("config", err.Error()), nil
 	}
 	type entry struct {
-		Alias              string   `json:"alias"`
-		Host               string   `json:"host"`
-		User               string   `json:"user"`
-		Description        string   `json:"description,omitempty"`
-		DescriptionMissing bool     `json:"description_missing,omitempty"`
-		Group              string   `json:"group,omitempty"`
-		Tags               []string `json:"tags,omitempty"`
-		LastStatus         string   `json:"last_status,omitempty"`
+		Alias              string     `json:"alias"`
+		Host               string     `json:"host"`
+		User               string     `json:"user"`
+		Description        string     `json:"description,omitempty"`
+		DescriptionMissing bool       `json:"description_missing,omitempty"`
+		Group              string     `json:"group,omitempty"`
+		Tags               []string   `json:"tags,omitempty"`
+		Platform           string     `json:"platform,omitempty"`
+		LastStatus         string     `json:"last_status,omitempty"`
+		LastUsed           *time.Time `json:"last_used,omitempty"`
 	}
 	var list []entry
 	for alias, s := range cfg.Servers {
@@ -40,7 +42,7 @@ func handleListServers(ctx context.Context, deps Deps, _ map[string]any) (any, e
 		list = append(list, entry{
 			Alias: alias, Host: safety.MaskSecrets(s.Host), User: s.User,
 			Description: s.Description, DescriptionMissing: strings.TrimSpace(s.Description) == "", Group: s.Group,
-			Tags: s.Tags, LastStatus: s.LastStatus,
+			Tags: s.Tags, Platform: s.Platform, LastStatus: s.LastStatus, LastUsed: optionalTimestamp(s.LastUsed),
 		})
 	}
 	sort.Slice(list, func(i, j int) bool { return list[i].Alias < list[j].Alias })
@@ -58,15 +60,26 @@ func handleGetServer(ctx context.Context, deps Deps, args map[string]any) (any, 
 	if !ok || s == nil {
 		return errResult("not_found", fmt.Sprintf("unknown server %q", alias)), nil
 	}
-	return map[string]any{
+	result := map[string]any{
 		"alias": alias, "host": safety.MaskSecrets(s.Host), "port": s.Port,
 		"user": s.User, "auth": s.Auth, "label": s.Label,
 		"description": s.Description, "description_missing": strings.TrimSpace(s.Description) == "",
 		"notes_present": strings.TrimSpace(s.Notes) != "",
 		"tags":          s.Tags, "group": s.Group,
-		"init_state": s.InitState, "last_status": s.LastStatus,
+		"platform": s.Platform, "init_state": s.InitState, "last_status": s.LastStatus,
+		"cleanup_protected":  s.CleanupProtected,
 		"metadata_untrusted": true,
-	}, nil
+	}
+	for key, value := range map[string]time.Time{
+		"created_at": s.CreatedAt, "last_used": s.LastUsed,
+		"identity_changed_at": s.IdentityChangedAt,
+		"last_checked":        s.LastChecked, "last_seen": s.LastSeen,
+	} {
+		if !value.IsZero() {
+			result[key] = value.UTC()
+		}
+	}
+	return result, nil
 }
 
 // handleFindServers performs an intent lookup over aliases and descriptive
@@ -95,15 +108,17 @@ func handleFindServers(_ context.Context, deps Deps, args map[string]any) (any, 
 		matches = matches[:limit]
 	}
 	type entry struct {
-		Alias       string   `json:"alias"`
-		Description string   `json:"description,omitempty"`
-		Group       string   `json:"group,omitempty"`
-		Tags        []string `json:"tags,omitempty"`
-		User        string   `json:"user"`
-		Host        string   `json:"host"`
-		LastStatus  string   `json:"last_status,omitempty"`
-		Score       int      `json:"score"`
-		MatchedOn   []string `json:"matched_on"`
+		Alias       string     `json:"alias"`
+		Description string     `json:"description,omitempty"`
+		Group       string     `json:"group,omitempty"`
+		Tags        []string   `json:"tags,omitempty"`
+		User        string     `json:"user"`
+		Host        string     `json:"host"`
+		LastStatus  string     `json:"last_status,omitempty"`
+		Platform    string     `json:"platform,omitempty"`
+		LastUsed    *time.Time `json:"last_used,omitempty"`
+		Score       int        `json:"score"`
+		MatchedOn   []string   `json:"matched_on"`
 	}
 	list := make([]entry, 0, len(matches))
 	for _, match := range matches {
@@ -111,10 +126,19 @@ func handleFindServers(_ context.Context, deps Deps, args map[string]any) (any, 
 			Alias: match.Alias, Description: match.Server.Description,
 			Group: match.Server.Group, Tags: match.Server.Tags, User: match.Server.User,
 			Host: safety.MaskSecrets(match.Server.Host), LastStatus: match.Server.LastStatus,
+			Platform: match.Server.Platform, LastUsed: optionalTimestamp(match.Server.LastUsed),
 			Score: match.Score, MatchedOn: match.MatchedOn,
 		})
 	}
 	return map[string]any{"query": query, "matches": list, "metadata_untrusted": true}, nil
+}
+
+func optionalTimestamp(value time.Time) *time.Time {
+	if value.IsZero() {
+		return nil
+	}
+	value = value.UTC()
+	return &value
 }
 
 // handleTestConnection probes a server's reachability.
@@ -129,11 +153,18 @@ func handleTestConnection(ctx context.Context, deps Deps, args map[string]any) (
 		return errResult("not_found", fmt.Sprintf("unknown server %q", alias)), nil
 	}
 	r := status.Probe(ctx, s, 5*time.Second)
-	return map[string]any{
+	activityErr := config.RecordProbes(deps.ConfigPath, map[string]config.ProbeObservation{
+		alias: config.NewProbeObservation(s, r.Reachable, r.ObservedAt),
+	})
+	out := map[string]any{
 		"alias": alias, "reachable": r.Reachable,
 		"latency_ms": r.Latency.Milliseconds(),
 		"error":      safety.MaskSecrets(r.Error),
-	}, nil
+	}
+	if warning := activityWarningText(activityErr); warning != "" {
+		out["activity_warning"] = warning
+	}
+	return out, nil
 }
 
 type sshCheckLevel string
@@ -174,12 +205,18 @@ func handleCheckSSH(ctx context.Context, deps Deps, args map[string]any) (any, e
 	mode := sshCheckMode(args)
 	out := map[string]any{"alias": alias, "mode": string(mode)}
 	tcp := status.Probe(ctx, s, 5*time.Second)
+	activityErr := config.RecordProbes(deps.ConfigPath, map[string]config.ProbeObservation{
+		alias: config.NewProbeObservation(s, tcp.Reachable, tcp.ObservedAt),
+	})
 	out["tcp"] = map[string]any{
 		"ok":         tcp.Reachable,
 		"latency_ms": tcp.Latency.Milliseconds(),
 		"error":      safety.MaskSecrets(tcp.Error),
 	}
-	if mode == sshCheckTCP || !tcp.Reachable {
+	if warning := activityWarningText(activityErr); warning != "" {
+		out["activity_warning"] = warning
+	}
+	if mode == sshCheckTCP {
 		out["ok"] = tcp.Reachable
 		return out, nil
 	}
@@ -192,7 +229,7 @@ func handleCheckSSH(ctx context.Context, deps Deps, args map[string]any) (any, e
 	}
 	ch := make(chan dialResult, 1)
 	go func() {
-		cli, err := sshpkg.Dial(s, sshpkg.BuildOpts{ConfigPath: deps.ConfigPath, Timeout: 15 * time.Second})
+		cli, err := sshpkg.Dial(s, sshpkg.BuildOpts{ConfigPath: deps.ConfigPath, Timeout: 15 * time.Second, Alias: alias})
 		ch <- dialResult{cli: cli, err: err}
 	}()
 	var cli *sshpkg.Client
@@ -247,7 +284,7 @@ func handleGetStatus(ctx context.Context, deps Deps, args map[string]any) (any, 
 	}
 	ctx, cancel := context.WithTimeout(ctx, 20*time.Second)
 	defer cancel()
-	snap, err := status.Collect(ctx, s)
+	snap, err := status.Collect(ctx, s, sshpkg.BuildOpts{ConfigPath: deps.ConfigPath, Alias: alias})
 	if err != nil {
 		return errResult("ssh", safety.MaskSecrets(err.Error())), nil
 	}

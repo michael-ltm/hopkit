@@ -26,6 +26,13 @@ func (nopCloser) Close() error { return nil }
 // prompted from TTY). Never write the contents of BuildOpts to disk.
 type BuildOpts struct {
 	Password string
+	// Alias identifies a managed target for best-effort LastUsed tracking after
+	// authentication succeeds. Empty leaves activity metadata untouched.
+	Alias string
+	// ActivityError receives a non-fatal error when authentication succeeded
+	// but LastUsed/LastSeen could not be persisted. When nil, Dial writes a
+	// concise warning to stderr so stale cleanup metadata is never silent.
+	ActivityError func(error)
 	// Insecure disables host-key verification (InsecureIgnoreHostKey). The
 	// zero value is false: connections verify host keys via TOFU against
 	// ~/.ssh/known_hosts by default.
@@ -35,6 +42,17 @@ type BuildOpts struct {
 	// to a known server. Empty falls back to config.ConfigPath(); if that
 	// holds no matching alias the ProxyJump value is treated as a host spec.
 	ConfigPath string
+}
+
+func reportActivityError(opts BuildOpts, err error) {
+	if err == nil {
+		return
+	}
+	if opts.ActivityError != nil {
+		opts.ActivityError(err)
+		return
+	}
+	_, _ = fmt.Fprintf(os.Stderr, "warning: SSH succeeded but activity history could not be saved: %v\n", err)
 }
 
 // BuildClientConfig produces a *ssh.ClientConfig from a Server entry.

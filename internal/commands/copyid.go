@@ -6,6 +6,7 @@ import (
 
 	"github.com/michael-ltm/sshm/internal/config"
 	"github.com/michael-ltm/sshm/internal/keys"
+	sshpkg "github.com/michael-ltm/sshm/internal/ssh"
 	"github.com/spf13/cobra"
 	"golang.org/x/term"
 )
@@ -40,7 +41,7 @@ func newCopyIDCmd() *cobra.Command {
 			}()
 			// TODO(v0.3): expose a --timeout flag instead of unbounded context.
 			ctx := context.Background()
-			if err := keys.CopyID(ctx, s, string(pw), s.KeyPath); err != nil {
+			if err := keys.CopyID(ctx, s, string(pw), s.KeyPath, sshpkg.BuildOpts{Alias: args[0], ConfigPath: configPath()}); err != nil {
 				return err
 			}
 			if flagJSON {

@@ -113,17 +113,17 @@ func newProvisionCmd() *cobra.Command {
 					return pub, nil
 				},
 				copyID: func(string) error {
-					return keys.CopyID(context.Background(), s, string(pw), expanded)
+					return keys.CopyID(context.Background(), s, string(pw), expanded, sshpkg.BuildOpts{Alias: args[0], ConfigPath: configPath()})
 				},
 				test: func() error {
-					cli, terr := sshpkg.Dial(s, sshpkg.BuildOpts{})
+					cli, terr := sshpkg.Dial(s, sshpkg.BuildOpts{Alias: args[0], ConfigPath: configPath()})
 					if terr != nil {
 						return terr
 					}
 					return cli.Close()
 				},
 				harden: func() error {
-					return hardenDisablePassword(context.Background(), s)
+					return hardenDisablePassword(context.Background(), s, sshpkg.BuildOpts{Alias: args[0], ConfigPath: configPath()})
 				},
 			}
 			var confirmed bool
@@ -132,7 +132,18 @@ func newProvisionCmd() *cobra.Command {
 				// Key auth was confirmed by the connectivity test, so persist
 				// the alias as key-auth even if a later --harden step failed:
 				// key auth itself is verified working, only hardening isn't.
-				if serr := saveConfig(cfg); serr != nil {
+				if serr := config.Update(configPath(), func(latest *config.Config) error {
+					server, ok := latest.Servers[args[0]]
+					if !ok || server == nil {
+						return fmt.Errorf("unknown server %q", args[0])
+					}
+					if server.Host != s.Host || server.Port != s.Port || server.User != s.User {
+						return fmt.Errorf("server %q connection changed while provisioning", args[0])
+					}
+					server.Auth = s.Auth
+					server.KeyPath = s.KeyPath
+					return nil
+				}); serr != nil {
 					return fmt.Errorf("save config: %w", serr)
 				}
 			}
@@ -167,8 +178,12 @@ func hardenedSuffix(h bool) string {
 // internal/bootstrap.Run deliberately does NOT touch sshd settings (it only
 // installs baseline tooling like fail2ban), so there is no existing reusable
 // helper for this step — this is a new, minimal implementation.
-func hardenDisablePassword(ctx context.Context, s *config.Server) error {
-	cli, err := sshpkg.Dial(s, sshpkg.BuildOpts{})
+func hardenDisablePassword(ctx context.Context, s *config.Server, options ...sshpkg.BuildOpts) error {
+	opts := sshpkg.BuildOpts{}
+	if len(options) > 0 {
+		opts = options[0]
+	}
+	cli, err := sshpkg.Dial(s, opts)
 	if err != nil {
 		return fmt.Errorf("dial for harden: %w", err)
 	}

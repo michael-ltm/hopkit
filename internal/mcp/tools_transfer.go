@@ -73,7 +73,7 @@ func handleUploadCtx(ctx context.Context, deps Deps, args map[string]any, progre
 		return errResult("not_found", fmt.Sprintf("unknown server %q", alias)), nil
 	}
 
-	cli, err := sshpkg.Dial(s, sshpkg.BuildOpts{ConfigPath: deps.ConfigPath})
+	cli, err := sshpkg.Dial(s, sshpkg.BuildOpts{ConfigPath: deps.ConfigPath, Alias: alias})
 	if err != nil {
 		return errResult("ssh", safety.MaskSecrets(err.Error())), nil
 	}
@@ -145,7 +145,7 @@ func handleDownloadCtx(ctx context.Context, deps Deps, args map[string]any, prog
 		return errResult("not_found", fmt.Sprintf("unknown server %q", alias)), nil
 	}
 
-	cli, err := sshpkg.Dial(s, sshpkg.BuildOpts{ConfigPath: deps.ConfigPath})
+	cli, err := sshpkg.Dial(s, sshpkg.BuildOpts{ConfigPath: deps.ConfigPath, Alias: alias})
 	if err != nil {
 		return errResult("ssh", safety.MaskSecrets(err.Error())), nil
 	}

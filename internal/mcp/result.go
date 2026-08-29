@@ -65,3 +65,10 @@ func maskResultStrings(v any) any {
 func errResult(kind, msg string) map[string]any {
 	return map[string]any{"error": map[string]string{"kind": kind, "message": msg}}
 }
+
+func activityWarningText(err error) string {
+	if err == nil {
+		return ""
+	}
+	return safety.MaskSecrets("connectivity result returned, but activity history could not be saved: " + err.Error())
+}

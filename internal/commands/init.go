@@ -8,6 +8,7 @@ import (
 
 	"github.com/michael-ltm/sshm/internal/bootstrap"
 	"github.com/michael-ltm/sshm/internal/config"
+	sshpkg "github.com/michael-ltm/sshm/internal/ssh"
 	"github.com/spf13/cobra"
 )
 
@@ -32,14 +33,20 @@ func newInitCmd() *cobra.Command {
 				ctx, cancel = context.WithTimeout(ctx, time.Duration(timeoutSec)*time.Second)
 				defer cancel()
 			}
-			res, err := bootstrap.Run(ctx, s)
+			res, err := bootstrap.Run(ctx, s, sshpkg.BuildOpts{Alias: args[0], ConfigPath: configPath()})
 			if err != nil {
 				return err
 			}
 			// Persist the init_state so `ls`/`show` reflect it.
 			if res.Completed {
-				s.InitState = config.InitBootstrapped
-				if err := saveConfig(cfg); err != nil {
+				if err := config.Update(configPath(), func(latest *config.Config) error {
+					server, ok := latest.Servers[args[0]]
+					if !ok || server == nil {
+						return fmt.Errorf("unknown server %q", args[0])
+					}
+					server.InitState = config.InitBootstrapped
+					return nil
+				}); err != nil {
 					return err
 				}
 			}

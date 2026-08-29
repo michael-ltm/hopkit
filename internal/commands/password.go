@@ -40,14 +40,14 @@ func newPasswordCmd() *cobra.Command {
 				fmt.Fprintln(cmd.OutOrStdout(), "aborted")
 				return nil
 			}
-			return changeRemotePassword(server, platform, configPath())
+			return changeRemotePassword(args[0], server, platform, configPath())
 		},
 	}
 	command.Flags().StringVar(&platform, "platform", passwordPlatformAuto, "remote platform: auto|posix|windows")
 	return command
 }
 
-func changeRemotePassword(server *config.Server, platform, activeConfigPath string) error {
+func changeRemotePassword(alias string, server *config.Server, platform, activeConfigPath string) error {
 	platform = strings.ToLower(strings.TrimSpace(platform))
 	if platform == "" {
 		platform = passwordPlatformAuto
@@ -56,7 +56,7 @@ func changeRemotePassword(server *config.Server, platform, activeConfigPath stri
 		return err
 	}
 
-	client, err := dialInteractive(server, false, activeConfigPath)
+	client, err := dialInteractive(alias, server, false, activeConfigPath)
 	if err != nil {
 		return err
 	}

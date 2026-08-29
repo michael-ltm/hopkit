@@ -5,8 +5,28 @@
 - Passwords are never written to `config.toml`. `copy-id` reads a password
   from the TTY for a single operation and zeroes the buffer afterward.
 - Private keys are never read except when about to be used, never logged,
-  and never returned through the MCP server.
+  and never returned through the MCP server. Generated private keys and
+  passphrase-recovery files use `0600` on POSIX and a protected DACL granting
+  access only to the current user and LocalSystem on Windows.
 - `config.toml` and `audit.log` are written with mode `0600`.
+- `pair` embeds only a public key and random one-time callback token in the
+  target command. The callback is accepted once, validates bounded fields, and
+  a new alias is not persisted until a separate key-authenticated SSH session
+  confirms `whoami` and `hostname`.
+- Pairing auto-selects only loopback/private/Tailscale callback addresses;
+  public and common TUN fake-IP routes, explicit public IP literals, and IPv6
+  link-local addresses are rejected. Link-local IPv6 needs an interface zone
+  that the portable target command cannot preserve safely. Explicit hostnames
+  that resolve locally are also rejected if any result is public, a common TUN
+  fake IP, or IPv6 link-local; an unresolved MagicDNS/LAN name must still be
+  confirmed reachable from the target.
+  Generated command files requested with `--script-dir` use `0600` on POSIX
+  and the same protected current-user/LocalSystem DACL on Windows.
+- Before emitting a target command, pairing exercises a real signature with
+  the selected key and verifies it locally. The Windows download fallback is
+  version-pinned, verifies the whole official ZIP against a compiled SHA-256,
+  and checks the extracted `sshd.exe` Microsoft Authenticode signature before
+  running the bundled installer.
 
 ## Privacy boundaries
 
@@ -31,6 +51,14 @@
   command; they are never stored, audited, returned by MCP, or sent through chat.
 - CLI deletion requires retyping the exact alias unless `--yes` is explicit.
   MCP deletion requires a matching `confirm_alias` plus the audited reason.
+- Guided cleanup starts with no records selected and requires a final
+  confirmation. It protects the default server, project references, ProxyJump
+  references, and manually protected records; legacy records with unknown
+  history are excluded unless explicitly requested.
+- Cleanup creates and syncs a private config backup before changing the
+  inventory (`0600` on POSIX; a protected current-user/LocalSystem DACL on
+  Windows) and removes only config records. It never deletes local private
+  keys, `known_hosts`, or remote `authorized_keys` entries.
 
 ## MCP safety model
 

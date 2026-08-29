@@ -48,8 +48,12 @@ func ParseResult(raw string) Result {
 // Run executes the bootstrap script on the remote server via SSH and
 // returns the parsed Result. The script is passed as a quoted `sh -c`
 // argument, so nothing is written to the remote filesystem.
-func Run(ctx context.Context, s *config.Server) (Result, error) {
-	cli, err := sshpkg.Dial(s, sshpkg.BuildOpts{})
+func Run(ctx context.Context, s *config.Server, options ...sshpkg.BuildOpts) (Result, error) {
+	opts := sshpkg.BuildOpts{}
+	if len(options) > 0 {
+		opts = options[0]
+	}
+	cli, err := sshpkg.Dial(s, opts)
 	if err != nil {
 		return Result{}, err
 	}

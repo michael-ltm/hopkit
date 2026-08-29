@@ -93,6 +93,11 @@ func serveTestAgent(t *testing.T, priv ed25519.PrivateKey) string {
 	t.Helper()
 	kr := agent.NewKeyring()
 	require.NoError(t, kr.Add(agent.AddedKey{PrivateKey: priv}))
+	return serveAgentBackend(t, kr)
+}
+
+func serveAgentBackend(t *testing.T, backend agent.Agent) string {
+	t.Helper()
 	// os.MkdirTemp, not t.TempDir: the test name would push the socket path
 	// past the 104-byte unix socket limit on macOS.
 	dir, err := os.MkdirTemp("", "sshm-agent")
@@ -108,7 +113,7 @@ func serveTestAgent(t *testing.T, priv ed25519.PrivateKey) string {
 			if err != nil {
 				return
 			}
-			go func() { _ = agent.ServeAgent(kr, c) }()
+			go func() { _ = agent.ServeAgent(backend, c) }()
 		}
 	}()
 	return sock

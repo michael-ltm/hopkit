@@ -21,5 +21,9 @@ func WriteRecovery(keyPath, passphrase string) (string, error) {
 	if err := os.WriteFile(rp, []byte(body), 0o600); err != nil {
 		return "", fmt.Errorf("write recovery %s: %w", rp, err)
 	}
+	if err := protectPrivateFile(rp); err != nil {
+		_ = os.Remove(rp)
+		return "", fmt.Errorf("protect recovery %s: %w", rp, err)
+	}
 	return rp, nil
 }

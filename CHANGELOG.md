@@ -4,6 +4,65 @@ All notable changes to this project will be documented in this file. Format: [Ke
 
 ## [Unreleased]
 
+### Added
+- Plain `sshm pair` now opens a complete guided workflow for alias, address,
+  port, Windows/Linux/macOS platform, description, tags, and group. `sshm add`
+  first offers recommended automatic pairing or advanced manual entry, and the
+  interactive inventory can pair or repair an existing server. Pairing an
+  existing alias also prompts for platform, and VPN/TUN route failures stay in
+  the wizard with a target-reachable callback-address prompt.
+- `sshm pair <alias> [--host <host>]` creates a self-contained one-line setup
+  command for Administrator PowerShell or a Linux/macOS shell. It can install
+  and start OpenSSH, generate/install an encrypted ed25519 key, discover the
+  target username, and persists the alias only after key-authenticated
+  `whoami`/`hostname` verification.
+- Windows OpenSSH setup first uses the Windows Capability and falls back to the
+  pinned official Microsoft Win32-OpenSSH ZIP with multiple download methods,
+  an offline `SSHM_OPENSSH_ZIP` option, whole-archive SHA-256 verification, and
+  an Authenticode check. POSIX setup covers common package/service managers and
+  macOS Remote Login.
+- Version-5 server records distinguish creation, successful SSH use, last
+  reachable time, and last checked time. Authenticated CLI/MCP operations update
+  use history; TCP-only probes update check/seen state without pretending a
+  login occurred.
+- `sshm cleanup` provides an opt-in guided review of idle records. It excludes
+  legacy records with unknown history by default, protects default/project/
+  ProxyJump/manual references, requires explicit selection and confirmation,
+  and creates a private config backup before atomic removal (`0600` on POSIX;
+  current-user/LocalSystem ACL on Windows).
+
+### Changed
+- Config read-modify-write operations now share a per-config inter-process lock,
+  preventing concurrent CLI and MCP processes from losing activity or metadata
+  updates. Cleanup validates, snapshots, backs up, and removes records inside
+  that same transaction.
+- Version-4 `last_seen` values are carried forward as conservative usage
+  evidence during the version-5 upgrade, while records with no evidence remain
+  explicitly `history_unknown`.
+
+### Fixed
+- Pairing now proves the selected private key can sign through the active
+  keychain/ssh-agent before printing any target-side command. Agent/keychain
+  failures can no longer install an unusable public key and fail only after
+  mutating the target.
+- The interactive server picker now sizes its viewport from the real terminal
+  dimensions and display-width-truncates every option to one physical line, so
+  large inventories and long CJK descriptions can scroll through the final
+  server and action rows without disappearing.
+- Concurrent reachability checks now persist each host's own completion time,
+  so an older slow batch cannot overwrite a genuinely newer observation.
+- Changing a server's host, port, or username clears activity inherited from
+  the old connection identity while preserving its creation time and metadata;
+  a separate identity-change timestamp becomes the fresh cleanup baseline.
+  Successful SSH sessions now warn when activity history cannot be persisted;
+  MCP reachability tools return the same condition as `activity_warning`.
+- Retried target callbacks are idempotently acknowledged when their normalized
+  identity report matches the first accepted report, so a lost HTTP response
+  does not turn a successful pairing into a false network failure.
+- Proxy-aware MCP SSH checks now continue to the configured SSH transport even
+  when the direct TCP diagnostic fails; proxy-only hosts are no longer reported
+  unusable before authentication is attempted.
+
 ## [0.7.0] — 2026-07-16
 
 ### Added

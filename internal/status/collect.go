@@ -66,8 +66,12 @@ func ParseSnapshot(raw string) Snapshot {
 
 // Collect dials the server and runs snapshotScript, returning the parsed
 // Snapshot. The caller supplies a context for cancellation/timeout.
-func Collect(ctx context.Context, s *config.Server) (Snapshot, error) {
-	cli, err := sshpkg.Dial(s, sshpkg.BuildOpts{})
+func Collect(ctx context.Context, s *config.Server, options ...sshpkg.BuildOpts) (Snapshot, error) {
+	opts := sshpkg.BuildOpts{}
+	if len(options) > 0 {
+		opts = options[0]
+	}
+	cli, err := sshpkg.Dial(s, opts)
 	if err != nil {
 		return Snapshot{}, err
 	}

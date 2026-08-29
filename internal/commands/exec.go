@@ -51,7 +51,7 @@ shell or wrap in 'sh -c "..."', e.g.:
 				ctx, cancel = context.WithTimeout(ctx, time.Duration(timeoutSec)*time.Second)
 				defer cancel()
 			}
-			return execOnce(ctx, cmd, s, remoteCmd, insecure)
+			return execOnce(ctx, cmd, args[0], s, remoteCmd, insecure)
 		},
 	}
 	c.Flags().IntVarP(&timeoutSec, "timeout", "t", 0, "timeout in seconds (0 = no timeout)")
@@ -59,8 +59,8 @@ shell or wrap in 'sh -c "..."', e.g.:
 	return c
 }
 
-func execOnce(ctx context.Context, cmd *cobra.Command, s *config.Server, remoteCmd string, insecure bool) error {
-	cli, err := sshpkg.Dial(s, sshpkg.BuildOpts{Insecure: insecure})
+func execOnce(ctx context.Context, cmd *cobra.Command, alias string, s *config.Server, remoteCmd string, insecure bool) error {
+	cli, err := sshpkg.Dial(s, sshpkg.BuildOpts{Insecure: insecure, Alias: alias, ConfigPath: configPath()})
 	if err != nil {
 		return err
 	}

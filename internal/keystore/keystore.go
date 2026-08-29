@@ -3,6 +3,7 @@ package keystore
 import (
 	"fmt"
 	"os"
+	"time"
 
 	sshpkg "github.com/michael-ltm/sshm/internal/ssh"
 	gssh "golang.org/x/crypto/ssh"
@@ -49,6 +50,9 @@ func agentAdd(keyPath, passphrase string) error {
 		return fmt.Errorf("dial agent: %w", err)
 	}
 	defer conn.Close()
+	if err := conn.SetDeadline(time.Now().Add(30 * time.Second)); err != nil {
+		return fmt.Errorf("set ssh-agent add deadline: %w", err)
+	}
 	if err := agent.NewClient(conn).Add(agent.AddedKey{PrivateKey: raw}); err != nil {
 		return fmt.Errorf("add key to agent: %w", err)
 	}

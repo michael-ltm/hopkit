@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"time"
 
 	gssh "golang.org/x/crypto/ssh"
 	"golang.org/x/crypto/ssh/agent"
@@ -28,10 +29,18 @@ func agentSignerFor(want gssh.PublicKey) (gssh.Signer, io.Closer, error) {
 	if err != nil {
 		return nil, nil, err
 	}
+	if err := conn.SetDeadline(time.Now().Add(30 * time.Second)); err != nil {
+		conn.Close()
+		return nil, nil, fmt.Errorf("set ssh-agent list deadline: %w", err)
+	}
 	signers, err := agent.NewClient(conn).Signers()
 	if err != nil {
 		conn.Close()
 		return nil, nil, fmt.Errorf("list ssh-agent identities: %w", err)
+	}
+	if err := conn.SetDeadline(time.Time{}); err != nil {
+		conn.Close()
+		return nil, nil, fmt.Errorf("clear ssh-agent list deadline: %w", err)
 	}
 	wantBlob := want.Marshal()
 	for _, s := range signers {

@@ -26,11 +26,6 @@ func loadConfig() (*config.Config, string, error) {
 	return cfg, path, err
 }
 
-// saveConfig writes to the same path used by loadConfig.
-func saveConfig(cfg *config.Config) error {
-	return config.Save(configPath(), cfg)
-}
-
 // resolveServer picks a server entry: explicit alias wins, otherwise the
 // config-level default. Returns an error with the available alias list when
 // resolution fails.

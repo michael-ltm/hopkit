@@ -4,6 +4,7 @@ package wizard
 import (
 	"errors"
 	"fmt"
+	"io"
 	"regexp"
 	"strconv"
 	"strings"
@@ -54,6 +55,7 @@ type AddInput struct {
 	Alias       string
 	Host        string
 	Port        string
+	Platform    string
 	User        string
 	Auth        string
 	KeyPath     string
@@ -69,8 +71,8 @@ type AddInput struct {
 // fully populated AddInput, or an error if the user cancels.
 //
 // existingAliases is used to prevent collisions.
-func RunAdd(existingAliases []string) (*AddInput, error) {
-	in := &AddInput{Port: "22", Auth: config.AuthKey, TestAfter: true}
+func RunAdd(existingAliases []string, input io.Reader, output io.Writer) (*AddInput, error) {
+	in := &AddInput{Port: "22", Platform: config.PlatformWindows, Auth: config.AuthKey, TestAfter: true}
 	form := huh.NewForm(
 		huh.NewGroup(
 			huh.NewInput().Title("Alias").Value(&in.Alias).
@@ -86,7 +88,14 @@ func RunAdd(existingAliases []string) (*AddInput, error) {
 					return nil
 				}),
 			huh.NewInput().Title("Host / IP").Value(&in.Host).Validate(ValidateHost),
-			huh.NewInput().Title("Port").Value(&in.Port).Validate(ValidatePort),
+			huh.NewInput().Title("Port").Description("Press Enter for 22").Value(&in.Port).
+				Validate(validateOptionalDefaultPort),
+			huh.NewSelect[string]().Title("Target system").Options(
+				huh.NewOption("Windows", config.PlatformWindows),
+				huh.NewOption("Linux", config.PlatformLinux),
+				huh.NewOption("macOS", config.PlatformMacOS),
+				huh.NewOption("Unknown / detect later", ""),
+			).Value(&in.Platform),
 			huh.NewInput().Title("User").Value(&in.User).Validate(func(s string) error {
 				if strings.TrimSpace(s) == "" {
 					return errors.New("user cannot be empty")
@@ -101,7 +110,8 @@ func RunAdd(existingAliases []string) (*AddInput, error) {
 			).Value(&in.Auth),
 		),
 		huh.NewGroup(
-			huh.NewInput().Title("Key path (used or generated)").Value(&in.KeyPath),
+			huh.NewInput().Title("Key path (used or generated)").Value(&in.KeyPath).
+				Validate(func(value string) error { return validateKeyPathForAuth(value, in.Auth) }),
 		).WithHideFunc(func() bool {
 			return in.Auth == config.AuthPassword || in.Auth == config.AuthAgent
 		}),
@@ -111,15 +121,29 @@ func RunAdd(existingAliases []string) (*AddInput, error) {
 			huh.NewInput().Title("Tags (comma separated)").Value(&in.Tags),
 			huh.NewInput().Title("Group").Value(&in.Group),
 			huh.NewConfirm().Title("Test connection after save?").Value(&in.TestAfter),
-			huh.NewConfirm().Title("Push public key to remote now (copy-id)?").Value(&in.CopyIDAfter),
 		),
-	)
+		huh.NewGroup(
+			huh.NewConfirm().Title("Show the copy-id next step after save?").Description("The next command will prompt for the remote password once").Value(&in.CopyIDAfter),
+		).WithHideFunc(func() bool {
+			return in.Auth == config.AuthPassword || in.Auth == config.AuthAgent
+		}),
+	).WithInput(input).WithOutput(output)
 	if err := form.Run(); err != nil {
 		return nil, err
+	}
+	if strings.TrimSpace(in.Port) == "" {
+		in.Port = "22"
 	}
 	if in.Auth == "generate" {
 		in.GenerateKey = true
 		in.Auth = config.AuthKey
 	}
 	return in, nil
+}
+
+func validateKeyPathForAuth(value, auth string) error {
+	if auth == config.AuthKey && strings.TrimSpace(value) == "" {
+		return errors.New("key path is required when using an existing key")
+	}
+	return nil
 }

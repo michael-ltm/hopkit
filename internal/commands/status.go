@@ -6,6 +6,7 @@ import (
 	"strings"
 	"time"
 
+	sshpkg "github.com/michael-ltm/sshm/internal/ssh"
 	"github.com/michael-ltm/sshm/internal/status"
 	"github.com/spf13/cobra"
 )
@@ -31,7 +32,7 @@ func newStatusCmd() *cobra.Command {
 				ctx, cancel = context.WithTimeout(ctx, time.Duration(timeoutSec)*time.Second)
 				defer cancel()
 			}
-			snap, err := status.Collect(ctx, s)
+			snap, err := status.Collect(ctx, s, sshpkg.BuildOpts{Alias: args[0], ConfigPath: configPath()})
 			if err != nil {
 				return err
 			}

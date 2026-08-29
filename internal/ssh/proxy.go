@@ -353,7 +353,7 @@ func dialSOCKS5(s *config.Server, addr string, auth *proxy.Auth, timeout time.Du
 // hop is performed: the jump host's own transport may use env SOCKS / its own
 // ProxyCommand, but a further ProxyJump on the jump host is NOT followed.
 func dialViaJump(s *config.Server, spec string, opts BuildOpts, timeout time.Duration) (net.Conn, io.Closer, error) {
-	jump, err := resolveJumpServer(spec, s, opts)
+	jump, jumpAlias, err := resolveJumpServer(spec, s, opts)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -386,6 +386,15 @@ func dialViaJump(s *config.Server, spec string, opts BuildOpts, timeout time.Dur
 		return nil, nil, fmt.Errorf("proxy jump handshake %s: %w", Address(jump), err)
 	}
 	jumpClient := gssh.NewClient(sshConn, chans, reqs)
+	if jumpAlias != "" {
+		activityPath := opts.ConfigPath
+		if activityPath == "" {
+			activityPath = config.ConfigPath()
+		}
+		if err := config.RecordSSHUse(activityPath, jumpAlias, jump, time.Now()); err != nil {
+			reportActivityError(opts, err)
+		}
+	}
 
 	target, err := jumpClient.Dial("tcp", Address(s))
 	if err != nil {
@@ -408,7 +417,7 @@ func dialViaJump(s *config.Server, spec string, opts BuildOpts, timeout time.Dur
 // be an existing alias in the loaded config or a "[user@]host[:port]" string.
 // When the spec is not a known alias it is parsed as a host spec, defaulting
 // the user to the target server's user.
-func resolveJumpServer(spec string, target *config.Server, opts BuildOpts) (*config.Server, error) {
+func resolveJumpServer(spec string, target *config.Server, opts BuildOpts) (*config.Server, string, error) {
 	v := strings.TrimSpace(spec)
 	// Alias resolution requires the config; fall back to the default path.
 	path := opts.ConfigPath
@@ -420,15 +429,15 @@ func resolveJumpServer(spec string, target *config.Server, opts BuildOpts) (*con
 			if js, ok := cfg.Servers[v]; ok {
 				// Use a copy so we never mutate the shared config entry.
 				cp := *js
-				return &cp, nil
+				return &cp, v, nil
 			}
 		}
 	}
 	js, err := parseJumpSpec(v, target.User)
 	if err != nil {
-		return nil, err
+		return nil, "", err
 	}
-	return &config.Server{Host: js.host, Port: js.port, User: js.user, Auth: config.AuthAgent}, nil
+	return &config.Server{Host: js.host, Port: js.port, User: js.user, Auth: config.AuthAgent}, "", nil
 }
 
 // multiCloser closes a set of io.Closers in order, skipping nils, returning the

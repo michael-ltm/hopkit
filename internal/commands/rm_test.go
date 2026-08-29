@@ -104,3 +104,61 @@ func TestRm_RefusesServerReferencedByProject(t *testing.T) {
 	require.NoError(t, loadErr)
 	require.Contains(t, reloaded.Servers, "builder")
 }
+
+func TestRm_RefusesServerUsedAsProxyJump(t *testing.T) {
+	dir := t.TempDir()
+	cfgPath := filepath.Join(dir, "config.toml")
+	cfg := config.New()
+	cfg.Servers["gateway"] = &config.Server{Host: "10.0.0.1"}
+	cfg.Servers["office"] = &config.Server{Host: "10.0.0.2", ProxyJump: "gateway"}
+	require.NoError(t, config.Save(cfgPath, cfg))
+	flagConfigPath = cfgPath
+	t.Cleanup(func() { flagConfigPath = "" })
+
+	cmd := newRmCmd()
+	cmd.SetArgs([]string{"gateway", "-y"})
+	cmd.SetOut(&bytes.Buffer{})
+	err := cmd.Execute()
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "servers using it as ProxyJump: office")
+
+	reloaded, loadErr := config.Load(cfgPath)
+	require.NoError(t, loadErr)
+	require.Contains(t, reloaded.Servers, "gateway")
+}
+
+func TestRemoveServerRechecksReferencesInsideAtomicUpdate(t *testing.T) {
+	dir := t.TempDir()
+	cfgPath := filepath.Join(dir, "config.toml")
+	cfg := config.New()
+	cfg.Servers["gateway"] = &config.Server{Host: "10.0.0.1"}
+	cfg.Servers["zeta"] = &config.Server{Host: "10.0.0.2"}
+	cfg.Servers["alpha"] = &config.Server{Host: "10.0.0.3"}
+	require.NoError(t, config.Save(cfgPath, cfg))
+	flagConfigPath = cfgPath
+	t.Cleanup(func() { flagConfigPath = "" })
+
+	// A preflight snapshot is initially safe, then another writer adds
+	// references before deletion. removeServer must validate the locked,
+	// current snapshot rather than trusting the stale preflight.
+	stale, err := config.Load(cfgPath)
+	require.NoError(t, err)
+	require.NoError(t, config.CheckServerRemoval(stale, "gateway"))
+	require.NoError(t, config.Update(cfgPath, func(latest *config.Config) error {
+		latest.Servers["zeta"].ProxyJump = "gateway"
+		latest.Servers["alpha"].ProxyJump = "gateway"
+		latest.Projects["release"] = &config.Project{
+			Server: "gateway", RemoteWorkspace: "/srv/release", ArtifactPath: "/srv/release.tgz",
+		}
+		return nil
+	}))
+
+	err = removeServer("gateway")
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "project profiles: release")
+	require.Contains(t, err.Error(), "servers using it as ProxyJump: alpha, zeta")
+
+	reloaded, loadErr := config.Load(cfgPath)
+	require.NoError(t, loadErr)
+	require.Contains(t, reloaded.Servers, "gateway")
+}

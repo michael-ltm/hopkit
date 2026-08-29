@@ -44,6 +44,7 @@ func renderServerDetail(w io.Writer, alias string, s *config.Server) error {
 		{"Alias", alias, true},
 		{"Label", s.Label, true},
 		{"Description", config.EffectiveDescription(s), config.EffectiveDescription(s) != ""},
+		{"Platform", s.Platform, s.Platform != ""},
 		{"Host", s.Host, true},
 		{"Port", fmt.Sprintf("%d", defaultInt(s.Port, 22)), true},
 		{"User", s.User, true},
@@ -54,6 +55,7 @@ func renderServerDetail(w io.Writer, alias string, s *config.Server) error {
 		{"Notes", s.Notes, s.Notes != ""},
 		{"Init state", s.InitState, s.InitState != ""},
 		{"Last status", s.LastStatus, s.LastStatus != ""},
+		{"Cleanup", "protected", s.CleanupProtected},
 	}
 	for _, l := range lines {
 		if !l.show {
@@ -65,6 +67,26 @@ func renderServerDetail(w io.Writer, alias string, s *config.Server) error {
 	}
 	if !s.LastSeen.IsZero() {
 		if _, err := fmt.Fprintf(w, "%-12s %s\n", "Last seen", s.LastSeen.Format("2006-01-02 15:04:05 MST")); err != nil {
+			return err
+		}
+	}
+	if !s.LastChecked.IsZero() {
+		if _, err := fmt.Fprintf(w, "%-12s %s\n", "Last check", s.LastChecked.Format("2006-01-02 15:04:05 MST")); err != nil {
+			return err
+		}
+	}
+	if !s.LastUsed.IsZero() {
+		if _, err := fmt.Fprintf(w, "%-12s %s\n", "Last used", s.LastUsed.Format("2006-01-02 15:04:05 MST")); err != nil {
+			return err
+		}
+	}
+	if !s.CreatedAt.IsZero() {
+		if _, err := fmt.Fprintf(w, "%-12s %s\n", "Created", s.CreatedAt.Format("2006-01-02 15:04:05 MST")); err != nil {
+			return err
+		}
+	}
+	if !s.IdentityChangedAt.IsZero() {
+		if _, err := fmt.Fprintf(w, "%-12s %s\n", "Identity changed", s.IdentityChangedAt.Format("2006-01-02 15:04:05 MST")); err != nil {
 			return err
 		}
 	}

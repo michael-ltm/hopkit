@@ -23,10 +23,17 @@ type Result struct {
 	Reachable bool          `json:"reachable"`
 	Latency   time.Duration `json:"latency_ns,omitempty"` // zero when Reachable is false
 	Error     string        `json:"error,omitempty"`      // empty when Reachable is true
+	// ObservedAt is the completion time of this specific probe. It is kept out
+	// of command JSON because it is internal ordering metadata used when
+	// persisting concurrent results.
+	ObservedAt time.Time `json:"-"`
 }
 
 // Probe attempts a TCP connect to the server within timeout.
-func Probe(ctx context.Context, s *config.Server, timeout time.Duration) Result {
+func Probe(ctx context.Context, s *config.Server, timeout time.Duration) (result Result) {
+	defer func() {
+		result.ObservedAt = time.Now().UTC()
+	}()
 	if timeout <= 0 {
 		timeout = defaultProbeTimeout
 	}
@@ -56,21 +63,28 @@ func ProbeMany(ctx context.Context, servers map[string]*config.Server, timeout t
 	out := make(chan item, len(servers))
 
 	launched := 0
+launchLoop:
 	for alias, s := range servers {
-		// Stop launching new probes if the context is already cancelled.
+		// Prefer cancellation before attempting to acquire a slot. The second
+		// check after acquisition closes the small race where cancellation lands
+		// while the select is choosing between two ready cases.
+		if ctx.Err() != nil {
+			break launchLoop
+		}
 		select {
 		case <-ctx.Done():
-			// Context cancelled — do not start any more goroutines.
+			break launchLoop
 		case sem <- struct{}{}:
-			launched++
-			go func(a string, srv *config.Server) {
-				defer func() { <-sem }()
-				out <- item{a, Probe(ctx, srv, timeout)}
-			}(alias, s)
 		}
-		// On cancellation we stop launching further probes. A semaphore slot
-		// that frees at the same instant as cancellation may let one more
-		// goroutine start; it will return quickly via the cancelled context.
+		if ctx.Err() != nil {
+			<-sem
+			break launchLoop
+		}
+		launched++
+		go func(a string, srv *config.Server) {
+			defer func() { <-sem }()
+			out <- item{a, Probe(ctx, srv, timeout)}
+		}(alias, s)
 	}
 
 	results := map[string]Result{}

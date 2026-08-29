@@ -16,12 +16,15 @@
 ## Quickstart
 
 ```
-sshm add               # interactive wizard
+sshm pair              # guided: alias, address, platform, description, tags
+# Paste the printed one-line command on the target; sshm detects the user and verifies SSH.
+sshm add               # choose automatic pairing or advanced manual entry
 sshm list              # interactive server picker + safe action menu
 sshm ls --plain        # script-friendly server table
 sshm c my-host         # interactive shell
 sshm exec my-host 'uptime'
-sshm test --all        # parallel reachability check
+sshm test --all        # parallel direct-TCP reachability check
+sshm cleanup           # guided review of unused server records
 sshm download my-host /tmp/app.zip ./app.zip --resume --sha256 <hash>
 ```
 
@@ -29,8 +32,20 @@ sshm download my-host /tmp/app.zip ./app.zip --resume --sha256 <hash>
 
 - TOML config at `~/.config/sshm/config.toml` (XDG) or `%APPDATA%\sshm\config.toml` (Windows)
 - Interactive `list`/`ls`: arrow-key server picker with connect, reachability,
-  description editing, remote password change, default selection, and guarded delete
+  pairing/repair, description editing, remote password change, cleanup protection,
+  default selection, and guarded delete
 - First-class descriptions, groups, and tags for human browsing and AI intent lookup
+- Plain `pair` guides you through alias, address, Windows/Linux/macOS platform,
+  description, tags, and group. It then creates a one-time setup command,
+  installs or starts OpenSSH when needed, detects the target user, installs a
+  new key, and saves only after a real key-authenticated SSH command succeeds.
+  Windows uses the built-in capability by default, then a pinned/hash-verified
+  official ZIP fallback; setting offline `SSHM_OPENSSH_ZIP` bypasses the online attempt
+- SSHM-observed successful SSH authentication records last use separately from
+  reachability checks (sessions opened by other clients are not visible).
+  `cleanup` safely reviews idle records, protects referenced hosts, and
+  creates a private backup (`0600` on POSIX, current-user/LocalSystem ACL on Windows) before
+  removing selected config entries
 - `add` (huh wizard) / `edit` / `rm` / `show`; exact-alias confirmation for destructive removal
 - `connect` (interactive shell) / `exec` (one-off) / `test` (single + --all)
 - `status` (remote resource snapshot) / `init` (baseline hardening)
@@ -41,7 +56,7 @@ sshm download my-host /tmp/app.zip ./app.zip --resume --sha256 <hash>
   intent-based `find_servers` discovery,
   background file transfer (`transfer_start`/`transfer_status`) and host-key
   verification (TOFU). See [docs/ai-integration.md](docs/ai-integration.md).
-- `--json` on every command for scripting and AI integration
+- `--json` on supported non-streaming commands for scripting and AI integration
 - `--redacted` masks secrets, IPs, and sensitive paths before JSON is shared
 - Pretty list with unicode/ascii icons (auto-detected)
 - Proxy/jump-host connections: per-host SOCKS5 (`proxy`), ProxyJump (`proxy_jump`), ProxyCommand (`proxy_command`); SOCKS5 auto-detected from `ALL_PROXY`/`HTTPS_PROXY` env vars (zero-config); failed proxy attempts fall back to direct
@@ -65,7 +80,8 @@ and [docs/security.md](docs/security.md).
 - **v0.5** ✓ — Secure key provisioning, encrypted key support, large-transfer-safe MCP/CLI file transfer — _shipped_
 - **v0.6** ✓ — Deterministic project profiles, safe project-scoped execution, cross-platform detached logs, token-efficient AI skill — _shipped_
 - **v0.7** ✓ — Interactive inventory manager, server descriptions, ranked AI host discovery, guarded password/removal workflows, remote reverse-lab guidance — _shipped_
-- **v0.8** — Import/export `~/.ssh/config`, tag/group filtering
+- **v0.8** — One-line cross-platform pairing, responsive inventory picker,
+  import/export `~/.ssh/config`, tag/group filtering
 - **v1.0** — Port forwarding, SFTP browse, signed release artifacts, strict known_hosts enforcement
 
 See [docs/specs/2026-05-13-sshm-design.md](docs/specs/2026-05-13-sshm-design.md) for the full design.

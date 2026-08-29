@@ -4,6 +4,7 @@ import (
 	"crypto/ed25519"
 	"crypto/rand"
 	"encoding/pem"
+	"errors"
 	"os"
 	"path/filepath"
 	"testing"
@@ -12,6 +13,13 @@ import (
 	"github.com/stretchr/testify/require"
 	gssh "golang.org/x/crypto/ssh"
 )
+
+func TestReportActivityErrorUsesCallback(t *testing.T) {
+	want := errors.New("disk full")
+	var got error
+	reportActivityError(BuildOpts{ActivityError: func(err error) { got = err }}, want)
+	require.ErrorIs(t, got, want)
+}
 
 // We test the ClientConfig builder, which does no I/O against a network.
 func TestBuildClientConfig_KeyAuthFromPath(t *testing.T) {

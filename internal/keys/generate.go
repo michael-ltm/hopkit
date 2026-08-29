@@ -62,6 +62,9 @@ func GenerateED25519Encrypted(keyPath, comment, passphrase string) (pubLine stri
 			os.Remove(keyPath)
 		}
 	}()
+	if err = protectPrivateFile(keyPath); err != nil {
+		return "", fmt.Errorf("protect private key %s: %w", keyPath, err)
+	}
 
 	sshPub, err2 := gssh.NewPublicKey(pub)
 	if err2 != nil {

@@ -21,11 +21,8 @@ func newRmCmd() *cobra.Command {
 				return err
 			}
 			alias := args[0]
-			if _, ok := cfg.Servers[alias]; !ok {
-				return fmt.Errorf("unknown server %q", alias)
-			}
-			if projects := config.ProjectsUsingServer(cfg, alias); len(projects) > 0 {
-				return fmt.Errorf("server %q is used by project profiles: %s; update those profiles first", alias, strings.Join(projects, ", "))
+			if err := config.CheckServerRemoval(cfg, alias); err != nil {
+				return err
 			}
 			if !yes {
 				confirmed, err := confirmExactAlias(cmd, alias, "remove this server")
@@ -37,11 +34,7 @@ func newRmCmd() *cobra.Command {
 					return nil
 				}
 			}
-			delete(cfg.Servers, alias)
-			if cfg.Default == alias {
-				cfg.Default = ""
-			}
-			if err := saveConfig(cfg); err != nil {
+			if err := removeServer(alias); err != nil {
 				return err
 			}
 			if _, err := fmt.Fprintf(cmd.OutOrStdout(), "removed %q\n", alias); err != nil {

@@ -3,6 +3,7 @@ package ui
 import (
 	"testing"
 
+	"github.com/charmbracelet/lipgloss"
 	"github.com/stretchr/testify/require"
 )
 
@@ -14,4 +15,15 @@ func TestSanitizeTerminalTextRemovesEscapeAndControlSequences(t *testing.T) {
 	require.NotContains(t, output, "\n")
 	require.Contains(t, output, "prod")
 	require.Contains(t, output, "next")
+}
+
+func TestTruncateWidth_HandlesCJKWithoutOverflow(t *testing.T) {
+	got := TruncateWidth("服务器描述abcdef", 10)
+	require.LessOrEqual(t, lipgloss.Width(got), 10)
+	require.Contains(t, got, "…")
+}
+
+func TestPadRightWidth_UsesTerminalCells(t *testing.T) {
+	got := PadRightWidth("电脑", 8)
+	require.Equal(t, 8, lipgloss.Width(got))
 }

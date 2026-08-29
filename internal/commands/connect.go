@@ -30,15 +30,18 @@ func newConnectCmd() *cobra.Command {
 			if err != nil {
 				return err
 			}
-			return connect(s, insecure, configPath())
+			if alias == "" {
+				alias = cfg.Default
+			}
+			return connect(alias, s, insecure, configPath())
 		},
 	}
 	c.Flags().BoolVar(&insecure, "insecure", false, "disable host-key verification (skip known_hosts check)")
 	return c
 }
 
-func connect(s *config.Server, insecure bool, activeConfigPath string) error {
-	c, err := dialInteractive(s, insecure, activeConfigPath)
+func connect(alias string, s *config.Server, insecure bool, activeConfigPath string) error {
+	c, err := dialInteractive(alias, s, insecure, activeConfigPath)
 	if err != nil {
 		return err
 	}
@@ -46,8 +49,8 @@ func connect(s *config.Server, insecure bool, activeConfigPath string) error {
 	return c.AttachInteractive()
 }
 
-func dialInteractive(s *config.Server, insecure bool, activeConfigPath string) (*sshpkg.Client, error) {
-	opts := sshpkg.BuildOpts{Insecure: insecure, ConfigPath: activeConfigPath}
+func dialInteractive(alias string, s *config.Server, insecure bool, activeConfigPath string) (*sshpkg.Client, error) {
+	opts := sshpkg.BuildOpts{Insecure: insecure, ConfigPath: activeConfigPath, Alias: alias}
 	var password []byte
 	if s.Auth == config.AuthPassword {
 		if !term.IsTerminal(int(os.Stdin.Fd())) {

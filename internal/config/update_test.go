@@ -2,12 +2,73 @@ package config
 
 import (
 	"fmt"
+	"os"
+	"os/exec"
 	"path/filepath"
 	"sync"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/require"
 )
+
+func TestUpdateAcrossProcessesKeepsBothMutations(t *testing.T) {
+	if os.Getenv("SSHM_CONFIG_LOCK_CHILD") == "1" {
+		path := os.Getenv("SSHM_CONFIG_LOCK_PATH")
+		alias := os.Getenv("SSHM_CONFIG_LOCK_ALIAS")
+		err := Update(path, func(cfg *Config) error {
+			// Hold the transaction long enough for the sibling process to
+			// contend on the same per-config lock.
+			time.Sleep(150 * time.Millisecond)
+			cfg.Servers[alias] = &Server{Host: alias, Port: 22, User: "u", Auth: AuthAgent}
+			return nil
+		})
+		require.NoError(t, err)
+		return
+	}
+
+	path := filepath.Join(t.TempDir(), "config.toml")
+	require.NoError(t, Save(path, New()))
+	commands := make([]*exec.Cmd, 0, 2)
+	for _, alias := range []string{"child-a", "child-b"} {
+		command := exec.Command(os.Args[0], "-test.run=^TestUpdateAcrossProcessesKeepsBothMutations$")
+		command.Env = append(os.Environ(),
+			"SSHM_CONFIG_LOCK_CHILD=1",
+			"SSHM_CONFIG_LOCK_PATH="+path,
+			"SSHM_CONFIG_LOCK_ALIAS="+alias,
+		)
+		require.NoError(t, command.Start())
+		commands = append(commands, command)
+	}
+	for _, command := range commands {
+		require.NoError(t, command.Wait())
+	}
+	got, err := Load(path)
+	require.NoError(t, err)
+	require.Contains(t, got.Servers, "child-a")
+	require.Contains(t, got.Servers, "child-b")
+}
+
+func TestUpdateRejectsNonCooperativeFileChange(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "config.toml")
+	before := New()
+	before.Servers["original"] = &Server{Host: "original", Port: 22, User: "u", Auth: AuthAgent}
+	require.NoError(t, Save(path, before))
+	originalBytes, err := os.ReadFile(path)
+	require.NoError(t, err)
+	externalBytes := []byte("version = 5\n[servers.external]\nhost = \"external\"\nport = 22\nuser = \"u\"\nauth = \"agent\"\n")
+
+	err = UpdateWithSource(path, func(cfg *Config, source []byte) error {
+		require.Equal(t, originalBytes, source)
+		cfg.Servers["transaction"] = &Server{Host: "transaction", Port: 22, User: "u", Auth: AuthAgent}
+		return os.WriteFile(path, externalBytes, 0o600)
+	})
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "changed outside sshm")
+	after, readErr := os.ReadFile(path)
+	require.NoError(t, readErr)
+	require.Equal(t, externalBytes, after)
+}
 
 // TestUpdate_NoConcurrentLostUpdates launches N goroutines each adding a
 // distinct server via Update and asserts all N survive (no lost-update race).

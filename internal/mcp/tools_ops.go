@@ -35,7 +35,7 @@ func handleBootstrap(ctx context.Context, deps Deps, args map[string]any) (any, 
 	}
 	ctx, cancel := context.WithTimeout(ctx, 120*time.Second)
 	defer cancel()
-	res, err := bootstrap.Run(ctx, s)
+	res, err := bootstrap.Run(ctx, s, sshpkg.BuildOpts{ConfigPath: deps.ConfigPath, Alias: alias})
 	if err != nil {
 		return errResult("ssh", safety.MaskSecrets(err.Error())), nil
 	}
@@ -189,7 +189,7 @@ func handleTailLogs(ctx context.Context, deps Deps, args map[string]any) (any, e
 	}
 	ctx, cancel := context.WithTimeout(ctx, 30*time.Second)
 	defer cancel()
-	platform, res, errKind, err := runTailLogsRemote(ctx, deps, s, platform, path, n)
+	platform, res, errKind, err := runTailLogsRemote(ctx, deps, alias, s, platform, path, n)
 	if err != nil {
 		result := "tail failed"
 		switch errKind {
@@ -210,8 +210,8 @@ func handleTailLogs(ctx context.Context, deps Deps, args map[string]any) (any, e
 	return out, nil
 }
 
-func executeTailLogsRemote(ctx context.Context, deps Deps, s *config.Server, platform, path string, lines int) (string, *sshpkg.ExecResult, string, error) {
-	cli, err := sshpkg.Dial(s, sshpkg.BuildOpts{ConfigPath: deps.ConfigPath})
+func executeTailLogsRemote(ctx context.Context, deps Deps, alias string, s *config.Server, platform, path string, lines int) (string, *sshpkg.ExecResult, string, error) {
+	cli, err := sshpkg.Dial(s, sshpkg.BuildOpts{ConfigPath: deps.ConfigPath, Alias: alias})
 	if err != nil {
 		return platform, nil, "ssh", err
 	}

@@ -30,3 +30,16 @@ func TestValidatePort(t *testing.T) {
 	require.Error(t, ValidatePort("0"))
 	require.Error(t, ValidatePort("65536"))
 }
+
+func TestOptionalWizardPortUsesBlankAsDefault(t *testing.T) {
+	require.NoError(t, validateOptionalDefaultPort(""))
+	require.NoError(t, validateOptionalDefaultPort("22"))
+	require.Error(t, validateOptionalDefaultPort("70000"))
+}
+
+func TestExistingKeyAuthRequiresPathButGenerateMayUseDefault(t *testing.T) {
+	require.Error(t, validateKeyPathForAuth("", "key"))
+	require.NoError(t, validateKeyPathForAuth("~/.ssh/id_ed25519", "key"))
+	require.NoError(t, validateKeyPathForAuth("", "generate"))
+	require.NoError(t, validateKeyPathForAuth("", "agent"))
+}

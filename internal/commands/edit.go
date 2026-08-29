@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/michael-ltm/sshm/internal/config"
 	"github.com/michael-ltm/sshm/internal/safety"
@@ -18,27 +19,30 @@ func newEditCmd() *cobra.Command {
 		Short: "Update fields on an existing server",
 		Args:  cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			cfg, _, err := loadConfig()
-			if err != nil {
-				return err
-			}
-			s, err := resolveServer(cfg, args[0])
-			if err != nil {
-				return err
-			}
 			if len(sets) == 0 {
 				return fmt.Errorf("at least one --set field=value is required (e.g., --set user=ubuntu)")
 			}
-			for _, kv := range sets {
-				k, v, ok := strings.Cut(kv, "=")
-				if !ok {
-					return fmt.Errorf("invalid --set %q (expected key=value)", kv)
-				}
-				if err := applyField(s, strings.TrimSpace(k), strings.TrimSpace(v)); err != nil {
+			identityChangedAt := time.Now().UTC()
+			if err := config.Update(configPath(), func(cfg *config.Config) error {
+				s, err := resolveServer(cfg, args[0])
+				if err != nil {
 					return err
 				}
-			}
-			if err := saveConfig(cfg); err != nil {
+				oldHost, oldPort, oldUser := s.Host, s.Port, s.User
+				for _, kv := range sets {
+					k, v, ok := strings.Cut(kv, "=")
+					if !ok {
+						return fmt.Errorf("invalid --set %q (expected key=value)", kv)
+					}
+					if err := applyField(s, strings.TrimSpace(k), strings.TrimSpace(v)); err != nil {
+						return err
+					}
+				}
+				if s.Host != oldHost || s.Port != oldPort || s.User != oldUser {
+					config.ClearServerActivity(s, identityChangedAt)
+				}
+				return nil
+			}); err != nil {
 				return err
 			}
 			if _, err := fmt.Fprintf(cmd.OutOrStdout(), "updated %q\n", args[0]); err != nil {
@@ -47,7 +51,7 @@ func newEditCmd() *cobra.Command {
 			return nil
 		},
 	}
-	c.Flags().StringArrayVar(&sets, "set", nil, "field=value (repeatable). Fields: host, port, user, auth, key_path, label, description, tags, group, notes")
+	c.Flags().StringArrayVar(&sets, "set", nil, "field=value (repeatable). Fields: host, port, user, auth, key_path, platform, label, description, tags, group, notes, cleanup_protected")
 	return c
 }
 
@@ -85,6 +89,18 @@ func applyField(srv *config.Server, field, val string) error {
 			return fmt.Errorf("key_path must be a single line")
 		}
 		srv.KeyPath = val
+	case "platform":
+		platform, err := config.NormalizePlatform(val)
+		if err != nil {
+			return err
+		}
+		srv.Platform = platform
+	case "cleanup_protected":
+		value, err := strconv.ParseBool(val)
+		if err != nil {
+			return fmt.Errorf("cleanup_protected must be true or false")
+		}
+		srv.CleanupProtected = value
 	case "label":
 		if err := validateMetadataFields(val, "", nil, "", ""); err != nil {
 			return err
