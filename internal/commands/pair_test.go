@@ -6,6 +6,7 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
+	"strconv"
 	"testing"
 	"time"
 
@@ -257,7 +258,7 @@ func TestPreparePairKeyEncryptedAgentLoadFailureIsFatalAndKeepsRecoveryForRetry(
 	require.FileExists(t, path)
 	require.FileExists(t, path+".pub")
 	require.FileExists(t, path+".passphrase")
-	require.Contains(t, err.Error(), path+".passphrase")
+	require.Contains(t, err.Error(), strconv.Quote(path+".passphrase"))
 	require.Empty(t, out.String(), "recovery instructions are printed only after the key is usable")
 }
 
@@ -286,7 +287,7 @@ func TestPreparePairKeyEncryptedSigningPreflightFailureIsFatal(t *testing.T) {
 	require.FileExists(t, path)
 	require.FileExists(t, path+".pub")
 	require.FileExists(t, path+".passphrase")
-	require.Contains(t, err.Error(), path+".passphrase")
+	require.Contains(t, err.Error(), strconv.Quote(path+".passphrase"))
 	require.Empty(t, out.String())
 }
 
