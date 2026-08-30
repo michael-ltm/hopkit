@@ -7,6 +7,7 @@ import (
 	"path/filepath"
 	"runtime"
 	"strconv"
+	"strings"
 	"testing"
 	"time"
 
@@ -147,9 +148,20 @@ func TestCleanupChoiceLabelNeverWrapsConfiguredWidth(t *testing.T) {
 
 func TestWritePairCommandFiles_WritesPrivateSingleLineFiles(t *testing.T) {
 	dir := filepath.Join(t.TempDir(), "commands")
-	paths, err := writePairCommandFiles(dir, "demo", "all", pair.Scripts{Windows: "$x='win'", POSIX: "echo posix"})
+	scripts, err := pair.BuildScripts(
+		"ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIK7m3yZ9Qf0xV8u2nR4sP6cD1bH5jL7eT9wA2gM4 pair@host",
+		"http://100.64.0.1:4567/v1/pair/9f1b7c3d5e8a2046",
+		22,
+	)
+	require.NoError(t, err)
+	t.Logf("realistic generated command bytes: Windows=%d POSIX=%d", len(scripts.Windows), len(scripts.POSIX))
+	paths, err := writePairCommandFiles(dir, "demo", "all", scripts)
 	require.NoError(t, err)
 	require.Len(t, paths, 2)
+	expected := map[string]string{
+		"demo.windows.ps1": scripts.Windows + "\n",
+		"demo.posix.sh":    scripts.POSIX + "\n",
+	}
 	for _, path := range paths {
 		info, statErr := os.Stat(path)
 		require.NoError(t, statErr)
@@ -158,8 +170,27 @@ func TestWritePairCommandFiles_WritesPrivateSingleLineFiles(t *testing.T) {
 		}
 		data, readErr := os.ReadFile(path)
 		require.NoError(t, readErr)
+		require.Equal(t, expected[filepath.Base(path)], string(data), "command files must preserve the generated one-liner exactly")
 		require.Equal(t, 1, bytes.Count(data, []byte("\n")))
 	}
+}
+
+func TestValidatePrintedPairCommandLengthsGuardsClipboardOutputOnly(t *testing.T) {
+	short := strings.Repeat("x", maxPrintedPairCommandBytes)
+	tooLong := short + "x"
+	require.NoError(t, validatePrintedPairCommandLengths("all", pair.Scripts{Windows: short, POSIX: short}))
+
+	err := validatePrintedPairCommandLengths("posix", pair.Scripts{Windows: short, POSIX: tooLong})
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "Linux/macOS")
+	require.Contains(t, err.Error(), "--script-dir")
+
+	err = validatePrintedPairCommandLengths("windows", pair.Scripts{Windows: tooLong, POSIX: short})
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "Windows")
+	require.Contains(t, err.Error(), "--script-dir")
+
+	require.NoError(t, validatePrintedPairCommandLengths("windows", pair.Scripts{Windows: short, POSIX: tooLong}), "an unselected command must not block file/clipboard output")
 }
 
 func TestPreparePairKeyExistingKeyMustPassSigningPreflight(t *testing.T) {

@@ -45,22 +45,46 @@ func BuildScripts(publicKey, callbackURL string, port int) (Scripts, error) {
 	if err != nil {
 		return Scripts{}, err
 	}
-	posixPayload := base64.StdEncoding.EncodeToString([]byte(posixScript))
-	posixBootstrap := "SSHM_PAIR_B64=" + posixPayload + "; case \"$(uname -s)\" in Darwin) printf %s \"$SSHM_PAIR_B64\" | base64 -D | sh ;; *) printf %s \"$SSHM_PAIR_B64\" | base64 -d | sh ;; esac"
+	posixOneLiner, err := buildPOSIXOneLiner(posixScript)
+	if err != nil {
+		return Scripts{}, err
+	}
 	return Scripts{
 		Windows: "$d='" + compressedWindows + "';$m=New-Object IO.MemoryStream(,[Convert]::FromBase64String($d));$g=New-Object IO.Compression.GzipStream($m,[IO.Compression.CompressionMode]::Decompress);$r=New-Object IO.StreamReader($g);$s=$r.ReadToEnd();$r.Dispose();$g.Dispose();$m.Dispose();&([ScriptBlock]::Create($s))",
-		POSIX:   "/bin/sh -c '" + posixBootstrap + "'",
+		POSIX:   posixOneLiner,
 	}, nil
+}
+
+func buildPOSIXOneLiner(script string) (string, error) {
+	payload, err := gzipBase64(script)
+	if err != nil {
+		return "", err
+	}
+	bootstrap := "SSHM_PAIR_B64=" + payload +
+		"; SSHM_PAIR_LEN=" + fmt.Sprintf("%d", len(payload)) +
+		"; pair_corrupt() { echo \"SSHM pairing command is incomplete or corrupted; regenerate it and copy the entire line\" >&2; exit 1; }" +
+		"; [ \"${#SSHM_PAIR_B64}\" -eq \"$SSHM_PAIR_LEN\" ] || pair_corrupt" +
+		"; command -v base64 >/dev/null 2>&1 || { echo \"base64 is required to run the SSHM pairing command\" >&2; exit 1; }" +
+		"; command -v gzip >/dev/null 2>&1 || { echo \"gzip is required to run the SSHM pairing command\" >&2; exit 1; }" +
+		"; umask 077; SSHM_PAIR_DIR=$(mktemp -d) || exit 1" +
+		"; cleanup() { rm -f \"$SSHM_PAIR_DIR/payload.gz\" \"$SSHM_PAIR_DIR/pair.sh\"; rmdir \"$SSHM_PAIR_DIR\" 2>/dev/null || true; }" +
+		"; trap cleanup 0; trap \"exit 130\" HUP INT TERM" +
+		"; case \"$(uname -s)\" in Darwin) printf %s \"$SSHM_PAIR_B64\" | base64 -D >\"$SSHM_PAIR_DIR/payload.gz\" ;; *) printf %s \"$SSHM_PAIR_B64\" | base64 -d >\"$SSHM_PAIR_DIR/payload.gz\" ;; esac || pair_corrupt" +
+		"; gzip -t \"$SSHM_PAIR_DIR/payload.gz\" || pair_corrupt" +
+		"; gzip -dc \"$SSHM_PAIR_DIR/payload.gz\" >\"$SSHM_PAIR_DIR/pair.sh\" || pair_corrupt" +
+		"; /bin/sh -n \"$SSHM_PAIR_DIR/pair.sh\" || { echo \"SSHM pairing command failed its shell syntax check; regenerate it and copy the entire line\" >&2; exit 1; }" +
+		"; /bin/sh \"$SSHM_PAIR_DIR/pair.sh\""
+	return "/bin/sh -c '" + bootstrap + "'", nil
 }
 
 func gzipBase64(script string) (string, error) {
 	var compressed bytes.Buffer
 	writer := gzip.NewWriter(&compressed)
 	if _, err := writer.Write([]byte(script)); err != nil {
-		return "", fmt.Errorf("compress Windows pair script: %w", err)
+		return "", fmt.Errorf("compress pair script: %w", err)
 	}
 	if err := writer.Close(); err != nil {
-		return "", fmt.Errorf("finish Windows pair script compression: %w", err)
+		return "", fmt.Errorf("finish pair script compression: %w", err)
 	}
 	return base64.StdEncoding.EncodeToString(compressed.Bytes()), nil
 }

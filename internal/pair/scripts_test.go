@@ -5,7 +5,10 @@ import (
 	"compress/gzip"
 	"encoding/base64"
 	"io"
+	"os"
 	"os/exec"
+	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 
@@ -19,8 +22,12 @@ func TestBuildScripts_AreSingleLineAndSelfContained(t *testing.T) {
 	require.NotContains(t, scripts.POSIX, "\n")
 	require.True(t, strings.HasPrefix(scripts.POSIX, "/bin/sh -c '"))
 	require.Less(t, len(scripts.Windows), 8191, "Windows one-liner must fit the traditional cmd.exe command-length ceiling")
+	require.Less(t, len(scripts.POSIX), 8191, "POSIX one-liner must stay below common console and clipboard truncation limits")
 	require.Contains(t, scripts.Windows, "Compression.GzipStream")
 	require.Contains(t, scripts.POSIX, "SSHM_PAIR_B64=")
+	require.Contains(t, scripts.POSIX, "gzip -dc")
+	require.Contains(t, scripts.POSIX, "/bin/sh -n")
+	require.Contains(t, scripts.POSIX, "incomplete or corrupted")
 
 	windows := decodeWindowsScript(t, scripts.Windows)
 	require.Contains(t, windows, "Add-WindowsCapability")
@@ -43,6 +50,92 @@ func TestBuildScripts_AreSingleLineAndSelfContained(t *testing.T) {
 	bootstrapSyntax := exec.Command("sh", "-n")
 	bootstrapSyntax.Stdin = strings.NewReader(scripts.POSIX)
 	require.NoError(t, bootstrapSyntax.Run(), "the copy-paste wrapper must itself be valid POSIX shell")
+	if shellcheck, err := exec.LookPath("shellcheck"); err == nil {
+		command := exec.Command(shellcheck, "--severity=warning", "-s", "sh", "-")
+		command.Stdin = strings.NewReader(scripts.POSIX)
+		output, checkErr := command.CombinedOutput()
+		require.NoErrorf(t, checkErr, "shellcheck rejected the copy-paste wrapper: %s", output)
+	}
+}
+
+func TestBuildPOSIXOneLiner_ExecutesOnlyAfterIntegrityAndSyntaxChecks(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("the generated command targets POSIX systems")
+	}
+	root := t.TempDir()
+	temporaryFiles := filepath.Join(root, "temporary-files")
+	require.NoError(t, os.Mkdir(temporaryFiles, 0o700))
+	marker := filepath.Join(root, "executed")
+	oneLiner, err := buildPOSIXOneLiner(`printf ok >"$SSHM_TEST_MARKER"`)
+	require.NoError(t, err)
+
+	command := exec.Command("sh", "-c", oneLiner)
+	command.Env = append(os.Environ(), "SSHM_TEST_MARKER="+marker, "TMPDIR="+temporaryFiles)
+	output, err := command.CombinedOutput()
+	require.NoErrorf(t, err, "valid wrapper failed: %s", output)
+	require.FileExists(t, marker)
+	contents, err := os.ReadFile(marker)
+	require.NoError(t, err)
+	require.Equal(t, "ok", string(contents))
+	entries, err := os.ReadDir(temporaryFiles)
+	require.NoError(t, err)
+	require.Empty(t, entries, "the wrapper must remove its private temporary directory")
+}
+
+func TestBuildPOSIXOneLiner_RejectsPayloadDamageBeforeExecution(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("the generated command targets POSIX systems")
+	}
+	oneLiner, err := buildPOSIXOneLiner(`printf corrupted >"$SSHM_TEST_MARKER"`)
+	require.NoError(t, err)
+
+	const payloadMarker = "SSHM_PAIR_B64="
+	start := strings.Index(oneLiner, payloadMarker)
+	require.NotEqual(t, -1, start)
+	start += len(payloadMarker)
+	end := strings.Index(oneLiner[start:], ";") + start
+	require.Greater(t, end, start+8)
+	payload := oneLiner[start:end]
+	damageCases := map[string]func(string) string{
+		"middle deletion like the reported clipboard failure": func(value string) string {
+			middle := len(value) / 2
+			return value[:middle] + value[middle+2:]
+		},
+		"tail truncation": func(value string) string {
+			return value[:len(value)-2]
+		},
+		"extra trailing data": func(value string) string {
+			return value + "A"
+		},
+		"same-length replacement": func(value string) string {
+			middle := len(value) / 2
+			replacement := byte('A')
+			if value[middle] == replacement {
+				replacement = 'B'
+			}
+			return value[:middle] + string(replacement) + value[middle+1:]
+		},
+	}
+
+	for name, damage := range damageCases {
+		t.Run(name, func(t *testing.T) {
+			root := t.TempDir()
+			temporaryFiles := filepath.Join(root, "temporary-files")
+			require.NoError(t, os.Mkdir(temporaryFiles, 0o700))
+			marker := filepath.Join(root, "must-not-exist")
+			corrupted := oneLiner[:start] + damage(payload) + oneLiner[end:]
+
+			command := exec.Command("sh", "-c", corrupted)
+			command.Env = append(os.Environ(), "SSHM_TEST_MARKER="+marker, "TMPDIR="+temporaryFiles)
+			output, err := command.CombinedOutput()
+			require.Error(t, err)
+			require.Contains(t, string(output), "incomplete or corrupted")
+			require.NoFileExists(t, marker, "a damaged payload must never execute even partially")
+			entries, readErr := os.ReadDir(temporaryFiles)
+			require.NoError(t, readErr)
+			require.Empty(t, entries, "failure must not leave decoded payload files behind")
+		})
+	}
 }
 
 func TestBuildScripts_WindowsFallbackIsPinnedAndFailClosed(t *testing.T) {
@@ -187,5 +280,10 @@ func decodePOSIXScript(t *testing.T, oneLiner string) string {
 	require.Greater(t, end, start)
 	decoded, err := base64.StdEncoding.DecodeString(oneLiner[start:end])
 	require.NoError(t, err)
-	return string(decoded)
+	gzipReader, err := gzip.NewReader(bytes.NewReader(decoded))
+	require.NoError(t, err)
+	posixBytes, err := io.ReadAll(gzipReader)
+	require.NoError(t, err)
+	require.NoError(t, gzipReader.Close())
+	return string(posixBytes)
 }

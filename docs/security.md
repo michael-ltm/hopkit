@@ -13,6 +13,10 @@
   target command. The callback is accepted once, validates bounded fields, and
   a new alias is not persisted until a separate key-authenticated SSH session
   confirms `whoami` and `hostname`.
+- POSIX target commands use a compressed payload to stay below common console
+  and clipboard truncation limits. They decode to a private temporary file and
+  require successful gzip integrity and `sh -n` checks before execution, so a
+  damaged copy cannot run even partially.
 - Pairing auto-selects only loopback/private/Tailscale callback addresses;
   public and common TUN fake-IP routes, explicit public IP literals, and IPv6
   link-local addresses are rejected. Link-local IPv6 needs an interface zone

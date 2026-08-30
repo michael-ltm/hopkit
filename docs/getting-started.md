@@ -27,6 +27,13 @@ checks OpenSSH, installs/starts it if necessary, adds the generated public key,
 reports its actual username, and then the controller proves key authentication
 by running `whoami` and `hostname`. Only that verified result is saved.
 
+Paste the generated line exactly as printed; the Linux/macOS command invokes
+`sudo` itself only when a privileged step needs it. Its compressed payload is
+decoded into a private temporary file and must pass both gzip integrity and
+shell-syntax checks before any setup step runs. An incomplete clipboard copy
+therefore stops with a clear regeneration message instead of executing a
+partial script.
+
 Before any target command is printed, sshm also proves that the selected local
 private key can actually sign through the current keychain/ssh-agent. If an
 encrypted key is locked or the agent is unavailable, pairing stops locally and
@@ -205,6 +212,10 @@ records with no activity history to appear as candidates.
 - **Pairing stops before printing a target command** — start/unlock your
   keychain or ssh-agent and load the named key with `ssh-add`; sshm deliberately
   refuses to install a public key that it cannot use for the final login proof.
+- **`pairing command is incomplete or corrupted`** — discard that one-time
+  command and rerun pairing, then copy the complete newly generated line. If a
+  terminal or chat bridge still truncates long lines, use `--script-dir` and
+  transfer the protected command file instead of copying rendered output.
 - **Pair command times out** — leave the generated key in place, fix the
   controller callback/firewall route, then follow the printed retry guidance.
   For a not-yet-saved alias, rerun plain `sshm pair` and enter the same alias
