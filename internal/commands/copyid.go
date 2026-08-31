@@ -11,6 +11,24 @@ import (
 	"golang.org/x/term"
 )
 
+type copyIDSteps struct {
+	install func() error
+	verify  func() error
+}
+
+func runCopyID(steps copyIDSteps) error {
+	if err := steps.install(); err != nil {
+		return fmt.Errorf("install public key: %w", err)
+	}
+	if err := steps.verify(); err != nil {
+		return fmt.Errorf(
+			"public key was written, but the server did not accept key authentication: %w; check PubkeyAuthentication, AuthorizedKeysFile, and ~/.ssh permissions",
+			err,
+		)
+	}
+	return nil
+}
+
 func newCopyIDCmd() *cobra.Command {
 	return &cobra.Command{
 		Use:   "copy-id <alias>",
@@ -41,7 +59,20 @@ func newCopyIDCmd() *cobra.Command {
 			}()
 			// TODO(v0.3): expose a --timeout flag instead of unbounded context.
 			ctx := context.Background()
-			if err := keys.CopyID(ctx, s, string(pw), s.KeyPath, sshpkg.BuildOpts{Alias: args[0], ConfigPath: configPath()}); err != nil {
+			opts := sshpkg.BuildOpts{Alias: args[0], ConfigPath: configPath()}
+			err = runCopyID(copyIDSteps{
+				install: func() error {
+					return keys.CopyID(ctx, s, string(pw), s.KeyPath, opts)
+				},
+				verify: func() error {
+					cli, dialErr := sshpkg.Dial(s, opts)
+					if dialErr != nil {
+						return dialErr
+					}
+					return cli.Close()
+				},
+			})
+			if err != nil {
 				return err
 			}
 			if flagJSON {

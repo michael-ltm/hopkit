@@ -10,11 +10,13 @@ import (
 	"github.com/michael-ltm/sshm/internal/config"
 	sshpkg "github.com/michael-ltm/sshm/internal/ssh"
 	"github.com/spf13/cobra"
+	"golang.org/x/term"
 )
 
 func newExecCmd() *cobra.Command {
 	var timeoutSec int
 	var insecure bool
+	var askPassword bool
 	c := &cobra.Command{
 		Use:   "exec <alias> <command...>",
 		Short: "Run a command on a server",
@@ -51,16 +53,37 @@ shell or wrap in 'sh -c "..."', e.g.:
 				ctx, cancel = context.WithTimeout(ctx, time.Duration(timeoutSec)*time.Second)
 				defer cancel()
 			}
-			return execOnce(ctx, cmd, args[0], s, remoteCmd, insecure)
+			var password []byte
+			if s.Auth == config.AuthPassword {
+				if !askPassword {
+					return fmt.Errorf("auth=password requires --ask-password")
+				}
+				if !term.IsTerminal(int(os.Stdin.Fd())) {
+					return fmt.Errorf("--ask-password requires an interactive terminal; use key or agent auth for automation")
+				}
+				fmt.Fprintf(cmd.ErrOrStderr(), "Password for %s@%s: ", s.User, s.Host)
+				password, err = term.ReadPassword(int(os.Stdin.Fd()))
+				_, _ = fmt.Fprintln(cmd.ErrOrStderr())
+				if err != nil {
+					return err
+				}
+			}
+			defer func() {
+				for i := range password {
+					password[i] = 0
+				}
+			}()
+			return execOnce(ctx, cmd, args[0], s, remoteCmd, insecure, string(password))
 		},
 	}
 	c.Flags().IntVarP(&timeoutSec, "timeout", "t", 0, "timeout in seconds (0 = no timeout)")
 	c.Flags().BoolVar(&insecure, "insecure", false, "disable host-key verification (skip known_hosts check)")
+	c.Flags().BoolVar(&askPassword, "ask-password", false, "prompt for the password when the alias uses auth=password")
 	return c
 }
 
-func execOnce(ctx context.Context, cmd *cobra.Command, alias string, s *config.Server, remoteCmd string, insecure bool) error {
-	cli, err := sshpkg.Dial(s, sshpkg.BuildOpts{Insecure: insecure, Alias: alias, ConfigPath: configPath()})
+func execOnce(ctx context.Context, cmd *cobra.Command, alias string, s *config.Server, remoteCmd string, insecure bool, password string) error {
+	cli, err := sshpkg.Dial(s, sshpkg.BuildOpts{Password: password, Insecure: insecure, Alias: alias, ConfigPath: configPath()})
 	if err != nil {
 		return err
 	}

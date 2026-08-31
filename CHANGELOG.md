@@ -4,6 +4,13 @@ All notable changes to this project will be documented in this file. Format: [Ke
 
 ## [Unreleased]
 
+### Fixed
+
+- `copy-id` now reports success only after a real key-authenticated reconnect;
+  when the key is installed but rejected by sshd, it returns an actionable error.
+- `exec --ask-password` now securely prompts for password-auth aliases, matching
+  the CLI guidance instead of rejecting a flag that did not exist.
+
 ### Added
 - Plain `sshm pair` now opens a complete guided workflow for alias, address,
   port, Windows/Linux/macOS platform, description, tags, and group. `sshm add`

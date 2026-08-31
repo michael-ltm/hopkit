@@ -136,6 +136,7 @@ sshm add --quick prod-web \
 | One-off command | `sshm exec <alias> 'uptime'` |
 | Direct TCP reachability check | `sshm test <alias>` or `sshm test --all` |
 | Install your key on remote | `sshm copy-id <alias>` |
+| Run a command with a password-auth alias | `sshm exec <alias> --ask-password <command>` |
 | New key for one host | `sshm gen-key <alias>` |
 | Update a field | `sshm edit <alias> --set user=ubuntu` |
 | Add/update a description | `sshm edit <alias> --set description="Windows x64 reverse lab; CDB"` |

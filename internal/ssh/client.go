@@ -107,7 +107,7 @@ func buildAuth(s *config.Server, opts BuildOpts) ([]gssh.AuthMethod, io.Closer, 
 		return []gssh.AuthMethod{gssh.PublicKeys(key)}, closer, nil
 	case config.AuthPassword:
 		if opts.Password == "" {
-			return nil, nil, errors.New("password not provided for auth=password (use --ask-password or keychain)")
+			return nil, nil, errors.New("password not provided for auth=password")
 		}
 		return []gssh.AuthMethod{gssh.Password(opts.Password)}, nil, nil
 	case config.AuthAgent:

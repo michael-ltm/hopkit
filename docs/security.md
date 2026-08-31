@@ -2,8 +2,9 @@
 
 ## Credential handling
 
-- Passwords are never written to `config.toml`. `copy-id` reads a password
-  from the TTY for a single operation and zeroes the buffer afterward.
+- Passwords are never written to `config.toml`. `copy-id` and
+  `exec --ask-password` read a password from the TTY for a single operation
+  and zero the input buffer afterward.
 - Private keys are never read except when about to be used, never logged,
   and never returned through the MCP server. Generated private keys and
   passphrase-recovery files use `0600` on POSIX and a protected DACL granting
