@@ -19,9 +19,11 @@ type Scripts struct {
 // target scripts. No external bootstrap script is downloaded.
 func BuildScripts(publicKey, callbackURL string, port int) (Scripts, error) {
 	publicKey = strings.TrimSpace(publicKey)
-	if !strings.HasPrefix(publicKey, "ssh-") || strings.ContainsAny(publicKey, "\r\n") {
+	publicKeyFields := strings.Fields(publicKey)
+	if len(publicKeyFields) < 2 || !strings.HasPrefix(publicKeyFields[0], "ssh-") || strings.ContainsAny(publicKey, "\r\n") {
 		return Scripts{}, fmt.Errorf("public key must be one OpenSSH line")
 	}
+	publicKey = strings.Join(publicKeyFields[:2], " ")
 	if !strings.HasPrefix(callbackURL, "http://") || strings.ContainsAny(callbackURL, "\r\n'") {
 		return Scripts{}, fmt.Errorf("callback URL is invalid")
 	}
@@ -31,8 +33,6 @@ func BuildScripts(publicKey, callbackURL string, port int) (Scripts, error) {
 
 	pub64 := base64.StdEncoding.EncodeToString([]byte(publicKey))
 	winScript := strings.NewReplacer(
-		"__PUBLIC_KEY_B64__", pub64,
-		"__CALLBACK_URL__", callbackURL,
 		"__SSH_PORT__", fmt.Sprintf("%d", port),
 	).Replace(windowsScript)
 	posixScript := strings.NewReplacer(
@@ -50,7 +50,7 @@ func BuildScripts(publicKey, callbackURL string, port int) (Scripts, error) {
 		return Scripts{}, err
 	}
 	return Scripts{
-		Windows: "$d='" + compressedWindows + "';$m=New-Object IO.MemoryStream(,[Convert]::FromBase64String($d));$g=New-Object IO.Compression.GzipStream($m,[IO.Compression.CompressionMode]::Decompress);$r=New-Object IO.StreamReader($g);$s=$r.ReadToEnd();$r.Dispose();$g.Dispose();$m.Dispose();&([ScriptBlock]::Create($s))",
+		Windows: "$u='" + callbackURL + "';$k='" + pub64 + "';$d='" + compressedWindows + "';$m=[IO.MemoryStream]::new([Convert]::FromBase64String($d));$g=[IO.Compression.GzipStream]::new($m,[IO.Compression.CompressionMode]0);$r=[IO.StreamReader]::new($g);&([ScriptBlock]::Create($r.ReadToEnd()))",
 		POSIX:   posixOneLiner,
 	}, nil
 }
@@ -90,8 +90,8 @@ func gzipBase64(script string) (string, error) {
 }
 
 const windowsScript = `$ErrorActionPreference='Stop'
-$pairUrl='__CALLBACK_URL__'
-$publicKey=[Text.Encoding]::UTF8.GetString([Convert]::FromBase64String('__PUBLIC_KEY_B64__')).Trim()
+$pairUrl=$u
+$publicKey=[Text.Encoding]::UTF8.GetString([Convert]::FromBase64String($k)).Trim()
 $sshPort=__SSH_PORT__
 $identity=[Security.Principal.WindowsIdentity]::GetCurrent()
 $identityName=$identity.Name
@@ -105,27 +105,27 @@ if(-not $principal.IsInRole([Security.Principal.WindowsBuiltInRole]::Administrat
 function Get-SshdService { Get-Service -Name sshd -ErrorAction SilentlyContinue }
 function Test-OpenSSHArchive([string]$path){return (Test-Path -LiteralPath $path -PathType Leaf) -and ((Get-Item -LiteralPath $path).Length -gt 1000000)}
 function Download-OpenSSH([string]$url,[string]$out){
-  $failures=New-Object 'System.Collections.Generic.List[string]'
+  $last=''
   for($attempt=1;$attempt -le 3;$attempt++){
     Remove-Item -LiteralPath $out -Force -ErrorAction SilentlyContinue
     try {Invoke-WebRequest -UseBasicParsing -Uri $url -OutFile $out -TimeoutSec 90;if(Test-OpenSSHArchive $out){return};throw 'downloaded file is unexpectedly small'}
-    catch {$failures.Add("IWR attempt ${attempt}: $($_.Exception.Message)");if($attempt -lt 3){Start-Sleep -Seconds (2*$attempt)}}
+    catch {$last=$_.Exception.Message;if($attempt -lt 3){Start-Sleep -Seconds (2*$attempt)}}
   }
   if(Get-Command curl.exe -ErrorAction SilentlyContinue){
     for($attempt=1;$attempt -le 3;$attempt++){
       Remove-Item -LiteralPath $out -Force -ErrorAction SilentlyContinue
       try {$curlArgs=@('--fail','--location','--silent','--show-error','--retry','2','--connect-timeout','15','--max-time','120');if($attempt -eq 2){$curlArgs+=@('--noproxy','*')};$curlArgs+=@($url,'-o',$out);& curl.exe @curlArgs;if($LASTEXITCODE -ne 0){throw "curl exit $LASTEXITCODE"};if(Test-OpenSSHArchive $out){return};throw 'downloaded file is unexpectedly small'}
-      catch {$failures.Add("curl attempt ${attempt}: $($_.Exception.Message)");if($attempt -lt 3){Start-Sleep -Seconds (2*$attempt)}}
+      catch {$last=$_.Exception.Message;if($attempt -lt 3){Start-Sleep -Seconds (2*$attempt)}}
     }
   }
   if(Get-Command Start-BitsTransfer -ErrorAction SilentlyContinue){
     for($attempt=1;$attempt -le 3;$attempt++){
       Remove-Item -LiteralPath $out -Force -ErrorAction SilentlyContinue
       try {$bitsArgs=@{Source=$url;Destination=$out;RetryInterval=60;RetryTimeout=120;ErrorAction='Stop'};if((Get-Command Start-BitsTransfer).Parameters.ContainsKey('MaxDownloadTime')){$bitsArgs['MaxDownloadTime']=180};Start-BitsTransfer @bitsArgs;if(Test-OpenSSHArchive $out){return};throw 'downloaded file is unexpectedly small'}
-      catch {$failures.Add("BITS attempt ${attempt}: $($_.Exception.Message)");if($attempt -lt 3){Start-Sleep -Seconds (2*$attempt)}}
+      catch {$last=$_.Exception.Message;if($attempt -lt 3){Start-Sleep -Seconds (2*$attempt)}}
     }
   }
-  throw "Pinned OpenSSH download failed through Invoke-WebRequest, curl, and BITS. Set SSHM_OPENSSH_ZIP to the matching official ZIP for an offline retry. $($failures -join '; ')"
+  throw "Pinned OpenSSH download failed through Invoke-WebRequest, curl, and BITS. Set SSHM_OPENSSH_ZIP to the matching official ZIP for an offline retry. Last error: $last"
 }
 $openSshVersion='10.0.0.0p2-Preview'
 $openSshSha256=@{
@@ -136,8 +136,9 @@ $openSshSha256=@{
 $serviceWasPresent=[bool](Get-SshdService)
 $offlineZip=[string]$env:SSHM_OPENSSH_ZIP
 if(-not $serviceWasPresent -and [string]::IsNullOrWhiteSpace($offlineZip)){
-  try {Add-WindowsCapability -Online -Name OpenSSH.Server~~~~0.0.1.0 -ErrorAction Stop|Out-Null}
+  try {$cap=Add-WindowsCapability -Online -Name OpenSSH.Server~~~~0.0.1.0 -ErrorAction Stop}
   catch {Write-Warning "Windows Capability install failed: $($_.Exception.Message)"}
+  if($cap.RestartNeeded){throw 'OpenSSH Server installation requires a Windows restart. Restart Windows, create a new SSHM pair session, and run its new command.'}
 } elseif(-not $serviceWasPresent) {
   Write-Host 'SSHM_OPENSSH_ZIP is set; skipping the online Windows Capability attempt.'
 }
@@ -171,16 +172,8 @@ $service=Get-SshdService;if(-not $service){throw 'OpenSSH Server installation di
 $freshInstall=-not $serviceWasPresent
 $sshdServiceImagePath=(Get-ItemProperty -LiteralPath 'HKLM:\SYSTEM\CurrentControlSet\Services\sshd' -Name ImagePath -ErrorAction SilentlyContinue).ImagePath
 $sshdServiceImagePath=[Environment]::ExpandEnvironmentVariables([string]$sshdServiceImagePath)
-function Get-SshdExecutable {
-  $imagePath=$sshdServiceImagePath
-  if($imagePath -match '^\s*"([^"]+sshd\.exe)"'){if(Test-Path -LiteralPath $Matches[1] -PathType Leaf){return $Matches[1]}}
-  if($imagePath -match '^\s*(.+?sshd\.exe)(?:\s|$)'){if(Test-Path -LiteralPath $Matches[1] -PathType Leaf){return $Matches[1]}}
-  $candidates=@((Join-Path $env:WINDIR 'System32\OpenSSH\sshd.exe'),(Join-Path $env:ProgramFiles 'OpenSSH\sshd.exe'),(Join-Path $env:ProgramFiles 'OpenSSH-sshm\sshd.exe'))
-  foreach($candidate in $candidates){if(Test-Path -LiteralPath $candidate -PathType Leaf){return $candidate}}
-  $command=Get-Command sshd.exe -ErrorAction SilentlyContinue;if($command -and (Test-Path -LiteralPath $command.Source -PathType Leaf)){return $command.Source}
-  throw 'sshd service exists, but sshd.exe could not be located for configuration validation'
-}
-$sshdExe=Get-SshdExecutable
+if($sshdServiceImagePath -match '^\s*"([^"]+sshd\.exe)"(?:\s|$)'){$sshdExe=$Matches[1]}elseif($sshdServiceImagePath -match '^\s*(.+?sshd\.exe)(?:\s|$)'){$sshdExe=$Matches[1]}else{throw 'sshd service ImagePath could not be parsed'}
+if(-not (Test-Path -LiteralPath $sshdExe -PathType Leaf)){throw "sshd service ImagePath points to a missing executable: $sshdExe"}
 Set-Service -Name sshd -StartupType Automatic
 $programDataSsh=Join-Path $env:ProgramData 'ssh';New-Item -ItemType Directory -Path $programDataSsh -Force|Out-Null
 $sshKeygen=Join-Path (Split-Path -Parent $sshdExe) 'ssh-keygen.exe'
@@ -200,6 +193,26 @@ $effectiveOutput=& $sshdExe -T @configArgs 2>&1;$effectiveCode=$LASTEXITCODE
 if($effectiveCode -ne 0){throw "sshd effective-configuration check failed: $($effectiveOutput -join ' ')"}
 $effectivePorts=@($effectiveOutput|ForEach-Object{if([string]$_ -match '^\s*port\s+(\d+)\s*$'){[int]$Matches[1]}})
 if($effectivePorts -notcontains $sshPort){$installKind=if($freshInstall){'Newly installed'}else{'Existing'};throw "$installKind sshd effective configuration does not include requested port $sshPort (found: $($effectivePorts -join ',')). Configure Port $sshPort, validate with sshd -t, then rerun this command."}
+function Test-SshdListening([int]$port){if(Get-Command Get-NetTCPConnection -ErrorAction SilentlyContinue){$listener=Get-NetTCPConnection -State Listen -LocalPort $port -ErrorAction SilentlyContinue|Select-Object -First 1;return [bool]$listener};$pattern='^\s*TCP\s+\S+[:.]'+[regex]::Escape([string]$port)+'\s+\S+\s+LISTENING';$listener=& netstat.exe -ano -p tcp 2>$null|Select-String -Pattern $pattern|Select-Object -First 1;return [bool]$listener}
+function Repair-SshdPermissions {
+  $script:aclBackup=Join-Path $env:TEMP ('sshm-sshd-acl-'+(Get-Date -Format yyyyMMdd-HHmmss)+'.txt')
+  & icacls.exe $programDataSsh /save $script:aclBackup /t /c|Out-Null;if($LASTEXITCODE -gt 1){throw "ACL backup failed: $script:aclBackup"}
+  function I{& icacls.exe @args|Out-Null;if($LASTEXITCODE -ne 0){throw "icacls failed: $($args -join ' ')"}}
+  I $programDataSsh /reset;I $programDataSsh /inheritance:r /grant:r '*S-1-5-18:(OI)(CI)F' '*S-1-5-32-544:(OI)(CI)F' '*S-1-5-11:(OI)(CI)RX';I $programDataSsh /setowner '*S-1-5-32-544'
+  $logs=Join-Path $programDataSsh 'logs';New-Item -ItemType Directory -Path $logs -Force|Out-Null;I $logs /reset;I $logs /inheritance:r /grant:r '*S-1-5-18:(OI)(CI)F' '*S-1-5-32-544:(OI)(CI)F';I $logs /setowner '*S-1-5-32-544'
+  $fix=Join-Path (Split-Path -Parent $sshdExe) 'FixHostFilePermissions.ps1'
+  if(Test-Path -LiteralPath $fix -PathType Leaf){Set-ExecutionPolicy -Scope Process Bypass -Force;& $fix -Confirm:$false}else{if(Test-Path -LiteralPath $sshdConfig -PathType Leaf){I $sshdConfig /reset;I $sshdConfig /setowner '*S-1-5-32-544'};Get-ChildItem -LiteralPath $programDataSsh -Filter 'ssh_host_*_key' -File -ErrorAction SilentlyContinue|ForEach-Object{I $_.FullName /reset;I $_.FullName /inheritance:r /grant:r '*S-1-5-18:F' '*S-1-5-32-544:F';I $_.FullName /setowner '*S-1-5-18'}}
+}
+function Fail-Sshd([string]$why){
+  $w=Get-CimInstance Win32_Service -Filter "Name='sshd'" -ErrorAction SilentlyContinue
+  $c=@($sshdExe,(Join-Path (Split-Path -Parent $sshdExe) 'ssh.exe'),(Join-Path (Split-Path -Parent $sshdExe) 'libcrypto.dll'),(Join-Path $env:WINDIR 'System32\libcrypto.dll'))|Select-Object -Unique|ForEach-Object{if(Test-Path -LiteralPath $_ -PathType Leaf){"$_=$((Get-Item -LiteralPath $_).VersionInfo.FileVersion)"}}
+  $e=@(Get-WinEvent -LogName 'OpenSSH/Operational' -MaxEvents 2 -ErrorAction SilentlyContinue;Get-WinEvent -FilterHashtable @{LogName='System';ProviderName='Service Control Manager';StartTime=(Get-Date).AddMinutes(-10)} -ErrorAction SilentlyContinue|Where-Object Message -Match 'sshd|OpenSSH'|Select-Object -First 2)|ForEach-Object{"#$($_.Id) $(([string]$_.Message)-replace '[\r\n]+',' ')"}
+  throw "$why; State=$($w.State); ExitCode=$($w.ExitCode); ServiceSpecificExitCode=$($w.ServiceSpecificExitCode); Components=$($c -join ','); events=$($e -join '|'); ACL backup=$script:aclBackup. Check OpenSSH component mismatch; never copy libcrypto.dll."
+}
+$service=Get-SshdService;$serviceWasRunning=$service.Status -eq 'Running'
+if(-not $serviceWasRunning){Repair-SshdPermissions;if(Test-SshdListening $sshPort){Fail-Sshd "TCP port $sshPort was already occupied before sshd started"};try{Start-Service sshd -ErrorAction Stop}catch{Fail-Sshd "Failed to start sshd: $($_.Exception.Message)"}}
+$listening=$false;for($attempt=1;$attempt -le 15 -and -not $listening;$attempt++){$listening=Test-SshdListening $sshPort;if(-not $listening){Start-Sleep -Seconds 1}}
+if(-not $listening){Fail-Sshd "sshd did not listen on TCP port $sshPort"}
 $userSsh=Join-Path $env:USERPROFILE '.ssh';New-Item -ItemType Directory -Path $userSsh -Force|Out-Null
 $userKeys=Join-Path $userSsh 'authorized_keys';$adminKeys=Join-Path $programDataSsh 'administrators_authorized_keys'
 function Add-PublicKey([string]$path){$existing=if(Test-Path $path){Get-Content -LiteralPath $path -ErrorAction Stop}else{@()};if($existing -notcontains $publicKey){Add-Content -LiteralPath $path -Value $publicKey -Encoding ascii};if(-not (Test-Path $path)){throw "Failed to create $path"}}
@@ -214,11 +227,6 @@ if($LASTEXITCODE -ne 0){throw 'Failed to secure administrators_authorized_keys A
 $firewallRule="SSHM-OpenSSH-In-TCP-$sshPort";$firewallDisplay="SSHM OpenSSH Server (TCP $sshPort)"
 if(Get-Command Get-NetFirewallRule -ErrorAction SilentlyContinue){Get-NetFirewallRule -Name $firewallRule -ErrorAction SilentlyContinue|Remove-NetFirewallRule -ErrorAction SilentlyContinue;New-NetFirewallRule -Name $firewallRule -DisplayName $firewallDisplay -Enabled True -Direction Inbound -Protocol TCP -Action Allow -LocalPort $sshPort|Out-Null}
 else {$netshName="name=$firewallDisplay";& netsh.exe advfirewall firewall delete rule $netshName dir=in protocol=TCP localport=$sshPort|Out-Null;& netsh.exe advfirewall firewall add rule $netshName dir=in action=allow protocol=TCP localport=$sshPort|Out-Null;if($LASTEXITCODE -ne 0){throw "Failed to open Windows Firewall TCP port $sshPort"}}
-Restart-Service sshd
-if((Get-Service sshd).Status -ne 'Running'){throw 'sshd is not running'}
-function Test-SshdListening([int]$port){if(Get-Command Get-NetTCPConnection -ErrorAction SilentlyContinue){$listener=Get-NetTCPConnection -State Listen -LocalPort $port -ErrorAction SilentlyContinue|Select-Object -First 1;return [bool]$listener};$pattern='^\s*TCP\s+\S+[:.]'+[regex]::Escape([string]$port)+'\s+\S+\s+LISTENING';$listener=& netstat.exe -ano -p tcp 2>$null|Select-String -Pattern $pattern|Select-Object -First 1;return [bool]$listener}
-$listening=$false;for($attempt=1;$attempt -le 15 -and -not $listening;$attempt++){$listening=Test-SshdListening $sshPort;if(-not $listening){Start-Sleep -Seconds 1}}
-if(-not $listening){throw "sshd is running but TCP port $sshPort is not listening"}
 $form=New-Object 'System.Collections.Generic.Dictionary[string,string]';$form['user']=$reportedUser;$form['hostname']=$env:COMPUTERNAME;$form['platform']='windows'
 $handler=New-Object Net.Http.HttpClientHandler;$handler.UseProxy=$false;$client=New-Object Net.Http.HttpClient($handler);$client.Timeout=[TimeSpan]::FromSeconds(15)
 try {$sent=$false;for($attempt=1;$attempt -le 3 -and -not $sent;$attempt++){$content=New-Object Net.Http.FormUrlEncodedContent($form);$response=$null;try{$response=$client.PostAsync($pairUrl,$content).GetAwaiter().GetResult();if($response.IsSuccessStatusCode){$sent=$true}else{throw "HTTP $([int]$response.StatusCode)"}}catch{if($attempt -eq 3){throw "Pair callback failed: $_"};Start-Sleep -Seconds (2*$attempt)}finally{if($response){$response.Dispose()};$content.Dispose()}};$content=New-Object Net.Http.FormUrlEncodedContent($form);$response=$null;try{$response=$client.PostAsync($pairUrl,$content).GetAwaiter().GetResult();if(-not $response.IsSuccessStatusCode){Write-Warning "Pair callback confirmation returned HTTP $([int]$response.StatusCode)"}}catch{Write-Warning "Pair callback confirmation was not received: $($_.Exception.Message)"}finally{if($response){$response.Dispose()};$content.Dispose()}} finally {$client.Dispose();$handler.Dispose()}

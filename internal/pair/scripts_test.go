@@ -32,6 +32,9 @@ func TestBuildScripts_AreSingleLineAndSelfContained(t *testing.T) {
 	windows := decodeWindowsScript(t, scripts.Windows)
 	require.Contains(t, windows, "Add-WindowsCapability")
 	require.Contains(t, windows, "Get-AuthenticodeSignature")
+	require.Contains(t, windows, "$cap=Add-WindowsCapability")
+	require.Contains(t, windows, "if($cap.RestartNeeded)")
+	require.Contains(t, windows, "requires a Windows restart")
 	require.Contains(t, windows, "administrators_authorized_keys")
 	require.Contains(t, windows, `"*${sid}:F"`)
 	require.Contains(t, windows, "UseProxy=$false")
@@ -56,6 +59,14 @@ func TestBuildScripts_AreSingleLineAndSelfContained(t *testing.T) {
 		output, checkErr := command.CombinedOutput()
 		require.NoErrorf(t, checkErr, "shellcheck rejected the copy-paste wrapper: %s", output)
 	}
+}
+
+func TestBuildScripts_StripsPublicKeyCommentsFromPayload(t *testing.T) {
+	first, err := BuildScripts("ssh-ed25519 AAAATEST a-very-long-alias@sshm-pair", "http://100.64.0.1:4567/v1/pair/token", 22)
+	require.NoError(t, err)
+	second, err := BuildScripts("ssh-ed25519 AAAATEST another-comment", "http://100.64.0.1:4567/v1/pair/token", 22)
+	require.NoError(t, err)
+	require.Equal(t, first, second, "public-key comments are not authentication material and must not inflate one-liners")
 }
 
 func TestBuildPOSIXOneLiner_ExecutesOnlyAfterIntegrityAndSyntaxChecks(t *testing.T) {
@@ -159,9 +170,7 @@ func TestBuildScripts_WindowsFallbackIsPinnedAndFailClosed(t *testing.T) {
 	require.Contains(t, windows, "RetryInterval=60;RetryTimeout=120")
 	require.Contains(t, windows, "Parameters.ContainsKey('MaxDownloadTime')")
 	require.Contains(t, windows, "$bitsArgs['MaxDownloadTime']=180")
-	require.Contains(t, windows, "IWR attempt ${attempt}:")
-	require.Contains(t, windows, "curl attempt ${attempt}:")
-	require.Contains(t, windows, "BITS attempt ${attempt}:")
+	require.Contains(t, windows, "Last error: $last")
 	require.Contains(t, windows, "$client.Timeout=[TimeSpan]::FromSeconds(15)")
 	require.Contains(t, windows, "Pair callback confirmation")
 	require.NotContains(t, windows, "attempt $attempt:")
@@ -187,34 +196,87 @@ func TestBuildScripts_ValidatesWindowsIdentityAndRequestedPort(t *testing.T) {
 	require.Contains(t, windows, "Service/system identity")
 	require.NotContains(t, windows, "$form['user']=$env:USERNAME")
 	imagePathIndex := strings.Index(windows, "Services\\sshd' -Name ImagePath")
-	candidatesIndex := strings.Index(windows, "$candidates=@(")
+	parsedPathIndex := strings.Index(windows, "sshd service ImagePath could not be parsed")
 	require.NotEqual(t, -1, imagePathIndex)
-	require.NotEqual(t, -1, candidatesIndex)
-	require.Less(t, imagePathIndex, candidatesIndex, "the service ImagePath must win over common-path guesses")
+	require.NotEqual(t, -1, parsedPathIndex)
+	require.Less(t, imagePathIndex, parsedPathIndex, "the service ImagePath must be read before it is parsed")
 	require.Contains(t, windows, "$sshdServiceImagePath -match '(?:^|\\s)-f\\s+")
 	require.Contains(t, windows, "$sshdConfig=$serviceConfig")
 	require.Contains(t, windows, "$sshdExe -t -f $candidate")
 	require.Contains(t, windows, "$sshdExe -t @configArgs")
 	require.Contains(t, windows, "$sshdExe -T @configArgs")
+	require.Contains(t, windows, "sshd service ImagePath could not be parsed")
+	require.Contains(t, windows, "sshd service ImagePath points to a missing executable")
+	require.NotContains(t, windows, "$candidates=@(")
 	require.Contains(t, windows, `SSHM-OpenSSH-In-TCP-$sshPort`)
 	require.Contains(t, windows, "Get-NetTCPConnection -State Listen -LocalPort $port")
 }
 
+func TestBuildScripts_WindowsServiceStartIsStateAwareAndRepairable(t *testing.T) {
+	scripts, err := BuildScripts("ssh-ed25519 AAAATEST pair@host", "http://100.64.0.1:4567/v1/pair/token", 22)
+	require.NoError(t, err)
+	windows := decodeWindowsScript(t, scripts.Windows)
+
+	require.NotContains(t, windows, "Restart-Service sshd")
+	require.Contains(t, windows, "$serviceWasRunning=$service.Status -eq 'Running'")
+	require.Contains(t, windows, "if(-not $serviceWasRunning){")
+	require.Contains(t, windows, "Repair-SshdPermissions")
+	require.Contains(t, windows, "FixHostFilePermissions.ps1")
+	require.Contains(t, windows, "& $fix -Confirm:$false")
+	require.Contains(t, windows, "Start-Service sshd -ErrorAction Stop")
+	require.Contains(t, windows, "ServiceSpecificExitCode")
+	require.Contains(t, windows, "OpenSSH/Operational")
+	require.Contains(t, windows, "Service Control Manager")
+	require.Contains(t, windows, "libcrypto.dll")
+	require.Contains(t, windows, "System32\\libcrypto.dll")
+	require.Contains(t, windows, "*S-1-5-18:(OI)(CI)F")
+	require.Contains(t, windows, "*S-1-5-32-544:(OI)(CI)F")
+	require.Contains(t, windows, "*S-1-5-11:(OI)(CI)RX")
+	require.Contains(t, windows, "ssh_host_*_key")
+
+	startIndex := strings.Index(windows, "Start-Service sshd -ErrorAction Stop")
+	repairIndex := strings.Index(windows, "Repair-SshdPermissions")
+	userDirIndex := strings.LastIndex(windows, "New-Item -ItemType Directory -Path $userSsh")
+	keyIndex := strings.Index(windows, "Add-PublicKey $userKeys")
+	firewallIndex := strings.Index(windows, "$firewallRule=")
+	listenerIndex := strings.Index(windows, "if(-not $listening)")
+	require.NotEqual(t, -1, startIndex)
+	require.NotEqual(t, -1, repairIndex)
+	require.NotEqual(t, -1, userDirIndex)
+	require.NotEqual(t, -1, keyIndex)
+	require.NotEqual(t, -1, firewallIndex)
+	require.NotEqual(t, -1, listenerIndex)
+	require.Less(t, startIndex, listenerIndex)
+	require.Less(t, repairIndex, startIndex)
+	require.Less(t, listenerIndex, userDirIndex, "the user key directory must not be mutated until sshd is listening")
+	require.Less(t, listenerIndex, keyIndex, "the key must not be installed until sshd is running and listening")
+	require.Less(t, keyIndex, firewallIndex, "the firewall rule is the final local mutation before callback")
+}
+
 func TestBuildScripts_WindowsSyntaxWhenPowerShellIsAvailable(t *testing.T) {
-	shell, err := exec.LookPath("pwsh")
-	if err != nil {
-		shell, err = exec.LookPath("powershell.exe")
+	shells := make([]string, 0, 2)
+	seen := map[string]bool{}
+	for _, name := range []string{"powershell.exe", "pwsh"} {
+		shell, err := exec.LookPath(name)
+		if err == nil && !seen[shell] {
+			shells = append(shells, shell)
+			seen[shell] = true
+		}
 	}
-	if err != nil {
+	if len(shells) == 0 {
 		t.Skip("PowerShell is not installed on this test host")
 	}
 	scripts, err := BuildScripts("ssh-ed25519 AAAATEST pair@host", "http://100.64.0.1:4567/v1/pair/token", 22022)
 	require.NoError(t, err)
 	windows := decodeWindowsScript(t, scripts.Windows)
-	command := exec.Command(shell, "-NoProfile", "-NonInteractive", "-Command", "$source=[Console]::In.ReadToEnd();[void][ScriptBlock]::Create($source)")
-	command.Stdin = strings.NewReader(windows)
-	output, err := command.CombinedOutput()
-	require.NoErrorf(t, err, "PowerShell parser rejected generated script: %s", output)
+	for _, shell := range shells {
+		t.Run(filepath.Base(shell), func(t *testing.T) {
+			command := exec.Command(shell, "-NoProfile", "-NonInteractive", "-Command", "$source=[Console]::In.ReadToEnd();[void][ScriptBlock]::Create($source)")
+			command.Stdin = strings.NewReader(windows)
+			output, err := command.CombinedOutput()
+			require.NoErrorf(t, err, "%s parser rejected generated script: %s", shell, output)
+		})
+	}
 }
 
 func TestBuildScripts_POSIXHasPortAndCallbackFallbacks(t *testing.T) {
@@ -256,8 +318,10 @@ func TestBuildScripts_RejectsInvalidInputs(t *testing.T) {
 
 func decodeWindowsScript(t *testing.T, oneLiner string) string {
 	t.Helper()
-	start := strings.Index(oneLiner, "'") + 1
-	require.Positive(t, start)
+	const marker = "$d='"
+	start := strings.Index(oneLiner, marker)
+	require.NotEqual(t, -1, start)
+	start += len(marker)
 	end := strings.Index(oneLiner[start:], "'") + start
 	require.Greater(t, end, start)
 	decoded, err := base64.StdEncoding.DecodeString(oneLiner[start:end])

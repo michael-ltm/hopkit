@@ -150,11 +150,14 @@ func TestWritePairCommandFiles_WritesPrivateSingleLineFiles(t *testing.T) {
 	dir := filepath.Join(t.TempDir(), "commands")
 	scripts, err := pair.BuildScripts(
 		"ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIK7m3yZ9Qf0xV8u2nR4sP6cD1bH5jL7eT9wA2gM4 pair@host",
-		"http://100.64.0.1:4567/v1/pair/9f1b7c3d5e8a2046",
+		"http://[ffff:ffff:ffff:ffff:ffff:ffff:ffff:ffff]:65535/v1/pair/9f1b7c3d5e8a2046Qx7_pL2zN8vR4mT6wY0kC5hZ7Qa",
 		22,
 	)
 	require.NoError(t, err)
 	t.Logf("realistic generated command bytes: Windows=%d POSIX=%d", len(scripts.Windows), len(scripts.POSIX))
+	require.Less(t, len(scripts.Windows), maxPrintedPairCommandBytes+1, "a realistic Windows command must remain printable without truncation")
+	require.Less(t, len(scripts.POSIX), maxPrintedPairCommandBytes+1, "a realistic POSIX command must remain printable without truncation")
+	require.Less(t, len(scripts.Windows), 8150, "keep headroom after a maximum-length IPv6 callback below the Windows console ceiling")
 	paths, err := writePairCommandFiles(dir, "demo", "all", scripts)
 	require.NoError(t, err)
 	require.Len(t, paths, 2)
