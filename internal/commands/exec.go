@@ -17,6 +17,7 @@ func newExecCmd() *cobra.Command {
 	var timeoutSec int
 	var insecure bool
 	var askPassword bool
+	var rawEnvironment bool
 	c := &cobra.Command{
 		Use:   "exec <alias> <command...>",
 		Short: "Run a command on a server",
@@ -47,6 +48,9 @@ shell or wrap in 'sh -c "..."', e.g.:
 				return err
 			}
 			if s.CloudEntry != "" {
+				if rawEnvironment {
+					return fmt.Errorf("--raw-environment is only supported for direct SSH connections")
+				}
 				return runCloudReference(cmd, s, append([]string{s.CloudEntry}, args[1:]...), true, timeoutSec)
 			}
 			remoteCmd := strings.Join(args[1:], " ")
@@ -76,21 +80,28 @@ shell or wrap in 'sh -c "..."', e.g.:
 					password[i] = 0
 				}
 			}()
-			return execOnce(ctx, cmd, args[0], s, remoteCmd, insecure, string(password))
+			return execOnce(ctx, cmd, args[0], s, remoteCmd, insecure, string(password), rawEnvironment)
 		},
 	}
 	c.Flags().IntVarP(&timeoutSec, "timeout", "t", 0, "timeout in seconds (0 = no timeout)")
 	c.Flags().BoolVar(&insecure, "insecure", false, "disable host-key verification (skip known_hosts check)")
+	c.Flags().BoolVar(&rawEnvironment, "raw-environment", false, "retain exact sshd environment without login profiles or PATH additions")
 	c.Flags().BoolVar(&askPassword, "ask-password", false, "prompt for the password when the alias uses auth=password")
 	return c
 }
 
-func execOnce(ctx context.Context, cmd *cobra.Command, alias string, s *config.Server, remoteCmd string, insecure bool, password string) error {
+func execOnce(ctx context.Context, cmd *cobra.Command, alias string, s *config.Server, remoteCmd string, insecure bool, password string, rawEnvironment bool) error {
 	cli, err := sshpkg.Dial(s, sshpkg.BuildOpts{Password: password, Insecure: insecure, Alias: alias, ConfigPath: configPath()})
 	if err != nil {
 		return err
 	}
 	defer cli.Close()
+	if !rawEnvironment {
+		remoteCmd, err = cli.PrepareUserCommand(ctx, remoteCmd)
+		if err != nil {
+			return err
+		}
+	}
 	if flagJSON {
 		res, err := cli.Exec(ctx, remoteCmd)
 		if err != nil {

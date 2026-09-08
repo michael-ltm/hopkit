@@ -31,6 +31,10 @@ Release scripts: `scripts/build-cloud-clients.py`, `scripts/sign-cloud-release/`
 - A previous old MCP process dropped unknown cloud binding fields while writing activity. Compatibility sidecars and authenticated sync recovery were implemented in `.27–.29`. The user's local binding recovery still requires an unlocked sync unless verified separately; do not guess identities or report it completed from this document.
 - Plugin-managed Codex / Claude skills are preserved by the updater; update their owning plugin through its supported mechanism. Never silently rewrite plugin caches.
 
+## Execution environment
+
+See `docs/execution-environment.md` for login-shell/PATH handling and `sshm doctor` / MCP `check_environment`. Missing CLI discovery or unavailable credentials in an SSH session must never be described as proof that the desktop user has not logged in.
+
 ## Safe continuation
 
 Use a fresh installed MCP process for real SSHM operations and check its runtime version. Preserve known-host verification and credentials. Never include local config, account tokens, vault phrases, API keys, recovery material or signing private keys in commits, logs or handoff documents. Keep test evidence explicit: local unit tests, simulated services, and real targets are different.

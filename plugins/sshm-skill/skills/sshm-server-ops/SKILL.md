@@ -15,6 +15,10 @@ and host-key verification.
   readiness; `test_connection` proves TCP only.
 - Named project: call `get_project` directly; `list_projects` only discovers
   names or resolves initial ambiguity. Confirm changes before `upsert_project`.
+- Environment: `check_environment` checks local/remote CLI paths and GitHub access.
+  A missing executable or unavailable SSH-session credential does not prove the
+  desktop user is logged out. Check OS user, PATH, keychain/session and network;
+  do not tell users to log in again from an exit code alone. Never print tokens.
 - Commands: `exec_project` for profiles; `exec` / `exec_multi` otherwise.
 - Files: `upload` / `download`; large transfers use
   `transfer_start` / `transfer_status`. Other operations: `tail_logs`,

@@ -13,7 +13,7 @@ func TestNewServer_RegistersExpectedTools(t *testing.T) {
 	for _, want := range []string{
 		"list_servers", "find_servers", "get_server", "test_connection", "check_ssh", "get_status", "list_projects", "get_project",
 		"add_server", "edit_server", "remove_server", "upsert_project",
-		"exec", "exec_multi", "exec_project",
+		"check_environment", "exec", "exec_multi", "exec_project",
 		"bootstrap", "gen_key", "copy_id", "tail_logs",
 		"upload", "download", "transfer_start", "transfer_status",
 	} {

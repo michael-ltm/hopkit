@@ -30,7 +30,7 @@ const execMultiConcurrency = 8
 var (
 	dialExecRemote       = sshpkg.Dial
 	runExecRemoteCommand = func(ctx context.Context, cli *sshpkg.Client, command string) (*sshpkg.ExecResult, error) {
-		return cli.Exec(ctx, command)
+		return cli.ExecUser(ctx, command)
 	}
 )
 
@@ -84,6 +84,9 @@ func handleExec(ctx context.Context, deps Deps, args map[string]any) (any, error
 	defer cli.Close()
 
 	if detach {
+		if raw, _ := args["raw_environment"].(bool); raw {
+			return errResult("bad_request", "raw_environment is not supported with detach"), nil
+		}
 		return runDetached(ctx, deps, cli, alias, command, reason, unsafe, strArg(args, "platform"))
 	}
 
@@ -95,7 +98,12 @@ func handleExec(ctx context.Context, deps Deps, args map[string]any) (any, error
 		defer cancel()
 	}
 
-	res, err := runExecRemoteCommand(cmdCtx, cli, command)
+	var res *sshpkg.ExecResult
+	if raw, _ := args["raw_environment"].(bool); raw {
+		res, err = cli.Exec(cmdCtx, command)
+	} else {
+		res, err = runExecRemoteCommand(cmdCtx, cli, command)
+	}
 	if err != nil {
 		// Timeout / cancellation: ssh.Exec returns the partial output captured
 		// so far plus ctx.Err(). Surface that partial output instead of dropping
@@ -328,6 +336,7 @@ func handleExecMulti(ctx context.Context, deps Deps, args map[string]any) (any, 
 				"alias": alias, "command": command, "reason": reason,
 				"unsafe":          args["unsafe"],
 				"timeout_seconds": args["timeout_seconds"],
+				"raw_environment": args["raw_environment"],
 			})
 			ok, why := execOutcome(single)
 			mu.Lock()
@@ -374,12 +383,14 @@ func execOutcome(single any) (bool, string) {
 // registerExecTools registers exec and exec_multi.
 func registerExecTools(s *server.MCPServer, deps Deps, names []string) []string {
 	execTool := mcp.NewTool("exec",
-		mcp.WithDescription("Run a command on a server. Dangerous commands are blocked unless unsafe=true. "+
+		mcp.WithDescription("Run in a noninteractive login shell with common POSIX install paths added (profile PATH wins; Windows refreshes user/system PATH; unknown shells unchanged). "+
+			"A missing CLI or unavailable credential here does not mean the desktop user is logged out. Use check_environment to diagnose. Dangerous commands are blocked unless unsafe=true. "+
 			"timeout_seconds bounds the run (0 = no timeout, default 60); on timeout the captured partial output is "+
 			"returned with timed_out=true. detach=true runs the command in the background and returns a platform-specific "+
 			"log_path to poll with tail_logs (ignores timeout_seconds). Requires reason; audited."),
 		mcp.WithString("alias", mcp.Description("server alias")),
 		mcp.WithString("command", mcp.Description("the shell command to run")),
+		mcp.WithBoolean("raw_environment", mcp.Description("retain exact sshd environment without login profiles or PATH additions; foreground only")),
 		mcp.WithString("reason", mcp.Description("why (required, audited)")),
 		mcp.WithBoolean("unsafe", mcp.Description("bypass the dangerous-command filter")),
 		mcp.WithNumber("timeout_seconds", mcp.Description("max seconds before the command is killed; 0 = no timeout; default 60")),
@@ -404,6 +415,7 @@ func registerExecTools(s *server.MCPServer, deps Deps, names []string) []string 
 			"Requires reason; audited."),
 		mcp.WithArray("aliases", mcp.Description("list of server aliases")),
 		mcp.WithString("command", mcp.Description("the shell command to run")),
+		mcp.WithBoolean("raw_environment", mcp.Description("retain exact sshd environment without login profiles or PATH additions; foreground only")),
 		mcp.WithString("reason", mcp.Description("why (required, audited)")),
 		mcp.WithBoolean("unsafe", mcp.Description("bypass the dangerous-command filter")),
 		mcp.WithNumber("timeout_seconds", mcp.Description("max seconds per command before it is killed; 0 = no timeout; default 60")))
