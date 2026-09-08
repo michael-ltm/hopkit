@@ -61,6 +61,7 @@ func handleGetServer(ctx context.Context, deps Deps, args map[string]any) (any, 
 		return errResult("not_found", fmt.Sprintf("unknown server %q", alias)), nil
 	}
 	result := map[string]any{
+		"runtime_version": deps.Version, "inventory_source": "local",
 		"alias": alias, "host": safety.MaskSecrets(s.Host), "port": s.Port,
 		"user": s.User, "auth": s.Auth, "label": s.Label,
 		"description": s.Description, "description_missing": strings.TrimSpace(s.Description) == "",
@@ -203,7 +204,7 @@ func handleCheckSSH(ctx context.Context, deps Deps, args map[string]any) (any, e
 	}
 
 	mode := sshCheckMode(args)
-	out := map[string]any{"alias": alias, "mode": string(mode)}
+	out := map[string]any{"alias": alias, "mode": string(mode), "runtime_version": deps.Version, "inventory_source": "local"}
 	tcp := status.Probe(ctx, s, 5*time.Second)
 	activityErr := config.RecordProbes(deps.ConfigPath, map[string]config.ProbeObservation{
 		alias: config.NewProbeObservation(s, tcp.Reachable, tcp.ObservedAt),

@@ -74,7 +74,7 @@ func runCleanupWizard(cmd *cobra.Command, defaultDays int, defaultIncludeUnknown
 			Title("Include legacy servers whose usage history is unknown?").
 			Description("They will be shown for manual review, never preselected").
 			Value(&includeUnknown),
-	)).WithInput(cmd.InOrStdin()).WithOutput(cmd.ErrOrStderr())
+	)).WithInput(cmd.InOrStdin()).WithOutput(cmd.ErrOrStderr()).WithTheme(ui.FormTheme())
 	if err := policyForm.Run(); err != nil {
 		return err
 	}
@@ -103,7 +103,7 @@ func runCleanupWizard(cmd *cobra.Command, defaultDays int, defaultIncludeUnknown
 			Title("Select server records to remove").
 			Description("Space toggles; nothing is selected by default; / filters").
 			Options(options...).Value(&selected).Height(menuHeight),
-	)).WithInput(cmd.InOrStdin()).WithOutput(cmd.ErrOrStderr())
+	)).WithInput(cmd.InOrStdin()).WithOutput(cmd.ErrOrStderr()).WithTheme(ui.FormTheme())
 	if err := selectForm.Run(); err != nil {
 		return err
 	}
@@ -122,7 +122,7 @@ func runCleanupWizard(cmd *cobra.Command, defaultDays int, defaultIncludeUnknown
 			Title(fmt.Sprintf("Remove %d SSHM server record(s)?", len(selected))).
 			Description(strings.Join(selectedDisplay, ", ") + "\nKeys and remote authorized_keys will not be touched.").
 			Affirmative("Remove records").Negative("Cancel").Value(&confirmed),
-	)).WithInput(cmd.InOrStdin()).WithOutput(cmd.ErrOrStderr())
+	)).WithInput(cmd.InOrStdin()).WithOutput(cmd.ErrOrStderr()).WithTheme(ui.FormTheme())
 	if err := confirmForm.Run(); err != nil {
 		return err
 	}

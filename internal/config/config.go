@@ -7,6 +7,7 @@ package config
 
 import (
 	"fmt"
+	"github.com/michael-ltm/sshm/internal/inventory"
 	"sort"
 	"strings"
 	"time"
@@ -31,6 +32,7 @@ const (
 
 // Auth methods supported by Server.Auth.
 const (
+	AuthCloud    = "cloud" // local reference; unsupported by older clients, never a raw SSH auth method
 	AuthKey      = "key"
 	AuthPassword = "password"
 	AuthAgent    = "agent"
@@ -59,29 +61,38 @@ const (
 
 // Server is one managed remote host.
 type Server struct {
-	Label             string    `toml:"label,omitempty"`
-	Description       string    `toml:"description,omitempty"`
-	Platform          string    `toml:"platform,omitempty"`
-	Host              string    `toml:"host"`
-	Port              int       `toml:"port"`
-	User              string    `toml:"user"`
-	Auth              string    `toml:"auth"`
-	KeyPath           string    `toml:"key_path,omitempty"`
-	Tags              []string  `toml:"tags,omitempty"`
-	Group             string    `toml:"group,omitempty"`
-	Notes             string    `toml:"notes,omitempty"`
-	InitState         string    `toml:"init_state,omitempty"`
-	CreatedAt         time.Time `toml:"created_at,omitempty"`
-	IdentityChangedAt time.Time `toml:"identity_changed_at,omitempty"`
-	LastUsed          time.Time `toml:"last_used,omitempty"`
-	LastChecked       time.Time `toml:"last_checked,omitempty"`
-	LastSeen          time.Time `toml:"last_seen,omitempty"`
-	LastStatus        string    `toml:"last_status,omitempty"`
-	CleanupProtected  bool      `toml:"cleanup_protected,omitempty"`
-	ProxyJump         string    `toml:"proxy_jump,omitempty"`
-	ProxyCommand      string    `toml:"proxy_command,omitempty"`
-	Proxy             string    `toml:"proxy,omitempty"` // e.g. "socks5://127.0.0.1:7890"
-	Forwards          []string  `toml:"forwards,omitempty"`
+	// Cloud references contain no credentials; direct SSH must resolve the vault first.
+	CloudEntry        string              `toml:"cloud_entry,omitempty"`
+	CloudVault        string              `toml:"cloud_vault,omitempty"`
+	Hardware          *inventory.Snapshot `toml:"hardware,omitempty"`
+	Label             string              `toml:"label,omitempty"`
+	Description       string              `toml:"description,omitempty"`
+	Platform          string              `toml:"platform,omitempty"`
+	Host              string              `toml:"host"`
+	Port              int                 `toml:"port"`
+	User              string              `toml:"user"`
+	Auth              string              `toml:"auth"`
+	KeyPath           string              `toml:"key_path,omitempty"`
+	Tags              []string            `toml:"tags,omitempty"`
+	Group             string              `toml:"group,omitempty"`
+	Notes             string              `toml:"notes,omitempty"`
+	InitState         string              `toml:"init_state,omitempty"`
+	CreatedAt         time.Time           `toml:"created_at,omitempty"`
+	IdentityChangedAt time.Time           `toml:"identity_changed_at,omitempty"`
+	LastUsed          time.Time           `toml:"last_used,omitempty"`
+	LastChecked       time.Time           `toml:"last_checked,omitempty"`
+	LastSeen          time.Time           `toml:"last_seen,omitempty"`
+	SSHMStatus        string              `toml:"sshm_status,omitempty"`
+	SSHMVersion       string              `toml:"sshm_version,omitempty"`
+	SSHMCheckedAt     time.Time           `toml:"sshm_checked_at,omitempty"`
+	LastSSHChecked    time.Time           `toml:"last_ssh_checked,omitempty"`
+	LastSSHError      string              `toml:"last_ssh_error,omitempty"`
+	LastStatus        string              `toml:"last_status,omitempty"`
+	CleanupProtected  bool                `toml:"cleanup_protected,omitempty"`
+	ProxyJump         string              `toml:"proxy_jump,omitempty"`
+	ProxyCommand      string              `toml:"proxy_command,omitempty"`
+	Proxy             string              `toml:"proxy,omitempty"` // e.g. "socks5://127.0.0.1:7890"
+	Forwards          []string            `toml:"forwards,omitempty"`
 }
 
 // NormalizePlatform accepts CLI/UI spellings and returns the canonical value.
@@ -236,8 +247,9 @@ type Project struct {
 
 // UIConfig holds UI rendering preferences.
 type UIConfig struct {
-	Icons string `toml:"icons,omitempty"` // "unicode" | "ascii" | "" (auto)
-	Color string `toml:"color,omitempty"` // "auto" | "always" | "never"
+	Language string `toml:"language,omitempty"` // auto | zh-CN | en
+	Icons    string `toml:"icons,omitempty"`    // "unicode" | "ascii" | "" (auto)
+	Color    string `toml:"color,omitempty"`    // "auto" | "always" | "never"
 }
 
 // Config is the top-level on-disk document.

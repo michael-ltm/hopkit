@@ -19,7 +19,8 @@
 sshm pair              # guided: alias, address, platform, description, tags
 # Paste the printed one-line command on the target; sshm detects the user and verifies SSH.
 sshm add               # choose automatic pairing or advanced manual entry
-sshm list              # interactive server picker + safe action menu
+sshm                   # terminal workspace (when run in a terminal)
+sshm list              # searchable inventory + details + safe action menu
 sshm ls --plain        # script-friendly server table
 sshm c my-host         # interactive shell
 sshm exec my-host 'uptime'
@@ -28,19 +29,38 @@ sshm cleanup           # guided review of unused server records
 sshm download my-host /tmp/app.zip ./app.zip --resume --sha256 <hash>
 ```
 
+## Optional encrypted cloud sync (preview)
+
+[SSHM Cloud](https://sshm.yunmini.net) adds accounts, device presence, groups/tags,
+and a browser console. SSH server metadata, private keys and saved passwords are
+end-to-end encrypted. Existing local commands and MCP keep using local configuration.
+
+```sh
+sshm cloud register --username your-name --import-local
+# On another device:
+sshm cloud login --username your-name --import-local
+sshm cloud watch
+```
+
+Use the cloud preview client from the console; the existing stable package does
+not include these commands. Use `sshm update` for signed, confirmed updates and `sshm integrations install --app all --mcp` for optional AI setup. See [cloud setup, recovery and limitations](docs/cloud-sync.md).
+
 ## Features
 
 - TOML config at `~/.config/sshm/config.toml` (XDG) or `%APPDATA%\sshm\config.toml` (Windows)
 - Interactive `list`/`ls`: arrow-key server picker with connect, reachability,
   pairing/repair, description editing, remote password change, cleanup protection,
-  default selection, and guarded delete
+  default selection, and guarded delete. The workspace shows last SSH use and
+  on-demand TCP latency (`p`); see [terminal UI](docs/terminal-ui.md).
 - First-class descriptions, groups, and tags for human browsing and AI intent lookup
 - Plain `pair` guides you through alias, address, Windows/Linux/macOS platform,
-  description, tags, and group. It then creates a one-time setup command,
+  with optional custom port, description, tags, and group. Windows guided setup
+  produces a readable script plus a launcher; other targets get a one-time command. It
   installs or starts OpenSSH when needed, detects the target user, installs a
   new key, and saves only after a real key-authenticated SSH command succeeds.
   Windows uses the built-in capability by default, then a pinned/hash-verified
-  official ZIP fallback; setting offline `SSHM_OPENSSH_ZIP` bypasses the online attempt
+  official ZIP fallback; setting offline `SSHM_OPENSSH_ZIP` bypasses the online attempt.
+  See [Windows file setup and read-only checks](docs/windows-pairing.md).
 - SSHM-observed successful SSH authentication records last use separately from
   reachability checks (sessions opened by other clients are not visible).
   `cleanup` safely reviews idle records, protects referenced hosts, and

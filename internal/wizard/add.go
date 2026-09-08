@@ -4,6 +4,7 @@ package wizard
 import (
 	"errors"
 	"fmt"
+	"github.com/michael-ltm/sshm/internal/ui"
 	"io"
 	"regexp"
 	"strconv"
@@ -73,6 +74,7 @@ type AddInput struct {
 // existingAliases is used to prevent collisions.
 func RunAdd(existingAliases []string, input io.Reader, output io.Writer) (*AddInput, error) {
 	in := &AddInput{Port: "22", Platform: config.PlatformWindows, Auth: config.AuthKey, TestAfter: true}
+	advanced := false
 	form := huh.NewForm(
 		huh.NewGroup(
 			huh.NewInput().Title("Alias").Value(&in.Alias).
@@ -88,8 +90,6 @@ func RunAdd(existingAliases []string, input io.Reader, output io.Writer) (*AddIn
 					return nil
 				}),
 			huh.NewInput().Title("Host / IP").Value(&in.Host).Validate(ValidateHost),
-			huh.NewInput().Title("Port").Description("Press Enter for 22").Value(&in.Port).
-				Validate(validateOptionalDefaultPort),
 			huh.NewSelect[string]().Title("Target system").Options(
 				huh.NewOption("Windows", config.PlatformWindows),
 				huh.NewOption("Linux", config.PlatformLinux),
@@ -108,6 +108,7 @@ func RunAdd(existingAliases []string, input io.Reader, output io.Writer) (*AddIn
 				huh.NewOption("Password", config.AuthPassword),
 				huh.NewOption("ssh-agent", config.AuthAgent),
 			).Value(&in.Auth),
+			huh.NewConfirm().Title("Advanced settings?").Description("Default port 22. Description, tags and group can be edited later.").Value(&advanced),
 		),
 		huh.NewGroup(
 			huh.NewInput().Title("Key path (used or generated)").Value(&in.KeyPath).
@@ -116,18 +117,19 @@ func RunAdd(existingAliases []string, input io.Reader, output io.Writer) (*AddIn
 			return in.Auth == config.AuthPassword || in.Auth == config.AuthAgent
 		}),
 		huh.NewGroup(
+			huh.NewInput().Title("SSH port").Value(&in.Port).Validate(validateOptionalDefaultPort),
 			huh.NewInput().Title("Description / purpose").Description("Helps people and AI choose the right server").Value(&in.Description).
 				Validate(config.ValidateDescription),
 			huh.NewInput().Title("Tags (comma separated)").Value(&in.Tags),
 			huh.NewInput().Title("Group").Value(&in.Group),
 			huh.NewConfirm().Title("Test connection after save?").Value(&in.TestAfter),
-		),
+		).WithHideFunc(func() bool { return !advanced }),
 		huh.NewGroup(
 			huh.NewConfirm().Title("Show the copy-id next step after save?").Description("The next command will prompt for the remote password once").Value(&in.CopyIDAfter),
 		).WithHideFunc(func() bool {
 			return in.Auth == config.AuthPassword || in.Auth == config.AuthAgent
 		}),
-	).WithInput(input).WithOutput(output)
+	).WithInput(input).WithOutput(output).WithTheme(ui.FormTheme())
 	if err := form.Run(); err != nil {
 		return nil, err
 	}

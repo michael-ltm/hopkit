@@ -146,7 +146,7 @@ func TestCleanupChoiceLabelNeverWrapsConfiguredWidth(t *testing.T) {
 	}
 }
 
-func TestWritePairCommandFiles_WritesPrivateSingleLineFiles(t *testing.T) {
+func TestWritePairCommandFiles_WritesPrivateLaunchersAndScripts(t *testing.T) {
 	dir := filepath.Join(t.TempDir(), "commands")
 	scripts, err := pair.BuildScripts(
 		"ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIK7m3yZ9Qf0xV8u2nR4sP6cD1bH5jL7eT9wA2gM4 pair@host",
@@ -160,9 +160,10 @@ func TestWritePairCommandFiles_WritesPrivateSingleLineFiles(t *testing.T) {
 	require.Less(t, len(scripts.Windows), 8150, "keep headroom after a maximum-length IPv6 callback below the Windows console ceiling")
 	paths, err := writePairCommandFiles(dir, "demo", "all", scripts)
 	require.NoError(t, err)
-	require.Len(t, paths, 2)
+	require.Len(t, paths, 3)
 	expected := map[string]string{
-		"demo.windows.ps1": scripts.Windows + "\n",
+		"demo.windows.ps1": scripts.WindowsFile + "\n",
+		"demo.windows.cmd": strings.ReplaceAll(pair.WindowsLauncher("demo.windows.ps1"), "\n", "\r\n") + "\n",
 		"demo.posix.sh":    scripts.POSIX + "\n",
 	}
 	for _, path := range paths {
@@ -173,8 +174,10 @@ func TestWritePairCommandFiles_WritesPrivateSingleLineFiles(t *testing.T) {
 		}
 		data, readErr := os.ReadFile(path)
 		require.NoError(t, readErr)
-		require.Equal(t, expected[filepath.Base(path)], string(data), "command files must preserve the generated one-liner exactly")
-		require.Equal(t, 1, bytes.Count(data, []byte("\n")))
+		require.Equal(t, expected[filepath.Base(path)], string(data), "command files must preserve the generated content exactly")
+		if strings.HasSuffix(path, ".posix.sh") {
+			require.Equal(t, 1, bytes.Count(data, []byte("\n")))
+		}
 	}
 }
 

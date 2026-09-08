@@ -20,11 +20,15 @@ func Load(path string) (*Config, error) {
 	data, err := os.ReadFile(path)
 	if err != nil {
 		if errors.Is(err, os.ErrNotExist) {
-			return New(), nil
+			return applyUIPreferences(path, New()), nil
 		}
 		return nil, fmt.Errorf("read config: %w", err)
 	}
-	return decodeConfig(data)
+	cfg, err := decodeConfig(data)
+	if err != nil {
+		return nil, err
+	}
+	return applyCloudBindings(path, applyUIPreferences(path, cfg)), nil
 }
 
 func decodeConfig(data []byte) (*Config, error) {

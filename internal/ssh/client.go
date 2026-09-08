@@ -25,10 +25,17 @@ func (nopCloser) Close() error { return nil }
 // BuildOpts is non-persistent input gathered at connect time (e.g. password
 // prompted from TTY). Never write the contents of BuildOpts to disk.
 type BuildOpts struct {
+	// ResolveJump supplies a vault-owned jump host and its own credentials.
+	// It must reject unknown or ambiguous aliases; no local fallback is used.
+	ResolveJump func(string) (*config.Server, BuildOpts, error)
+	// Signers are supplied by the unlocked cloud vault and are never persisted.
+	Signers  []gssh.Signer
 	Password string
 	// Alias identifies a managed target for best-effort LastUsed tracking after
 	// authentication succeeds. Empty leaves activity metadata untouched.
 	Alias string
+	// ProbeOnly suppresses use tracking for the target and its jump hosts.
+	ProbeOnly bool
 	// ActivityError receives a non-fatal error when authentication succeeded
 	// but LastUsed/LastSeen could not be persisted. When nil, Dial writes a
 	// concise warning to stderr so stale cleanup metadata is never silent.
@@ -74,17 +81,34 @@ func BuildClientConfig(s *config.Server, opts BuildOpts) (*gssh.ClientConfig, io
 
 	hostKey, err := hostKeyCallback(opts.Insecure)
 	if err != nil {
+		if closer != nil {
+			closer.Close()
+		}
 		return nil, nil, err
+	}
+	var hostKeyAlgorithms []string
+	if !opts.Insecure {
+		path, pathErr := knownHostsPath()
+		if pathErr == nil {
+			hostKeyAlgorithms, pathErr = preferredHostKeyAlgorithms(path, Address(s))
+		}
+		if pathErr != nil {
+			if closer != nil {
+				closer.Close()
+			}
+			return nil, nil, pathErr
+		}
 	}
 
 	if closer == nil {
 		closer = nopCloser{}
 	}
 	return &gssh.ClientConfig{
-		User:            s.User,
-		Auth:            authMethods,
-		HostKeyCallback: hostKey,
-		Timeout:         timeout,
+		User:              s.User,
+		Auth:              authMethods,
+		HostKeyCallback:   hostKey,
+		HostKeyAlgorithms: hostKeyAlgorithms,
+		Timeout:           timeout,
 	}, closer, nil
 }
 
@@ -98,8 +122,14 @@ func Address(s *config.Server) string {
 }
 
 func buildAuth(s *config.Server, opts BuildOpts) ([]gssh.AuthMethod, io.Closer, error) {
+	if s.CloudEntry != "" {
+		return nil, nil, errors.New("cloud credential is locked; use sshm connect or sshm cloud connect to unlock the encrypted vault")
+	}
 	switch s.Auth {
 	case config.AuthKey:
+		if len(opts.Signers) > 0 {
+			return []gssh.AuthMethod{gssh.PublicKeys(opts.Signers...)}, nil, nil
+		}
 		key, closer, err := loadKeySigner(s.KeyPath)
 		if err != nil {
 			return nil, nil, err

@@ -9,10 +9,11 @@ import (
 )
 
 // Scripts contains the two copy-pasteable target commands generated for a
-// pairing session. Each command is a single physical line.
+// pairing session, plus a readable Windows file with a read-only check mode.
 type Scripts struct {
-	Windows string
-	POSIX   string
+	Windows     string
+	WindowsFile string
+	POSIX       string
 }
 
 // BuildScripts embeds the public key and one-time callback in self-contained
@@ -50,8 +51,9 @@ func BuildScripts(publicKey, callbackURL string, port int) (Scripts, error) {
 		return Scripts{}, err
 	}
 	return Scripts{
-		Windows: "$u='" + callbackURL + "';$k='" + pub64 + "';$d='" + compressedWindows + "';$m=[IO.MemoryStream]::new([Convert]::FromBase64String($d));$g=[IO.Compression.GzipStream]::new($m,[IO.Compression.CompressionMode]0);$r=[IO.StreamReader]::new($g);&([ScriptBlock]::Create($r.ReadToEnd()))",
-		POSIX:   posixOneLiner,
+		Windows:     "$u='" + callbackURL + "';$k='" + pub64 + "';$d='" + compressedWindows + "';$m=[IO.MemoryStream]::new([Convert]::FromBase64String($d));$g=[IO.Compression.GzipStream]::new($m,[IO.Compression.CompressionMode]0);$r=[IO.StreamReader]::new($g);&([ScriptBlock]::Create($r.ReadToEnd()))",
+		POSIX:       posixOneLiner,
+		WindowsFile: windowsFileHeader + "\n$u='" + callbackURL + "';$k='" + pub64 + "'\n" + windowsFileStages(winScript) + windowsFileFooter,
 	}, nil
 }
 

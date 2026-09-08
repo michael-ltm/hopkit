@@ -63,3 +63,6 @@ Read only the needed reference:
   [ai-patterns.md](ai-patterns.md)
 - Authorized remote static/dynamic reverse engineering:
   [reverse-workflows.md](reverse-workflows.md)
+
+- Cloud accounts, encrypted sync, device presence, updates, or AI integration setup:
+  [cloud-sync.md](cloud-sync.md)

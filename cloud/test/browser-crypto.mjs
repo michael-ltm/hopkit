@@ -1,0 +1,15 @@
+import assert from 'node:assert/strict';
+import {readFile,writeFile} from 'node:fs/promises';
+import {unlockVault,encryptVault} from '../src/browser/vault.js';
+const snapshot=JSON.parse(await readFile(process.argv[2],'utf8'));
+await assert.rejects(()=>unlockVault('browser-interop',snapshot,'wrong synthetic phrase'));
+await assert.rejects(()=>unlockVault('other-account',snapshot,'synthetic-browser-unlock-phrase'));
+const vault=await unlockVault('browser-interop',snapshot,'synthetic-browser-unlock-phrase');
+const entry=Object.values(vault.data.entries)[0];
+assert.equal(entry.server.Group,'original');
+assert.equal(vault.data.credentials[entry.credentials[0]].password,'synthetic-password-preserved');
+entry.server.Group='浏览器修改';entry.server.Tags=['prod','web'];
+const out=await encryptVault(vault);assert.equal(out.base_revision,1);assert.notEqual(out.blob,snapshot.blob);
+await writeFile(process.argv[3],JSON.stringify(out),{mode:0o600});
+vault.close();assert.equal(vault.master,null);
+console.log('Go → browser decryption/edit → Go fixture ready; wrong phrase and cross-account substitution rejected.');

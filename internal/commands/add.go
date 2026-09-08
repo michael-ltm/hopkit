@@ -3,6 +3,7 @@ package commands
 import (
 	"context"
 	"fmt"
+	"github.com/michael-ltm/sshm/internal/ui"
 	"os"
 	"path/filepath"
 	"strconv"
@@ -113,14 +114,14 @@ func runGuidedAdd(cmd *cobra.Command, cfg *config.Config) error {
 	mode := "pair"
 	form := huh.NewForm(huh.NewGroup(
 		huh.NewSelect[string]().
-			Title("How do you want to add this server?").
-			Description("One-line pairing detects the username and verifies SSH automatically").
+			Title("Add server").
+			Description("Set up SSH automatically, or use an existing SSH login").
 			Options(
-				huh.NewOption("One-line automatic pairing (recommended)", "pair"),
-				huh.NewOption("Manual record (SSH already configured)", "manual"),
+				huh.NewOption("Set up this server (recommended)", "pair"),
+				huh.NewOption("SSH is already configured", "manual"),
 			).
 			Value(&mode),
-	)).WithInput(cmd.InOrStdin()).WithOutput(cmd.ErrOrStderr())
+	)).WithInput(cmd.InOrStdin()).WithOutput(cmd.ErrOrStderr()).WithTheme(ui.FormTheme())
 	if err := form.Run(); err != nil {
 		return err
 	}

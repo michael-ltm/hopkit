@@ -4,12 +4,13 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"sort"
 	"strings"
 	"time"
 
+	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/huh"
 	"github.com/charmbracelet/lipgloss"
+	"github.com/michael-ltm/sshm/internal/cloudsync"
 	"github.com/michael-ltm/sshm/internal/config"
 	"github.com/michael-ltm/sshm/internal/status"
 	"github.com/michael-ltm/sshm/internal/ui"
@@ -22,6 +23,8 @@ const (
 	managerAdd     = "::add"
 	managerCleanup = "::cleanup"
 	managerQuit    = "::quit"
+	managerRefresh = "::refresh"
+	managerConnect = "::connect:"
 
 	actionShow           = "show"
 	actionPair           = "pair"
@@ -46,6 +49,9 @@ func commandHasTerminal(cmd *cobra.Command) bool {
 }
 
 func runServerManager(cmd *cobra.Command) error {
+	if handled, err := offerStartupUpdate(cmd); handled || err != nil {
+		return err
+	}
 	lastChoice := ""
 	for {
 		cfg, _, err := loadConfig()
@@ -60,6 +66,8 @@ func runServerManager(cmd *cobra.Command) error {
 			return err
 		}
 		switch choice {
+		case managerRefresh:
+			continue
 		case managerQuit:
 			return nil
 		case managerAdd:
@@ -77,6 +85,16 @@ func runServerManager(cmd *cobra.Command) error {
 				return err
 			}
 		default:
+			if strings.HasPrefix(choice, managerConnect) {
+				alias := strings.TrimPrefix(choice, managerConnect)
+				if server := cfg.Servers[alias]; server != nil {
+					lastChoice = alias
+					if err := connect(alias, server, false, configPath()); err != nil {
+						return err
+					}
+				}
+				continue
+			}
 			lastChoice = choice
 			removed, err := runServerActions(cmd, choice)
 			if errors.Is(err, huh.ErrUserAborted) {
@@ -94,33 +112,46 @@ func runServerManager(cmd *cobra.Command) error {
 }
 
 func chooseServer(cmd *cobra.Command, cfg *config.Config, initial string) (string, error) {
-	menuWidth, menuHeight := serverManagerDimensions(cmd, len(cfg.Servers)+3)
-	aliases := make([]string, 0, len(cfg.Servers))
-	for alias, server := range cfg.Servers {
-		if server != nil {
-			aliases = append(aliases, alias)
+	account := ""
+	if state, err := cloudsync.LoadState(cloudsync.StatePath(configPath())); err == nil && state.Token != "" && state.Expires > time.Now().UnixMilli() {
+		account = state.Username
+	}
+	model := ui.NewBrowser(cfg, initial, Version, account, uiColor(cfg))
+	probeContext, cancelProbes := context.WithCancel(cmd.Context())
+	defer cancelProbes()
+	model.Probe = func(alias string) tea.Cmd {
+		return func() tea.Msg {
+			s := cfg.Servers[alias]
+			if s == nil || config.DeviceConnectionID(s) != "" || s.ProxyJump != "" || s.ProxyCommand != "" || s.Proxy != "" {
+				return ui.LatencyResult{Alias: alias, Skipped: true}
+			}
+			result := status.Probe(probeContext, s, 3*time.Second)
+			return ui.LatencyResult{Alias: alias, Duration: result.Latency, Failed: !result.Reachable}
 		}
 	}
-	sort.Strings(aliases)
-	options := make([]huh.Option[string], 0, len(aliases)+2)
-	for _, alias := range aliases {
-		options = append(options, huh.NewOption(serverChoiceLabel(alias, cfg.Servers[alias], menuWidth), alias))
+	program := tea.NewProgram(model, tea.WithInput(cmd.InOrStdin()), tea.WithOutput(cmd.ErrOrStderr()), tea.WithAltScreen(), tea.WithContext(probeContext))
+	result, err := program.Run()
+	if err != nil {
+		return "", err
 	}
-	options = append(options,
-		huh.NewOption("＋ Add server", managerAdd),
-		huh.NewOption("Review unused servers", managerCleanup),
-		huh.NewOption("Exit", managerQuit),
-	)
-	choice := initialServerChoice(aliases, initial)
-	form := huh.NewForm(huh.NewGroup(
-		huh.NewSelect[string]().
-			Title("SSH servers").
-			Description("↑/↓ select · j/k move · Enter open · / search · Esc back").
-			Options(options...).
-			Value(&choice).
-			Height(menuHeight),
-	)).WithInput(cmd.InOrStdin()).WithOutput(cmd.ErrOrStderr())
-	return choice, form.Run()
+	selection, ok := result.(ui.Browser)
+	if !ok {
+		return "", errors.New("server browser returned an unexpected result")
+	}
+	switch selection.Action {
+	case "add":
+		return managerAdd, nil
+	case "cleanup":
+		return managerCleanup, nil
+	case "refresh":
+		return managerRefresh, nil
+	case "manage":
+		return selection.Choice, nil
+	case "connect":
+		return managerConnect + selection.Choice, nil
+	default:
+		return managerQuit, nil
+	}
 }
 
 func initialServerChoice(aliases []string, initial string) string {
@@ -307,34 +338,28 @@ func runServerActions(cmd *cobra.Command, alias string) (bool, error) {
 }
 
 func chooseServerAction(cmd *cobra.Command, alias string, server *config.Server, isDefault bool) (string, error) {
-	defaultLabel := "Set as default"
+	defaultLabel := textUI("Set as default", "设为默认")
 	if isDefault {
-		defaultLabel = "Default server (selected)"
+		defaultLabel = textUI("Default server (selected)", "默认服务器（已选）")
 	}
-	cleanupLabel := "Protect from cleanup"
+	cleanupLabel := textUI("Protect from cleanup", "保护此连接，防止清理")
 	if server.CleanupProtected {
-		cleanupLabel = "Remove cleanup protection"
+		cleanupLabel = textUI("Remove cleanup protection", "取消清理保护")
 	}
-	action := actionShow
+	options := []huh.Option[string]{huh.NewOption(textUI("Connect", "连接"), actionConnect), huh.NewOption(textUI("Show details", "查看详情"), actionShow)}
+	if config.DeviceConnectionID(server) == "" {
+		options = append(options, huh.NewOption(textUI("Pair / repair SSH access", "配对 / 修复 SSH"), actionPair), huh.NewOption(textUI("Test reachability", "检测连通性"), actionTest), huh.NewOption(textUI("Change remote login password", "修改远程登录密码"), actionPassword))
+	}
+	options = append(options, huh.NewOption(textUI("Add / edit description", "编辑备注"), actionDescription), huh.NewOption(defaultLabel, actionDefault), huh.NewOption(cleanupLabel, actionCleanupProtect), huh.NewOption(textUI("Delete server", "删除服务器"), actionDelete), huh.NewOption(textUI("Back", "返回"), actionBack))
+	action := actionConnect
 	form := huh.NewForm(huh.NewGroup(
 		huh.NewSelect[string]().
 			Title(ui.SanitizeTerminalText(alias)).
 			Description(ui.SanitizeTerminalText(config.EffectiveDescription(server))).
-			Options(
-				huh.NewOption("Show details", actionShow),
-				huh.NewOption("Pair / repair SSH access", actionPair),
-				huh.NewOption("Connect", actionConnect),
-				huh.NewOption("Test reachability", actionTest),
-				huh.NewOption("Add / edit description", actionDescription),
-				huh.NewOption("Change remote login password", actionPassword),
-				huh.NewOption(defaultLabel, actionDefault),
-				huh.NewOption(cleanupLabel, actionCleanupProtect),
-				huh.NewOption("Delete server", actionDelete),
-				huh.NewOption("Back", actionBack),
-			).
+			Options(options...).
 			Value(&action).
 			Height(12),
-	)).WithInput(cmd.InOrStdin()).WithOutput(cmd.ErrOrStderr())
+	)).WithInput(cmd.InOrStdin()).WithOutput(cmd.ErrOrStderr()).WithTheme(ui.FormTheme())
 	return action, form.Run()
 }
 
@@ -356,7 +381,7 @@ func editServerDescription(cmd *cobra.Command, alias, current string) error {
 			Description("Purpose, OS, installed tools, constraints; never put passwords or tokens here").
 			Value(&description).
 			Validate(validateDescription),
-	)).WithInput(cmd.InOrStdin()).WithOutput(cmd.ErrOrStderr())
+	)).WithInput(cmd.InOrStdin()).WithOutput(cmd.ErrOrStderr()).WithTheme(ui.FormTheme())
 	if err := form.Run(); err != nil {
 		return err
 	}

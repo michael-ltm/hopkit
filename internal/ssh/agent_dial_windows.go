@@ -19,11 +19,17 @@ const windowsAgentPipe = `\\.\pipe\openssh-ssh-agent`
 // dialAgent connects to the Windows OpenSSH agent named pipe. SSH_AUTH_SOCK
 // overrides the target when it names another pipe (e.g. gpg4win's agent);
 // cygwin-style socket paths are not dialable from Go and are ignored.
-func dialAgent() (net.Conn, error) {
+func agentPaths() []string {
 	pipe := windowsAgentPipe
 	if sock := os.Getenv("SSH_AUTH_SOCK"); strings.HasPrefix(sock, `\\.\pipe\`) {
 		pipe = sock
 	}
+	return []string{pipe}
+}
+
+func dialAgent() (net.Conn, error) { return dialAgentAt(agentPaths()[0]) }
+
+func dialAgentAt(pipe string) (net.Conn, error) {
 	timeout := 5 * time.Second
 	conn, err := winio.DialPipe(pipe, &timeout)
 	if err != nil {

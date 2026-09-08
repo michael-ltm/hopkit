@@ -2,6 +2,7 @@ package wizard
 
 import (
 	"errors"
+	"github.com/michael-ltm/sshm/internal/ui"
 	"io"
 	"strings"
 
@@ -24,6 +25,7 @@ type PairInput struct {
 // RunPair renders the guided one-line pairing form.
 func RunPair(existingAliases []string, input io.Reader, output io.Writer) (*PairInput, error) {
 	in := &PairInput{Port: "22", Platform: config.PlatformWindows}
+	advanced := false
 	form := huh.NewForm(
 		huh.NewGroup(
 			huh.NewInput().Title("Server name / alias").Description("Example: office-pc").Value(&in.Alias).
@@ -39,22 +41,22 @@ func RunPair(existingAliases []string, input io.Reader, output io.Writer) (*Pair
 					return nil
 				}),
 			huh.NewInput().Title("Server address / IP").Value(&in.Host).Validate(ValidateHost),
-			huh.NewInput().Title("SSH port").Description("Press Enter for 22").Value(&in.Port).
-				Validate(validateOptionalDefaultPort),
 			huh.NewSelect[string]().Title("Target system").Description("Windows is selected by default").Options(
 				huh.NewOption("Windows", config.PlatformWindows),
 				huh.NewOption("Linux", config.PlatformLinux),
 				huh.NewOption("macOS", config.PlatformMacOS),
 				huh.NewOption("Not sure (show both commands)", ""),
 			).Value(&in.Platform),
+			huh.NewConfirm().Title("Advanced settings?").Description("Default port 22. Description, tags and group can be edited later.").Value(&advanced),
 		),
 		huh.NewGroup(
+			huh.NewInput().Title("SSH port").Description("Default: 22 on Windows, Linux and macOS").Value(&in.Port).Validate(validateOptionalDefaultPort),
 			huh.NewInput().Title("Description / purpose").Description("Optional; never put passwords or tokens here").Value(&in.Description).
 				Validate(config.ValidateDescription),
 			huh.NewInput().Title("Tags (comma separated)").Value(&in.Tags),
 			huh.NewInput().Title("Group").Value(&in.Group),
-		),
-	).WithInput(input).WithOutput(output)
+		).WithHideFunc(func() bool { return !advanced }),
+	).WithInput(input).WithOutput(output).WithTheme(ui.FormTheme())
 	if err := form.Run(); err != nil {
 		return nil, err
 	}
@@ -78,7 +80,7 @@ func RunPairPlatform(current string, input io.Reader, output io.Writer) (string,
 			huh.NewOption("macOS", config.PlatformMacOS),
 			huh.NewOption("Not sure (show both commands)", ""),
 		).Value(&platform),
-	)).WithInput(input).WithOutput(output)
+	)).WithInput(input).WithOutput(output).WithTheme(ui.FormTheme())
 	if err := form.Run(); err != nil {
 		return "", err
 	}
@@ -100,7 +102,7 @@ func RunCallbackHost(input io.Reader, output io.Writer, validate func(string) er
 				}
 				return validate(candidate)
 			}),
-	)).WithInput(input).WithOutput(output)
+	)).WithInput(input).WithOutput(output).WithTheme(ui.FormTheme())
 	if err := form.Run(); err != nil {
 		return "", err
 	}

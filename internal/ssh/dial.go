@@ -26,7 +26,17 @@ type Client struct {
 // TCP dial — this recovers the common TUN/VPN case where the host is reachable
 // directly but the configured SOCKS proxy is not (or vice versa is already the
 // direct path).
-func Dial(s *config.Server, opts BuildOpts) (*Client, error) {
+func Dial(s *config.Server, opts BuildOpts) (_ *Client, dialErr error) {
+	defer func() {
+		if dialErr != nil && opts.Alias != "" && !opts.ProbeOnly {
+			path := opts.ConfigPath
+			if path == "" {
+				path = config.ConfigPath()
+			}
+			_ = config.RecordSSHCheck(path, opts.Alias, s, FailureCategory(dialErr), time.Now())
+		}
+	}()
+
 	cfg, closer, err := BuildClientConfig(s, opts)
 	if err != nil {
 		return nil, err
@@ -46,7 +56,7 @@ func Dial(s *config.Server, opts BuildOpts) (*Client, error) {
 		if err != nil {
 			return nil, nil, kind, err
 		}
-		sshConn, chans, reqs, err := gssh.NewClientConn(conn, Address(s), cfg)
+		sshConn, chans, reqs, err := handshake(conn, Address(s), cfg, timeout)
 		if err != nil {
 			// Surface ProxyCommand stderr (masked) before tearing down the
 			// process, since Close discards it.
@@ -91,12 +101,14 @@ func Dial(s *config.Server, opts BuildOpts) (*Client, error) {
 	if activityPath == "" {
 		activityPath = config.ConfigPath()
 	}
-	if opts.Alias != "" {
+	if opts.Alias != "" && !opts.ProbeOnly {
 		if err := config.RecordSSHUse(activityPath, opts.Alias, s, time.Now()); err != nil {
 			reportActivityError(opts, err)
 		}
 	}
-	return &Client{server: s, conn: client, closers: closers}, nil
+	result := &Client{server: s, conn: client, closers: closers}
+	result.detectManagedPlatform(s, opts, activityPath)
+	return result, nil
 }
 
 // Close terminates the underlying TCP connection AND all auxiliary closers.

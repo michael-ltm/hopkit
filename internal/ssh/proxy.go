@@ -2,6 +2,7 @@ package ssh
 
 import (
 	"bytes"
+	"context"
 	"errors"
 	"fmt"
 	"io"
@@ -227,11 +228,12 @@ func (a stubAddr) String() string  { return a.s }
 // honor them); the deadline setters return nil so the ssh transport, which
 // sets deadlines defensively, keeps working.
 type cmdConn struct {
-	cmd    *exec.Cmd
-	stdout io.ReadCloser
-	stdin  io.WriteCloser
-	stderr *syncBuffer
-	addr   stubAddr
+	cmd       *exec.Cmd
+	stdout    io.ReadCloser
+	stdin     io.WriteCloser
+	stderr    *syncBuffer
+	addr      stubAddr
+	closeOnce sync.Once
 }
 
 // stderrText returns the captured stderr, trimmed, for inclusion in errors.
@@ -241,13 +243,16 @@ func (c *cmdConn) Read(p []byte) (int, error)  { return c.stdout.Read(p) }
 func (c *cmdConn) Write(p []byte) (int, error) { return c.stdin.Write(p) }
 
 func (c *cmdConn) Close() error {
-	// Closing stdin lets a well-behaved proxy exit; then kill to be sure.
-	_ = c.stdin.Close()
-	if c.cmd.Process != nil {
-		_ = c.cmd.Process.Kill()
-	}
-	_ = c.cmd.Wait()
-	_ = c.stdout.Close()
+	c.closeOnce.Do(func() {
+		// Closing stdin lets a well-behaved proxy exit; then kill to be sure.
+		_ = c.stdin.Close()
+		_ = c.stdout.Close()
+		if c.cmd.Process != nil {
+			_ = c.cmd.Process.Kill()
+		}
+		_ = c.cmd.Wait()
+		_ = c.stdout.Close()
+	})
 	return nil
 }
 
@@ -308,6 +313,7 @@ func dialProxyCommand(s *config.Server, command string) (net.Conn, error) {
 	// Run via the shell so user-provided commands with flags/quoting work as
 	// they would under OpenSSH's ProxyCommand.
 	cmd := exec.Command("sh", "-c", cmdline)
+	cmd.WaitDelay = 250 * time.Millisecond
 	stderr := &syncBuffer{}
 	cmd.Stderr = stderr
 
@@ -339,7 +345,9 @@ func dialSOCKS5(s *config.Server, addr string, auth *proxy.Auth, timeout time.Du
 	if err != nil {
 		return nil, fmt.Errorf("socks5 dialer %s: %w", addr, err)
 	}
-	conn, err := dialer.Dial("tcp", Address(s))
+	ctx, cancel := context.WithTimeout(context.Background(), timeout)
+	defer cancel()
+	conn, err := dialer.(proxy.ContextDialer).DialContext(ctx, "tcp", Address(s))
 	if err != nil {
 		return nil, fmt.Errorf("socks5 dial %s via %s: %w", Address(s), addr, err)
 	}
@@ -353,14 +361,23 @@ func dialSOCKS5(s *config.Server, addr string, auth *proxy.Auth, timeout time.Du
 // hop is performed: the jump host's own transport may use env SOCKS / its own
 // ProxyCommand, but a further ProxyJump on the jump host is NOT followed.
 func dialViaJump(s *config.Server, spec string, opts BuildOpts, timeout time.Duration) (net.Conn, io.Closer, error) {
-	jump, jumpAlias, err := resolveJumpServer(spec, s, opts)
+	var jump *config.Server
+	var jumpAlias string
+	var err error
+	jumpOpts := BuildOpts{Insecure: opts.Insecure, Timeout: timeout, ConfigPath: opts.ConfigPath}
+	if opts.ResolveJump != nil {
+		jump, jumpOpts, err = opts.ResolveJump(spec)
+		jumpOpts.Insecure = opts.Insecure
+		jumpOpts.Timeout = timeout
+	} else {
+		jump, jumpAlias, err = resolveJumpServer(spec, s, opts)
+	}
 	if err != nil {
 		return nil, nil, err
 	}
 
 	// Build the jump host's own client config + transport. Reuse the target's
 	// insecure/timeout posture but never inherit the target's password.
-	jumpOpts := BuildOpts{Insecure: opts.Insecure, Timeout: timeout, ConfigPath: opts.ConfigPath}
 	cfg, closer, err := BuildClientConfig(jump, jumpOpts)
 	if err != nil {
 		return nil, nil, fmt.Errorf("proxy jump %s: %w", Address(jump), err)
@@ -376,7 +393,7 @@ func dialViaJump(s *config.Server, spec string, opts BuildOpts, timeout time.Dur
 		return nil, nil, fmt.Errorf("proxy jump %s: %w", Address(jump), err)
 	}
 
-	sshConn, chans, reqs, err := gssh.NewClientConn(jconn, Address(jump), cfg)
+	sshConn, chans, reqs, err := handshake(jconn, Address(jump), cfg, timeout)
 	if err != nil {
 		jconn.Close()
 		if jaux != nil {
@@ -386,7 +403,7 @@ func dialViaJump(s *config.Server, spec string, opts BuildOpts, timeout time.Dur
 		return nil, nil, fmt.Errorf("proxy jump handshake %s: %w", Address(jump), err)
 	}
 	jumpClient := gssh.NewClient(sshConn, chans, reqs)
-	if jumpAlias != "" {
+	if jumpAlias != "" && !opts.ProbeOnly {
 		activityPath := opts.ConfigPath
 		if activityPath == "" {
 			activityPath = config.ConfigPath()
@@ -396,7 +413,9 @@ func dialViaJump(s *config.Server, spec string, opts BuildOpts, timeout time.Dur
 		}
 	}
 
-	target, err := jumpClient.Dial("tcp", Address(s))
+	ctx, cancel := context.WithTimeout(context.Background(), timeout)
+	defer cancel()
+	target, err := jumpClient.DialContext(ctx, "tcp", Address(s))
 	if err != nil {
 		jumpClient.Close()
 		jconn.Close()

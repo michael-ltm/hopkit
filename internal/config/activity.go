@@ -14,10 +14,16 @@ func ClearServerActivity(server *Server, at time.Time) {
 		at = time.Now()
 	}
 	server.IdentityChangedAt = at.UTC()
+	server.Hardware = nil
 	server.LastUsed = time.Time{}
 	server.LastSeen = time.Time{}
 	server.LastChecked = time.Time{}
 	server.LastStatus = ""
+	server.LastSSHChecked = time.Time{}
+	server.LastSSHError = ""
+	server.SSHMStatus = ""
+	server.SSHMVersion = ""
+	server.SSHMCheckedAt = time.Time{}
 }
 
 // ProbeObservation binds a reachability result to the server identity that was
@@ -54,6 +60,10 @@ func RecordSSHUse(path, alias string, expected *Server, at time.Time) error {
 		}
 		if expected != nil && (server.Host != expected.Host || server.Port != expected.Port || server.User != expected.User) {
 			return nil
+		}
+		if server.LastSSHChecked.IsZero() || !at.Before(server.LastSSHChecked) {
+			server.LastSSHChecked = at
+			server.LastSSHError = ""
 		}
 		if server.LastUsed.IsZero() || at.After(server.LastUsed) {
 			server.LastUsed = at
@@ -101,6 +111,25 @@ func RecordProbes(path string, results map[string]ProbeObservation) error {
 					server.LastSeen = at
 				}
 			}
+		}
+		return nil
+	})
+}
+
+// RecordSSHCheck stores only a bounded classification, never raw command or
+// authentication errors. Inspections must not advance LastUsed.
+func RecordSSHCheck(path, alias string, expected *Server, category string, at time.Time) error {
+	if alias == "" {
+		return nil
+	}
+	return Update(path, func(cfg *Config) error {
+		s := cfg.Servers[alias]
+		if s == nil || expected == nil || s.Host != expected.Host || s.Port != expected.Port || s.User != expected.User {
+			return nil
+		}
+		if s.LastSSHChecked.IsZero() || !at.Before(s.LastSSHChecked) {
+			s.LastSSHChecked = at.UTC()
+			s.LastSSHError = category
 		}
 		return nil
 	})

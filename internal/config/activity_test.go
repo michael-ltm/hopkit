@@ -125,3 +125,26 @@ func TestServerLifecycleFieldsRoundTripInV5(t *testing.T) {
 	require.Equal(t, CurrentVersion, got.Version)
 	require.Equal(t, cfg.Servers["pc"], got.Servers["pc"])
 }
+
+func TestFailedSSHAttemptIsNotSuccessAndTCPDoesNotClearAuthFailure(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "config.toml")
+	cfg := New()
+	s := &Server{Host: "host", Port: 22, User: "u", Auth: AuthAgent}
+	cfg.Servers["host"] = s
+	require.NoError(t, Save(path, cfg))
+	now := time.Now().UTC()
+	require.NoError(t, RecordSSHCheck(path, "host", s, "authentication", now))
+	require.NoError(t, RecordProbes(path, map[string]ProbeObservation{"host": NewProbeObservation(s, true, now.Add(time.Second))}))
+	got, e := Load(path)
+	require.NoError(t, e)
+	require.True(t, got.Servers["host"].LastUsed.IsZero())
+	require.Equal(t, "authentication", got.Servers["host"].LastSSHError)
+	require.NoError(t, RecordSSHUse(path, "host", s, now.Add(2*time.Second)))
+	got, e = Load(path)
+	require.NoError(t, e)
+	require.Empty(t, got.Servers["host"].LastSSHError)
+	require.NoError(t, RecordSSHCheck(path, "host", s, "timeout", now))
+	got, e = Load(path)
+	require.NoError(t, e)
+	require.Empty(t, got.Servers["host"].LastSSHError)
+}

@@ -26,20 +26,30 @@ func RenderServerTable(servers map[string]*config.Server, ic IconSet, color bool
 	if len(aliases) == 0 {
 		return "No servers yet. Add one with: sshm add\n"
 	}
-	sort.Strings(aliases)
+	sort.Slice(aliases, func(i, j int) bool {
+		a, b := aliases[i], aliases[j]
+		if !servers[a].LastUsed.Equal(servers[b].LastUsed) {
+			return servers[a].LastUsed.After(servers[b].LastUsed)
+		}
+		return a < b
+	})
 
 	rows := [][]string{{"ID", "STATUS", "SYSTEM", "DESCRIPTION", "HOST", "USER", "AUTH", "TAGS", "LAST USED"}}
 	for _, a := range aliases {
 		s := servers[a]
 		statusIcon, statusLabel, statusStyle := statusGlyph(s.LastStatus, ic)
 		authIcon := authGlyph(s.Auth, ic)
+		host, user := s.Host, s.User
+		if config.DeviceConnectionID(s) != "" {
+			host, user = "SSHM client", "encrypted"
+		}
 		row := []string{
 			SanitizeTerminalText(a),
 			renderCell(statusIcon+" "+statusLabel, statusStyle, color),
 			platformLabel(s.Platform),
 			compactDescription(config.EffectiveDescription(s), 48),
-			SanitizeTerminalText(s.Host),
-			SanitizeTerminalText(s.User),
+			SanitizeTerminalText(host),
+			SanitizeTerminalText(user),
 			authIcon,
 			SanitizeTerminalText(strings.Join(s.Tags, ", ")),
 			humanizeSince(s.LastUsed),
@@ -93,6 +103,8 @@ func statusGlyph(s string, ic IconSet) (icon, label string, style lipgloss.Style
 
 func authGlyph(a string, ic IconSet) string {
 	switch a {
+	case config.AuthCloud:
+		return ic.AuthKey + " cloud"
 	case config.AuthKey:
 		return ic.AuthKey + " key"
 	case config.AuthPassword:

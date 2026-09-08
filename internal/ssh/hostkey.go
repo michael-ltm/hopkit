@@ -69,8 +69,8 @@ func tofuHostKeyCallback(path string) gssh.HostKeyCallback {
 			}
 			// Host present but key differs: possible MITM.
 			return fmt.Errorf(
-				"host key mismatch for %s: possible MITM; remove the stale line from ~/.ssh/known_hosts if you trust the new key",
-				hostname)
+				"host key mismatch for %s: possible MITM; received %s %s; verify the server identity through a trusted channel before changing known_hosts",
+				hostname, key.Type(), gssh.FingerprintSHA256(key))
 		}
 		// Some other error (e.g. malformed file): surface it.
 		return matchErr

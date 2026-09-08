@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"net"
 	"time"
 
 	gssh "golang.org/x/crypto/ssh"
@@ -25,10 +26,31 @@ func agentAuth() (gssh.AuthMethod, io.Closer, error) {
 // holds the agent connection and must stay open for the connection's
 // lifetime.
 func agentSignerFor(want gssh.PublicKey) (gssh.Signer, io.Closer, error) {
-	conn, err := dialAgent()
-	if err != nil {
-		return nil, nil, err
+	var lastErr error
+	seen := map[string]bool{}
+	for _, path := range agentPaths() {
+		if path == "" || seen[path] {
+			continue
+		}
+		seen[path] = true
+		conn, err := dialAgentAt(path)
+		if err != nil {
+			lastErr = err
+			continue
+		}
+		signer, closer, err := signerFromAgent(conn, want)
+		if err == nil {
+			return signer, closer, nil
+		}
+		lastErr = err
 	}
+	if lastErr == nil {
+		lastErr = errors.New("no SSH agent available; start the platform agent and load the key")
+	}
+	return nil, nil, lastErr
+}
+
+func signerFromAgent(conn net.Conn, want gssh.PublicKey) (gssh.Signer, io.Closer, error) {
 	if err := conn.SetDeadline(time.Now().Add(30 * time.Second)); err != nil {
 		conn.Close()
 		return nil, nil, fmt.Errorf("set ssh-agent list deadline: %w", err)

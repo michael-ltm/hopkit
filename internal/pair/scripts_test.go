@@ -351,3 +351,41 @@ func decodePOSIXScript(t *testing.T, oneLiner string) string {
 	require.NoError(t, gzipReader.Close())
 	return string(posixBytes)
 }
+
+func TestWindowsFileContainsReadablePayloadAndStages(t *testing.T) {
+	scripts, err := BuildScripts("ssh-ed25519 AAAATEST", "http://127.0.0.1:1/v1/pair/synthetic", 2222)
+	require.NoError(t, err)
+	require.Contains(t, scripts.WindowsFile, "$sshPort=2222")
+	require.NotContains(t, scripts.WindowsFile, "__SSH_PORT__")
+	require.NotContains(t, scripts.WindowsFile, "Compression.GzipStream")
+	for _, stage := range []string{"Windows login identity", "OpenSSH installation", "OpenSSH configuration", "OpenSSH service startup", "Public key and permissions", "Windows Firewall", "Controller callback"} {
+		require.Contains(t, scripts.WindowsFile, "$sshmStage='"+stage+"';Write-Host \"SSHM: $sshmStage\"\n")
+	}
+	require.Less(t, strings.Index(scripts.WindowsFile, "if($CheckOnly)"), strings.Index(scripts.WindowsFile, "$publicKey="))
+}
+
+func TestWindowsFileNativeParserAndReadOnlyBranch(t *testing.T) {
+	if runtime.GOOS != "windows" {
+		t.Skip("requires Windows PowerShell")
+	}
+	scripts, err := BuildScripts("ssh-ed25519 AAAATEST", "http://127.0.0.1:1/v1/pair/synthetic", 2222)
+	require.NoError(t, err)
+	dir := t.TempDir()
+	file := filepath.Join(dir, "test.windows.ps1")
+	require.NoError(t, os.WriteFile(file, []byte(scripts.WindowsFile), 0600))
+	ps := filepath.Join(os.Getenv("SystemRoot"), "System32", "WindowsPowerShell", "v1.0", "powershell.exe")
+	parse := "$tokens=$null;$errors=$null;[void][Management.Automation.Language.Parser]::ParseFile($env:SSHM_TEST_FILE,[ref]$tokens,[ref]$errors);if($errors.Count){$errors|ForEach-Object{$_.Message};exit 1}"
+	cmd := exec.Command(ps, "-NoLogo", "-NoProfile", "-Command", parse)
+	cmd.Env = append(os.Environ(), "SSHM_TEST_FILE="+file)
+	output, err := cmd.CombinedOutput()
+	require.NoError(t, err, "%s", output)
+	// Simulate a clean machine. Installation must not run in diagnostic mode.
+	check := "function Get-Service { param($Name,$ErrorAction) return $null }; & $env:SSHM_TEST_FILE -CheckOnly"
+	cmd = exec.Command(ps, "-NoLogo", "-NoProfile", "-ExecutionPolicy", "Bypass", "-Command", check)
+	cmd.Env = append(os.Environ(), "SSHM_TEST_FILE="+file)
+	output, err = cmd.CombinedOutput()
+	require.NoError(t, err, "%s", output)
+	require.Contains(t, string(output), "OpenSSH Server: not installed")
+	require.NotContains(t, string(output), "SSHM: OpenSSH installation")
+	require.NotContains(t, string(output), "synthetic")
+}

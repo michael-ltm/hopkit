@@ -1,0 +1,29 @@
+{
+  "name": "sshm-cloud",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "pnpm run browser && wrangler dev",
+    "build": "pnpm run browser && wrangler deploy --dry-run --outdir dist",
+    "types": "wrangler types",
+    "check": "pnpm run browser && tsc --noEmit",
+    "test": "node --test installers/*.node-test.mjs src/browser/*.node-test.mjs && pnpm run browser && vitest run",
+    "deploy": "pnpm run browser && wrangler deploy",
+    "browser": "node build-browser.mjs"
+  },
+  "devDependencies": {
+    "@cloudflare/vitest-pool-workers": "0.22.0",
+    "@cloudflare/workers-types": "^5.20260904.1",
+    "@types/node": "^22.20.1",
+    "esbuild": "0.25.12",
+    "typescript": "^7.0.2",
+    "vitest": "4.1.11",
+    "wrangler": "4.129.0"
+  },
+  "dependencies": {
+    "@noble/hashes": "2.2.0",
+    "@xterm/addon-fit": "0.11.0",
+    "@xterm/xterm": "6.0.0"
+  }
+}

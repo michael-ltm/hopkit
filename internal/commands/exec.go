@@ -46,6 +46,9 @@ shell or wrap in 'sh -c "..."', e.g.:
 			if err != nil {
 				return err
 			}
+			if s.CloudEntry != "" {
+				return runCloudReference(cmd, s, append([]string{s.CloudEntry}, args[1:]...), true, timeoutSec)
+			}
 			remoteCmd := strings.Join(args[1:], " ")
 			ctx := context.Background()
 			if timeoutSec > 0 {

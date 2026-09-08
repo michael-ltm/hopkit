@@ -57,6 +57,7 @@ func UpdateWithSource(path string, fn func(*Config, []byte) error) error {
 			return err
 		}
 	}
+	cfg = applyCloudBindings(path, cfg)
 	if err := fn(cfg, source); err != nil {
 		return err
 	}

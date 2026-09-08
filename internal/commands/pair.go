@@ -109,7 +109,7 @@ saved only after sshm verifies a real key-authenticated SSH session.`,
 	c.Flags().StringVar(&opts.tags, "tags", "", "comma-separated discovery tags")
 	c.Flags().StringVar(&opts.group, "group", "", "server group")
 	c.Flags().StringVarP(&opts.keyPath, "identity", "i", "", "key path (default ~/.ssh/id_ed25519_<alias>)")
-	c.Flags().StringVar(&opts.scriptDir, "script-dir", "", "write private target command files here instead of printing them")
+	c.Flags().StringVar(&opts.scriptDir, "script-dir", "", "write private target files (Windows .cmd + readable .ps1) instead of printing commands")
 	c.Flags().StringVar(&opts.callbackHost, "callback-host", "", "Tailscale/LAN address the target can reach (auto-detected)")
 	c.Flags().StringVar(&opts.listen, "listen", "", "local callback listen address (default matches callback address family)")
 	c.Flags().StringVar(&opts.target, "target", "all", "command to print: windows, posix, or all")
@@ -148,6 +148,15 @@ func runPairWizard(cmd *cobra.Command, cfg *config.Config) error {
 	opts.tags = input.Tags
 	opts.group = input.Group
 	opts.target = pairTargetForPlatform(input.Platform)
+	if opts.target == "windows" {
+		// Keep one session's public-key installer private and remove it when the
+		// controller exits. The user transfers both files while it is waiting.
+		opts.scriptDir, err = os.MkdirTemp("", "sshm-pair-")
+		if err != nil {
+			return err
+		}
+		defer os.RemoveAll(opts.scriptDir)
+	}
 	return runPairCommand(cmd, input.Alias, opts)
 }
 
@@ -281,6 +290,12 @@ func runPairCommand(cmd *cobra.Command, alias string, opts pairOptions) error {
 		}
 		for _, path := range paths {
 			fmt.Fprintf(out, "Target command file: %s\n", path)
+		}
+		if opts.target == "all" || opts.target == "windows" {
+			fmt.Fprintln(out, "\nTransfer both Windows files into the same folder on the target.")
+			fmt.Fprintln(out, "Right-click the .windows.cmd file > Run as administrator, using the target login account.")
+			fmt.Fprintln(out, "For a read-only check, run the .windows.cmd file with the argument: check")
+			fmt.Fprintln(out, "Keep this controller waiting until verified. These files contain a one-time pairing link; delete the target copies afterwards.")
 		}
 	} else {
 		if opts.target == "all" || opts.target == "windows" {
@@ -422,6 +437,9 @@ func platformFromPairReport(platform string) string {
 }
 
 func writePairCommandFiles(dir, alias, target string, scripts pair.Scripts) ([]string, error) {
+	if err := wizard.ValidateAlias(alias); err != nil {
+		return nil, err
+	}
 	if strings.ContainsAny(dir, "\x00\r\n") {
 		return nil, fmt.Errorf("script directory is invalid")
 	}
@@ -442,7 +460,12 @@ func writePairCommandFiles(dir, alias, target string, scripts pair.Scripts) ([]s
 		return nil
 	}
 	if target == "all" || target == "windows" {
-		if err := write(".windows.ps1", scripts.Windows); err != nil {
+		if err := write(".windows.ps1", scripts.WindowsFile); err != nil {
+			return nil, err
+		}
+	}
+	if target == "all" || target == "windows" {
+		if err := write(".windows.cmd", strings.ReplaceAll(pair.WindowsLauncher(alias+".windows.ps1"), "\n", "\r\n")); err != nil {
 			return nil, err
 		}
 	}

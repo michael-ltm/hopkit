@@ -16,3 +16,15 @@ coverage.html
 
 # local config
 *.local.toml
+
+# Cloud development and local secrets
+/cloud/node_modules/
+/cloud/.wrangler/
+/cloud/dist/
+/cloud/.dev.vars*
+/cloud/.env*
+/.cloudflare/
+/cloud/public/downloads/
+/cloud/src/account-bundle.ts
+
+/cloud/src/terminal-style.ts
