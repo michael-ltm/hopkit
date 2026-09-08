@@ -15,10 +15,8 @@ and host-key verification.
   readiness; `test_connection` proves TCP only.
 - Named project: call `get_project` directly; `list_projects` only discovers
   names or resolves initial ambiguity. Confirm changes before `upsert_project`.
-- Environment: `check_environment` checks local/remote CLI paths and GitHub access.
-  A missing executable or unavailable SSH-session credential does not prove the
-  desktop user is logged out. Check OS user, PATH, keychain/session and network;
-  do not tell users to log in again from an exit code alone. Never print tokens.
+- Environment: `check_environment` checks paths/auth in this session only.
+  SSH credential failure does not prove desktop logout; never print tokens.
 - Commands: `exec_project` for profiles; `exec` / `exec_multi` otherwise.
 - Files: `upload` / `download`; large transfers use
   `transfer_start` / `transfer_status`. Other operations: `tail_logs`,
@@ -48,10 +46,9 @@ and host-key verification.
 
 ## Output discipline
 
-Plans default to one short line per call, one failure line, and one completion
-line; expand only when a gate would be ambiguous or the user asks. Include no
-sample JSON, schema restatement, or repeated rationale. List only skill files
-actually read. After execution, report evidence instead of narration.
+Use one short line per call, one failure line, and one completion line.
+Report evidence; omit sample JSON and schema restatements.
+List only skill files actually read.
 
 ## Conditional references
 
