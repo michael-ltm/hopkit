@@ -47,6 +47,22 @@ func loginUserCommand(shell, command string) string {
 	return quote(shell) + " -lc " + quote(userPathPrefix+command)
 }
 
+// desktopUserCommand delegates only after the user has explicitly enabled
+// their own desktop agent. exec replaces the SSH child, so disconnect/kill
+// closes the private socket and cancels its command. No retry after dispatch.
+func desktopUserCommand(shell, command string) string {
+	quote := func(s string) string { return "'" + strings.ReplaceAll(s, "'", "'\"'\"'") + "'" }
+	dispatch := `if [ "$(uname -s)" = Darwin ] && [ -f "$HOME/Library/Application Support/sshm/desktop/enabled" ]; then
+ if ! command -v sshm >/dev/null 2>&1; then
+  printf '%s\n' 'Desktop execution is enabled but sshm is unavailable in PATH; command was not run.' >&2
+  exit 69
+ fi
+ exec sshm desktop exec -- ` + quote(userPathPrefix+command) + `
+fi
+`
+	return loginUserCommand(shell, dispatch+command)
+}
+
 // PrepareUserCommand preserves existing PATH precedence, adding only missing
 // conventional installation directories after loading the user login shell. Raw Exec stays available for protocol
 // probes and callers requiring the exact sshd environment.
@@ -61,7 +77,7 @@ func (c *Client) PrepareUserCommand(ctx context.Context, command string) (string
 		return "", fmt.Errorf("inspect remote execution environment: %w", err)
 	}
 	if res.ExitCode == 0 && supportedUserShell(res.Stdout) {
-		return loginUserCommand(userShell(res.Stdout), command), nil
+		return desktopUserCommand(userShell(res.Stdout), command), nil
 	}
 	win, err := c.Exec(probeCtx, "cmd /c ver")
 	if err != nil {

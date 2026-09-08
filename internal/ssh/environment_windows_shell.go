@@ -5,7 +5,8 @@ import "strings"
 // Refresh PATH only, without importing other registry values (which may contain
 // credentials). Existing process entries win. Expansion handles standard Windows
 // variables; the registry and process belong to the authenticated remote user.
-const windowsPathPrefix = `$ErrorActionPreference = 'Stop'
+const windowsPathPrefix = `$ProgressPreference = 'SilentlyContinue'
+$ErrorActionPreference = 'Stop'
 $sshmExecPaths = @($env:Path)
 foreach ($sshmExecScope in @('User', 'Machine')) {
  $sshmExecValue = [Environment]::GetEnvironmentVariable('Path', $sshmExecScope)

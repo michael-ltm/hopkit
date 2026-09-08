@@ -15,21 +15,23 @@ import (
 // are deliberately not classified as logout: keychains, network, SSO, scopes,
 // credential helpers and the selected OS user can all differ from a desktop.
 type EnvironmentReport struct {
-	Scope           string            `json:"scope"`
-	Platform        string            `json:"platform"`
-	User            string            `json:"os_user,omitempty"`
-	GHOriginalPath  string            `json:"gh_original_path,omitempty"`
-	GHEffectivePath string            `json:"gh_effective_path,omitempty"`
-	Tools           map[string]string `json:"tools"`
-	GitPath         string            `json:"git_path,omitempty"`
-	GitHub          string            `json:"github_access"`
-	Account         string            `json:"github_account,omitempty"`
-	Note            string            `json:"note"`
+	ExecutionContext string            `json:"execution_context"`
+	Scope            string            `json:"scope"`
+	Platform         string            `json:"platform"`
+	User             string            `json:"os_user,omitempty"`
+	GHOriginalPath   string            `json:"gh_original_path,omitempty"`
+	GHEffectivePath  string            `json:"gh_effective_path,omitempty"`
+	Tools            map[string]string `json:"tools"`
+	GitPath          string            `json:"git_path,omitempty"`
+	GitHub           string            `json:"github_access"`
+	Account          string            `json:"github_account,omitempty"`
+	Note             string            `json:"note"`
 }
 
 const environmentNote = "Only this execution session was checked. CLI discovery, GitHub API authorization and Git credential-helper access are separate. Unavailable access does not prove logout or an invalid stored token; check the OS user, keychain/session access, network and account selection before re-authenticating."
 
 const posixEnvironmentCheck = `printf 'platform\t%s\n' "$(uname -s)"
+printf 'execution_context\t%s\n' "${SSHM_EXECUTION_CONTEXT:-ssh_or_local}"
 printf 'user\t%s\n' "$(id -un)"
 printf 'gh_original\t%s\n' "$(command -v gh 2>/dev/null)"
 ` + userPathPrefix + `printf 'gh_effective\t%s\n' "$(command -v gh 2>/dev/null)"
@@ -88,6 +90,10 @@ func parseEnvironmentReport(output, scope, platform string) EnvironmentReport {
 		switch k {
 		case "tool_node", "tool_npm", "tool_python", "tool_python3":
 			r.Tools[strings.TrimPrefix(k, "tool_")] = v
+		case "execution_context":
+			if v == "desktop_user" {
+				r.ExecutionContext = v
+			}
 		case "platform":
 			switch v {
 			case "Darwin":
@@ -115,6 +121,9 @@ func parseEnvironmentReport(output, scope, platform string) EnvironmentReport {
 				r.Account = v
 			}
 		}
+	}
+	if r.ExecutionContext == "" {
+		r.ExecutionContext = scope
 	}
 	if r.GitHub != "verified" {
 		r.Account = ""

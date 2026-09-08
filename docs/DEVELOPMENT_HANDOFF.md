@@ -1,6 +1,6 @@
 # SSHM development handoff — 2026-09-08
 
-SSHM manages local SSH connections and optional client-encrypted cloud synchronization. Production endpoint: https://sshm.yunmini.net. Latest deployed client in this handoff: `0.8.0-cloud-preview.30`. See `docs/2026-09-08-device-version-reporting.md` for deployment evidence and `docs/cloud-sync.md` for architecture.
+SSHM manages local SSH connections and optional client-encrypted cloud synchronization. Production endpoint: https://sshm.yunmini.net. Latest client release target: `0.8.0-cloud-preview.32`. See `docs/2026-09-08-device-version-reporting.md` for deployment evidence and `docs/cloud-sync.md` for architecture.
 
 ## Start here
 
@@ -33,7 +33,7 @@ Release scripts: `scripts/build-cloud-clients.py`, `scripts/sign-cloud-release/`
 
 ## Execution environment
 
-See `docs/execution-environment.md` for login-shell/PATH handling and `sshm doctor` / MCP `check_environment`. Missing CLI discovery or unavailable credentials in an SSH session must never be described as proof that the desktop user has not logged in.
+See `docs/execution-environment.md` for login-shell/PATH handling and `sshm doctor` / MCP `check_environment`. Missing CLI discovery or unavailable credentials in an SSH session must never be described as proof that the desktop user has not logged in. Preview.32 adds the opt-in same-user desktop agent described in `docs/desktop-session.md`; it resolves the Mac mini keychain session difference.
 
 ## Safe continuation
 

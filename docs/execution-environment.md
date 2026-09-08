@@ -8,6 +8,10 @@
 - `sshm exec --raw-environment alias 'command'`, or MCP `raw_environment: true`, retains the original sshd environment. This option is for foreground direct SSH commands; it is rejected for detached/cloud-reference CLI execution rather than silently ignored. Internal SSH protocol probes still use raw execution.
 - Cloud terminal sessions already start an interactive login shell. This change does not transfer the desktop session's secrets to a cloud agent or restart active terminals.
 
+## macOS desktop keychain sessions
+
+Preview.32 adds opt-in desktop execution when the same user is already logged into macOS. See [desktop-session.md](desktop-session.md). This resolves the verified Mac mini Background-versus-GUI authorization failure without copying tokens.
+
 ## Diagnose before asking someone to log in again
 
 ```sh

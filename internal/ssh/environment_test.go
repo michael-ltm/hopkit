@@ -135,3 +135,12 @@ func TestWindowsEnvironmentPreservesSelectedToolInPathWithSpaces(t *testing.T) {
 	require.NoError(t, err, string(out))
 	require.Contains(t, string(out), "selected-tool")
 }
+
+func TestDesktopDelegationIsOptInAndDoesNotReplay(t *testing.T) {
+	script := desktopUserCommand("/bin/zsh", "printf 'user command'")
+	require.Contains(t, script, "Library/Application Support/sshm/desktop/enabled")
+	require.Contains(t, script, "exec sshm desktop exec --")
+	// The exec invocation must replace the shell, including on error. No `||`
+	// fallback may replay a write that was submitted before a transport failure.
+	require.NotContains(t, script, "||")
+}

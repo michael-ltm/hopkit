@@ -384,7 +384,7 @@ func execOutcome(single any) (bool, string) {
 func registerExecTools(s *server.MCPServer, deps Deps, names []string) []string {
 	execTool := mcp.NewTool("exec",
 		mcp.WithDescription("Run in a noninteractive login shell with common POSIX install paths added (profile PATH wins; Windows refreshes user/system PATH; unknown shells unchanged). "+
-			"A missing CLI or unavailable credential here does not mean the desktop user is logged out. Use check_environment to diagnose. Dangerous commands are blocked unless unsafe=true. "+
+			"On macOS an explicitly enabled SSHM desktop agent runs commands in that same OS user login session. A missing CLI or unavailable credential here does not mean the desktop user is logged out. Use check_environment to diagnose. Dangerous commands are blocked unless unsafe=true. "+
 			"timeout_seconds bounds the run (0 = no timeout, default 60); on timeout the captured partial output is "+
 			"returned with timed_out=true. detach=true runs the command in the background and returns a platform-specific "+
 			"log_path to poll with tail_logs (ignores timeout_seconds). Requires reason; audited."),
