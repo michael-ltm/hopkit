@@ -19,7 +19,7 @@ func TestPairCommandFilesUseProtectedWindowsDACL(t *testing.T) {
 		pair.Scripts{Windows: "$x='win'", POSIX: "echo posix"},
 	)
 	require.NoError(t, err)
-	require.Len(t, paths, 2)
+	require.Len(t, paths, 3)
 	for _, path := range paths {
 		descriptor, descriptorErr := windows.GetNamedSecurityInfo(
 			path,

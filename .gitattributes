@@ -1,0 +1,2 @@
+# Skill context budgets and embedded documents must have identical bytes on all OSes.
+plugins/sshm-skill/skills/**/*.md text eol=lf
