@@ -19,7 +19,7 @@ import (
 func main() {
 	keyPath := flag.String("key", "", "private signing key file outside repository")
 	initialize := flag.Bool("init-key", false, "create a new signing key; never overwrite")
-	version := flag.String("version", "0.8.0-cloud-preview.32", "release version")
+	version := flag.String("version", "0.8.0-cloud-preview.33", "release version")
 	dir := flag.String("assets", "cloud/public/downloads", "built downloads")
 	flag.Parse()
 	if *keyPath == "" {

@@ -8,7 +8,7 @@ import subprocess
 from concurrent.futures import ThreadPoolExecutor
 
 root = Path(__file__).resolve().parents[1]
-version = '0.8.0-cloud-preview.32'
+version = '0.8.0-cloud-preview.33'
 out = root / 'dist/cloud-preview'
 assets = root / 'cloud/public/downloads'
 out.mkdir(parents=True, exist_ok=True)

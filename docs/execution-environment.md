@@ -10,7 +10,7 @@
 
 ## macOS desktop keychain sessions
 
-Preview.32 adds opt-in desktop execution when the same user is already logged into macOS. See [desktop-session.md](desktop-session.md). This resolves the verified Mac mini Background-versus-GUI authorization failure without copying tokens.
+Preview.33 adds an opt-in GitHub credential bridge when the same user is already logged into macOS. Git and filesystem work stay in the original SSH context. See [desktop-session.md](desktop-session.md). This resolves the verified Mac mini Background-versus-GUI authorization failure without persisting tokens or changing keychain/OS privacy permissions.
 
 ## Diagnose before asking someone to log in again
 

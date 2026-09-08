@@ -15,17 +15,18 @@ import (
 // are deliberately not classified as logout: keychains, network, SSO, scopes,
 // credential helpers and the selected OS user can all differ from a desktop.
 type EnvironmentReport struct {
-	ExecutionContext string            `json:"execution_context"`
-	Scope            string            `json:"scope"`
-	Platform         string            `json:"platform"`
-	User             string            `json:"os_user,omitempty"`
-	GHOriginalPath   string            `json:"gh_original_path,omitempty"`
-	GHEffectivePath  string            `json:"gh_effective_path,omitempty"`
-	Tools            map[string]string `json:"tools"`
-	GitPath          string            `json:"git_path,omitempty"`
-	GitHub           string            `json:"github_access"`
-	Account          string            `json:"github_account,omitempty"`
-	Note             string            `json:"note"`
+	CredentialContext string            `json:"github_credential_context,omitempty"`
+	ExecutionContext  string            `json:"execution_context"`
+	Scope             string            `json:"scope"`
+	Platform          string            `json:"platform"`
+	User              string            `json:"os_user,omitempty"`
+	GHOriginalPath    string            `json:"gh_original_path,omitempty"`
+	GHEffectivePath   string            `json:"gh_effective_path,omitempty"`
+	Tools             map[string]string `json:"tools"`
+	GitPath           string            `json:"git_path,omitempty"`
+	GitHub            string            `json:"github_access"`
+	Account           string            `json:"github_account,omitempty"`
+	Note              string            `json:"note"`
 }
 
 const environmentNote = "Only this execution session was checked. CLI discovery, GitHub API authorization and Git credential-helper access are separate. Unavailable access does not prove logout or an invalid stored token; check the OS user, keychain/session access, network and account selection before re-authenticating."
@@ -34,7 +35,12 @@ const posixEnvironmentCheck = `printf 'platform\t%s\n' "$(uname -s)"
 printf 'execution_context\t%s\n' "${SSHM_EXECUTION_CONTEXT:-ssh_or_local}"
 printf 'user\t%s\n' "$(id -un)"
 printf 'gh_original\t%s\n' "$(command -v gh 2>/dev/null)"
-` + userPathPrefix + `printf 'gh_effective\t%s\n' "$(command -v gh 2>/dev/null)"
+` + userPathPrefix + `if [ -n "${GH_TOKEN:-}${GITHUB_TOKEN:-}" ]; then
+ printf 'credential_context\tprocess_environment\n'
+elif [ "${SSHM_GITHUB_CONTEXT:-}" = desktop_user ]; then
+ printf 'credential_context\tdesktop_user\n'
+fi
+printf 'gh_effective\t%s\n' "$(command -v gh 2>/dev/null)"
 printf 'git\t%s\n' "$(command -v git 2>/dev/null)"
 for sshm_check_tool in node npm python python3; do
  printf 'tool_%s\t%s\n' "$sshm_check_tool" "$(command -v "$sshm_check_tool" 2>/dev/null)"
@@ -90,6 +96,10 @@ func parseEnvironmentReport(output, scope, platform string) EnvironmentReport {
 		switch k {
 		case "tool_node", "tool_npm", "tool_python", "tool_python3":
 			r.Tools[strings.TrimPrefix(k, "tool_")] = v
+		case "credential_context":
+			if v == "desktop_user" || v == "process_environment" {
+				r.CredentialContext = v
+			}
 		case "execution_context":
 			if v == "desktop_user" {
 				r.ExecutionContext = v

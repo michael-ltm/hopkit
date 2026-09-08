@@ -14,3 +14,6 @@ func Serve(context.Context, string) error            { return ErrUnsupported }
 func Execute(context.Context, string, string, io.Writer, io.Writer) (int, error) {
 	return -1, ErrUnsupported
 }
+func RunGitHub(context.Context, []string, io.Reader, io.Writer, io.Writer) (int, error) {
+	return -1, ErrUnsupported
+}

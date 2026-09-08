@@ -143,6 +143,9 @@ func Enable(ctx context.Context, executable string) (Status, error) {
 		case <-ticker.C:
 		}
 	}
+	if e = installGitHubShim(executable); e != nil {
+		return Status{}, e
+	}
 	marker, _ := markerPath()
 	if _, e = os.Lstat(marker); e == nil {
 		if e = ownedPrivate(marker, false); e != nil {

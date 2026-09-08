@@ -1,39 +1,44 @@
-# macOS desktop session execution
+# macOS GitHub credential bridge
 
-SSHM preview.32 fixes an observed macOS authorization difference: the same `gh` executable and existing `michael-ltm` login failed from sshd's Background security session, while an independent launchd job in the same OS user's GUI session successfully accessed GitHub. Preview.31's login-shell/PATH fix alone could not resolve this. No new GitHub login or token replacement is required for this case.
+Preview.33 resolves two independently verified macOS session boundaries:
+
+1. The existing `gh` login works in the owning user's GUI session, but keychain lookup fails from sshd's Background session.
+2. Moving complete Git commands into a standalone GUI agent can block reads of repositories in protected Documents folders. Git and filesystem work must retain the already-authorized SSH context.
+
+SSHM therefore delegates **only GitHub credential lookup** to a same-user desktop agent. Git, the real GitHub CLI, Node, Python and repository operations execute in the original SSH context. No new GitHub login, keychain ACL change or extra Documents permission is needed for the verified Mac mini case.
 
 ## Enable and inspect
 
-On the Mac which already has a desktop login:
+On the Mac which already has a desktop login and GitHub CLI:
 
 ```sh
 sshm desktop enable
 sshm desktop status
 ```
 
-Enable installs `~/Library/LaunchAgents/net.yunmini.sshm.desktop.plist` for that OS user and opts their SSHM user commands into desktop execution. The service requires an existing `gui/<uid>` session and refuses to run as a Background-session impostor. It runs the installed SSHM executable, survives normal command exits, and starts with subsequent desktop logins. Other users' GUI sessions are never selected. The daemon's reported version is the loaded version, distinct from a newly updated executable on disk.
+This installs a same-user LaunchAgent and a private `gh` shim under `~/Library/Application Support/sshm/desktop/bin`. SSHM's user-command environment prepends that directory and adds process-local GitHub credential-helper settings. Existing Git settings are retained; the bridge is scoped to HTTPS `github.com`. Shell/Git configuration files are not rewritten by this PATH/helper setup.
 
-After enabling, CLI `sshm exec`, MCP `exec` / `exec_multi` and project execution automatically use the desktop session on that Mac. `sshm doctor <alias>` and MCP `check_environment` report `execution_context: desktop_user`. This still uses the owning user's noninteractive login shell and keeps common PATH resolution. Linux and Windows keep their native execution paths; `desktop enable` there returns an explicit unsupported-platform error.
+`sshm doctor <alias>` and MCP `check_environment` report execution and credential contexts separately: file execution remains `remote_ssh`, while `github_credential_context: desktop_user` identifies delegated authorization. GitHub authorization must still be verified by the actual API or repository operation.
 
-For service control from another device, retain the raw SSH environment:
+The shim resolves the native `gh` executable separately to avoid recursion. Explicit `GH_TOKEN`/`GITHUB_TOKEN` values take precedence. Custom GitHub config directories and enterprise selections use their own native credentials. Help/version commands do not request credentials. Changing GitHub logins remains an explicit operation in the user's desktop terminal.
 
-```sh
-sshm exec --raw-environment mac-alias 'sshm desktop status'
-```
-
-If the raw PATH does not contain SSHM, use its known absolute installation path. An enabled but unavailable service fails before command submission. Lost transport after submission has an unknown outcome; SSHM never reruns that command in another environment. Use the original environment explicitly for operations which should not use desktop credentials.
+Linux and Windows retain their native execution paths. Enabling this macOS-specific service there returns an explicit unsupported-platform error.
 
 ## Credential and process boundaries
 
-- The service uses a private Unix socket under `/tmp/sshm-desktop-<uid>` (directory 0700, socket 0600), validates ownership and rejects symlinks. Both sides verify the peer's OS UID. There is no TCP listener or web endpoint.
-- Only commands, working directories and streamed results cross this local channel. Tokens, passwords and keychain unlock phrases are neither exported nor saved by the service. It does not change keychain ACLs, reset GitHub login, unlock the keychain or relax macOS security settings. The user's existing applications continue using their usual OS credential storage.
-- Commands and their output are not written to temporary files or service logs. Existing SSHM MCP command auditing and output masking still apply at the caller.
-- Requests are bounded, concurrent connections are limited, and malformed requests are rejected before executing. A disconnected client cancels its command's process group. Stream contents and exit codes are preserved.
-- This is an intentional grant to processes running as this OS user, including authorized SSHM automation, to execute in that user's desktop session. A logged-out desktop or locked/restricted keychain can still prevent an application from accessing its credentials; no bypass is attempted.
-- `sshm desktop disable` explicitly stops the service, including its active commands, and removes its enable marker and LaunchAgent. Updates do not automatically kill running commands or replace a running process's loaded code.
+- The private Unix socket uses a 0700 directory and 0600 socket. Both sides verify the peer's OS UID and validate endpoint ownership; symlinks and unsafe permissions are rejected. There is no TCP or web listener.
+- The service can run only in the owning user's existing Aqua/GUI session. It never selects another user, uses sudo, unlocks a keychain or changes OS privacy settings.
+- The existing GitHub credential travels in memory over the private local socket to the short-lived native `gh` child. It is supplied in that child's environment, never a command-line argument, persistent file, service log, shared shell environment or ordinary MCP result. Git's requested credential response travels directly to Git. Arbitrary Node/Python/shell commands do not inherit a newly injected token.
+- The agent stores executable paths and enable state only. It neither creates a token vault nor uploads credentials to SSHM Cloud. The user can still deliberately request their own credential using native `gh` commands; AI callers must never print tokens.
+- Existing SSHM auditing and masking remain at the caller. IPC requests and responses are bounded, commands stream output with exit codes preserved, and disconnects cancel the request's process group. A lost response is an unknown outcome and never triggers automatic replay.
+- A logged-out desktop or locked/restricted keychain can prevent lookup; unavailable access is not proof of a logged-out GitHub account.
 
-## Git helper is a separate setting
+`sshm desktop disable` removes the enable marker and LaunchAgent and explicitly stops that service's active requests. Running services retain their loaded version after a binary update; they should be restarted only when their active work has finished.
 
-Once `gh api user --jq .login` succeeds, HTTPS Git also needs an appropriate credential helper. On Mac mini the GitHub-specific helper was absent and was configured using `gh auth setup-git --hostname github.com`. No credential bytes were copied into Git configuration. Keep existing helper configurations when present and test the actual repository operation; API access alone is not proof of Git access.
+The advanced `sshm desktop exec -- '<command>'` still explicitly runs a complete command in the GUI context. It is not the default routing path and is subject to that context's Documents/privacy permissions. Use `sshm exec --raw-environment` when inspecting/restoring a remote service without environment augmentation.
 
-References: [GitHub CLI macOS keyring implementation](https://github.com/cli/cli/blob/trunk/docs/macos-keyring.md), [GitHub CLI supported Git setup](https://cli.github.com/manual/gh_auth_setup-git).
+## Verification
+
+Cover API identity, actual private Git fetch, readable repository files, native program lookup, socket ownership, disconnect cancellation, host-bound helper requests, caller-credential precedence and failure without replay. A successful `gh api` check alone is not proof that Git can access the repository.
+
+References: [GitHub CLI macOS keyring implementation](https://github.com/cli/cli/blob/trunk/docs/macos-keyring.md), [GitHub CLI credential setup](https://cli.github.com/manual/gh_auth_setup-git), [GitHub CLI environment precedence](https://cli.github.com/manual/gh_help_environment).

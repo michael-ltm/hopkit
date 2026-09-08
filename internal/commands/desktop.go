@@ -13,7 +13,7 @@ import (
 )
 
 func newDesktopCmd() *cobra.Command {
-	c := &cobra.Command{Use: "desktop", Short: "Manage opt-in macOS desktop-session execution for existing keychain logins", Args: cobra.NoArgs}
+	c := &cobra.Command{Use: "desktop", Short: "Manage opt-in macOS GitHub credential access through the desktop session", Args: cobra.NoArgs}
 	c.AddCommand(&cobra.Command{Use: "enable", Short: "Enable same-user desktop execution (requires an existing macOS desktop login)", Args: cobra.NoArgs, RunE: func(cmd *cobra.Command, _ []string) error {
 		ctx, cancel := context.WithTimeout(cmd.Context(), 20*time.Second)
 		defer cancel()
@@ -51,6 +51,21 @@ func newDesktopCmd() *cobra.Command {
 		}
 		if code != 0 {
 			fmt.Fprintf(cmd.ErrOrStderr(), "exit code: %d\n", code)
+			os.Exit(code)
+		}
+		return nil
+	}})
+	c.AddCommand(&cobra.Command{Use: "gh [arguments]", Hidden: true, DisableFlagParsing: true, Args: cobra.ArbitraryArgs, RunE: func(cmd *cobra.Command, args []string) error {
+		if len(args) > 0 && args[0] == "--" {
+			args = args[1:]
+		}
+		ctx, cancel := signal.NotifyContext(cmd.Context(), os.Interrupt, syscall.SIGTERM, syscall.SIGHUP)
+		defer cancel()
+		code, e := desktopsession.RunGitHub(ctx, args, cmd.InOrStdin(), cmd.OutOrStdout(), cmd.ErrOrStderr())
+		if e != nil {
+			return e
+		}
+		if code != 0 {
 			os.Exit(code)
 		}
 		return nil
