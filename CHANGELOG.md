@@ -4,6 +4,22 @@ All notable changes to this project will be documented in this file. Format: [Ke
 
 ## [Unreleased]
 
+## [0.8.0-cloud-preview.34] — 2026-09-09
+
+### Added
+- `sshm pair` now pairs public-IP servers without a target callback: when the
+  controller cannot be reached back, it installs the embedded key and polls SSH
+  instead of prompting for a callback address. The login user defaults to root
+  (Administrator on Windows), and the wait follows `--timeout`.
+
+### Changed
+- The home menu compacts its header and groups entries (main / cloud / more);
+  the update status only appears when a release is available. `sshm add`
+  defaults to manual entry and labels the pairing option "any network".
+- `sshm rm` and the interactive delete action can tombstone the cloud vault
+  entry in the same step, and removal is no longer blocked by project-profile
+  references, which are cleared on delete.
+
 ### Fixed
 
 - Unlocking the cloud vault loads decryptable SSH identities into a session
