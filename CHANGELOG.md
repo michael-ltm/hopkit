@@ -6,6 +6,11 @@ All notable changes to this project will be documented in this file. Format: [Ke
 
 ### Fixed
 
+- Unlocking the cloud vault loads decryptable SSH identities into a session
+  agent without rewriting private keys. `CloudEntry` no longer blocks local
+  key or agent authentication; `auth=cloud` can use a local key or an exact
+  agent match, including sibling `alias~xxxxxxxx` public keys. See
+  `docs/2026-09-09-vault-unlock-ssh-recovery.md`.
 - `copy-id` now reports success only after a real key-authenticated reconnect;
   when the key is installed but rejected by sshd, it returns an actionable error.
 - `exec --ask-password` now securely prompts for password-auth aliases, matching

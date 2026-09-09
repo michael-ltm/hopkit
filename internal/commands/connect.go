@@ -41,11 +41,15 @@ func newConnectCmd() *cobra.Command {
 }
 
 func connect(alias string, s *config.Server, insecure bool, activeConfigPath string) error {
-	if s.Auth == config.AuthCloud && s.CloudEntry == "" {
-		return fmt.Errorf("cloud connection index needs rebuilding; run sshm sync to unlock and restore it")
-	}
-	if s.CloudEntry != "" {
-		return runCloudReference(&cobra.Command{}, s, []string{s.CloudEntry}, false, 0)
+	if s.Auth == config.AuthCloud || s.CloudEntry != "" {
+		arg := s.CloudEntry
+		if arg == "" {
+			arg = alias
+		}
+		if arg == "" {
+			return fmt.Errorf("cloud connection index needs rebuilding; run sshm cloud sync to unlock and restore it")
+		}
+		return runCloudReference(&cobra.Command{}, s, []string{arg}, false, 0)
 	}
 	c, err := dialInteractive(alias, s, insecure, activeConfigPath)
 	if err != nil {

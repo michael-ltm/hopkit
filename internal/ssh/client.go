@@ -3,6 +3,7 @@
 package ssh
 
 import (
+	"bytes"
 	"errors"
 	"fmt"
 	"io"
@@ -122,19 +123,30 @@ func Address(s *config.Server) string {
 }
 
 func buildAuth(s *config.Server, opts BuildOpts) ([]gssh.AuthMethod, io.Closer, error) {
-	if s.CloudEntry != "" {
-		return nil, nil, errors.New("cloud credential is locked; use sshm connect or sshm cloud connect to unlock the encrypted vault")
+	if len(opts.Signers) > 0 {
+		return []gssh.AuthMethod{gssh.PublicKeys(opts.Signers...)}, nil, nil
 	}
 	switch s.Auth {
 	case config.AuthKey:
-		if len(opts.Signers) > 0 {
-			return []gssh.AuthMethod{gssh.PublicKeys(opts.Signers...)}, nil, nil
-		}
 		key, closer, err := loadKeySigner(s.KeyPath)
-		if err != nil {
-			return nil, nil, err
+		if err == nil {
+			return []gssh.AuthMethod{gssh.PublicKeys(key)}, closer, nil
 		}
-		return []gssh.AuthMethod{gssh.PublicKeys(key)}, closer, nil
+		if method, closer, err2 := cloudAgentAuth(opts.Alias); err2 == nil {
+			return []gssh.AuthMethod{method}, closer, nil
+		}
+		return nil, nil, err
+	case config.AuthCloud:
+		if s.KeyPath != "" {
+			key, closer, err := loadKeySigner(s.KeyPath)
+			if err == nil {
+				return []gssh.AuthMethod{gssh.PublicKeys(key)}, closer, nil
+			}
+		}
+		if method, closer, err := cloudAgentAuth(opts.Alias); err == nil {
+			return []gssh.AuthMethod{method}, closer, nil
+		}
+		return nil, nil, errors.New("cloud credential is locked; use sshm connect or sshm cloud connect to unlock the encrypted vault")
 	case config.AuthPassword:
 		if opts.Password == "" {
 			return nil, nil, errors.New("password not provided for auth=password")
@@ -149,6 +161,60 @@ func buildAuth(s *config.Server, opts BuildOpts) ([]gssh.AuthMethod, io.Closer, 
 	default:
 		return nil, nil, fmt.Errorf("unsupported auth %q (want one of key/password/agent)", s.Auth)
 	}
+}
+
+func cloudAgentAuth(alias string) (gssh.AuthMethod, io.Closer, error) {
+	alias = strings.TrimSpace(alias)
+	if alias == "" {
+		return nil, nil, errors.New("missing alias")
+	}
+	home, err := os.UserHomeDir()
+	if err != nil {
+		return nil, nil, err
+	}
+	dir := filepath.Join(home, ".ssh", "sshm-keys")
+	base := alias
+	if i := strings.Index(alias, "~"); i > 0 {
+		base = alias[:i]
+	}
+	paths := []string{filepath.Join(dir, alias+".pub")}
+	if base != alias {
+		paths = append(paths, filepath.Join(dir, base+".pub"))
+	}
+	if matches, globErr := filepath.Glob(filepath.Join(dir, base+"~*.pub")); globErr == nil {
+		paths = append(paths, matches...)
+	}
+	seen := map[string]bool{}
+	var last error
+	for _, path := range paths {
+		if path == "" || seen[path] {
+			continue
+		}
+		seen[path] = true
+		data, err := os.ReadFile(path)
+		if err != nil {
+			last = err
+			continue
+		}
+		pub, _, _, rest, err := gssh.ParseAuthorizedKey(data)
+		if err != nil || pub == nil || len(bytes.TrimSpace(rest)) != 0 {
+			last = err
+			if last == nil {
+				last = errors.New("public identity unavailable")
+			}
+			continue
+		}
+		signer, closer, err := agentSignerFor(pub)
+		if err != nil {
+			last = err
+			continue
+		}
+		return gssh.PublicKeys(signer), closer, nil
+	}
+	if last == nil {
+		last = errors.New("public identity unavailable")
+	}
+	return nil, nil, last
 }
 
 // loadKeySigner returns a signer for the private key at path. Unencrypted

@@ -9,6 +9,7 @@ import (
 	"github.com/michael-ltm/sshm/internal/cloudsync"
 	"github.com/michael-ltm/sshm/internal/config"
 	"github.com/michael-ltm/sshm/internal/inventory"
+	"github.com/michael-ltm/sshm/internal/keystore"
 	"github.com/spf13/cobra"
 	"os"
 	"os/signal"
@@ -180,6 +181,16 @@ func runCloudAgent(ctx context.Context, cmd *cobra.Command, state *cloudsync.Sta
 		}
 	}()
 	fmt.Fprintf(cmd.OutOrStdout(), "Cloud agent running; web shell enabled: %t. Master stays in process memory; restart requires unlock or browser approval.\n", allowShell)
+	if e := keystore.StartSessionAgent(ctx); e != nil {
+		fmt.Fprintf(cmd.ErrOrStderr(), "warning: local SSH agent unavailable: %v\n", e)
+	} else if cfg, loadErr := config.Load(configPath()); loadErr == nil {
+		report, loadErr := cloudsync.LoadMatchingKeysIntoAgent(v, cfg)
+		if loadErr != nil {
+			fmt.Fprintf(cmd.ErrOrStderr(), "warning: vault identities were not loaded into ssh-agent: %v\n", loadErr)
+		} else if report.Loaded > 0 {
+			fmt.Fprintf(cmd.OutOrStdout(), "Loaded %d vault identities into the local SSH agent for this session.\n", report.Loaded)
+		}
+	}
 	if allowShell {
 		state.RuntimeVersion = Version
 		go func() { errorsCh <- cloudagent.ServeTargets(ctx, state, v, configPath()) }()

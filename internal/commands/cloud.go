@@ -873,7 +873,7 @@ func runCloudReference(cmd *cobra.Command, server *config.Server, args []string,
 	if err != nil {
 		return errors.New("cloud account unavailable; run sshm cloud login")
 	}
-	if server.CloudVault != cloudsync.InventoryIdentity(s) {
+	if server.CloudVault != "" && server.CloudVault != cloudsync.InventoryIdentity(s) {
 		return errors.New("this connection belongs to another vault; run sshm cloud sync for the current account")
 	}
 	c := newCloudConnectionCmd(run)

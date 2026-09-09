@@ -73,6 +73,54 @@ func TestBuildClientConfig_RejectsUnknownAuth(t *testing.T) {
 	require.Contains(t, err.Error(), "unsupported auth")
 }
 
+func TestBuildClientConfig_CloudEntryDoesNotBlockLocalKey(t *testing.T) {
+	keyPath := writeTempKey(t)
+	srv := &config.Server{User: "root", Auth: config.AuthKey, KeyPath: keyPath, CloudEntry: "vault-entry"}
+	cfg, closer, err := BuildClientConfig(srv, BuildOpts{})
+	require.NoError(t, err)
+	defer closer.Close()
+	require.Len(t, cfg.Auth, 1)
+}
+
+func TestBuildClientConfig_AuthCloudUsesLocalKey(t *testing.T) {
+	keyPath := writeTempKey(t)
+	srv := &config.Server{User: "root", Auth: config.AuthCloud, KeyPath: keyPath}
+	cfg, closer, err := BuildClientConfig(srv, BuildOpts{})
+	require.NoError(t, err)
+	defer closer.Close()
+	require.Len(t, cfg.Auth, 1)
+}
+
+func TestBuildClientConfig_AuthCloudWithoutMaterialStaysLocked(t *testing.T) {
+	srv := &config.Server{User: "root", Auth: config.AuthCloud, CloudEntry: "vault-entry"}
+	_, _, err := BuildClientConfig(srv, BuildOpts{})
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "cloud credential is locked")
+}
+
+func TestBuildClientConfig_EncryptedLocalKeyFallsBackToSiblingVaultPub(t *testing.T) {
+	skipIfNoUnixSockets(t)
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	local := genEd25519(t)
+	vault := genEd25519(t)
+	t.Setenv("SSH_AUTH_SOCK", serveTestAgent(t, vault))
+	keyPath := writeEncryptedTempKey(t, local)
+	dir := filepath.Join(home, ".ssh", "sshm-keys")
+	require.NoError(t, os.MkdirAll(dir, 0700))
+	localSigner, err := gssh.NewSignerFromKey(local)
+	require.NoError(t, err)
+	vaultSigner, err := gssh.NewSignerFromKey(vault)
+	require.NoError(t, err)
+	require.NoError(t, os.WriteFile(filepath.Join(dir, "prod-7w.pub"), gssh.MarshalAuthorizedKey(localSigner.PublicKey()), 0644))
+	require.NoError(t, os.WriteFile(filepath.Join(dir, "prod-7w~cde0eb5a.pub"), gssh.MarshalAuthorizedKey(vaultSigner.PublicKey()), 0644))
+	srv := &config.Server{User: "root", Auth: config.AuthKey, KeyPath: keyPath}
+	cfg, closer, err := BuildClientConfig(srv, BuildOpts{Alias: "prod-7w"})
+	require.NoError(t, err)
+	defer closer.Close()
+	require.Len(t, cfg.Auth, 1)
+}
+
 // writeTempKey generates an ed25519 private key on disk for test fixtures.
 func writeTempKey(t *testing.T) string {
 	t.Helper()
