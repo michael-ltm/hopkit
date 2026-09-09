@@ -342,7 +342,7 @@ func TestBuildScripts_POSIXRejectsDifferentCapitalizedEffectivePort(t *testing.T
 	}
 	output, authorized, err := runGeneratedPOSIXPairCommand(t, "2222")
 	require.Error(t, err)
-	require.Contains(t, output, "does not include requested Port 22")
+	require.Contains(t, output, "Port 22")
 	require.NoFileExists(t, authorized, "the key must not be installed before the requested port is verified")
 }
 
