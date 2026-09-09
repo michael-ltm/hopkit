@@ -111,14 +111,14 @@ func runGuidedAdd(cmd *cobra.Command, cfg *config.Config) error {
 	if !commandHasTerminal(cmd) {
 		return fmt.Errorf("guided add requires a terminal; use `sshm pair <alias> --host <host>` or `sshm add --quick ...`")
 	}
-	mode := "pair"
+	mode := "manual"
 	form := huh.NewForm(huh.NewGroup(
 		huh.NewSelect[string]().
 			Title("Add server").
-			Description("Set up SSH automatically, or use an existing SSH login").
+			Description("Add an SSH server by address, or pair a server over any network").
 			Options(
-				huh.NewOption("Set up this server (recommended)", "pair"),
-				huh.NewOption("SSH is already configured", "manual"),
+				huh.NewOption("Add SSH server (host / port / user / key)", "manual"),
+				huh.NewOption("Pair a server (any network)", "pair"),
 			).
 			Value(&mode),
 	)).WithInput(cmd.InOrStdin()).WithOutput(cmd.ErrOrStderr()).WithTheme(ui.FormTheme())

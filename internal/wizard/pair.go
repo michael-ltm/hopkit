@@ -6,6 +6,7 @@ import (
 	"io"
 	"strings"
 
+	"github.com/charmbracelet/bubbles/key"
 	"github.com/charmbracelet/huh"
 	"github.com/michael-ltm/sshm/internal/config"
 )
@@ -90,6 +91,8 @@ func RunPairPlatform(current string, input io.Reader, output io.Writer) (string,
 // RunCallbackHost keeps VPN/TUN route failures inside the guided workflow.
 func RunCallbackHost(input io.Reader, output io.Writer, validate func(string) error) (string, error) {
 	value := ""
+	keymap := huh.NewDefaultKeyMap()
+	keymap.Quit = key.NewBinding(key.WithKeys("ctrl+c", "esc"))
 	form := huh.NewForm(huh.NewGroup(
 		huh.NewInput().
 			Title("Controller address reachable from the target").
@@ -102,7 +105,35 @@ func RunCallbackHost(input io.Reader, output io.Writer, validate func(string) er
 				}
 				return validate(candidate)
 			}),
-	)).WithInput(input).WithOutput(output).WithTheme(ui.FormTheme())
+	)).WithInput(input).WithOutput(output).WithTheme(ui.FormTheme()).WithKeyMap(keymap)
+	if err := form.Run(); err != nil {
+		return "", err
+	}
+	return strings.TrimSpace(value), nil
+}
+
+// RunPairUser asks for the target login user when pairing cannot discover it
+// through a callback (public IPs without a reachable controller route).
+func RunPairUser(input io.Reader, output io.Writer, defaultUser string) (string, error) {
+	value := defaultUser
+	keymap := huh.NewDefaultKeyMap()
+	keymap.Quit = key.NewBinding(key.WithKeys("ctrl+c", "esc"))
+	form := huh.NewForm(huh.NewGroup(
+		huh.NewInput().
+			Title("Login user on the target").
+			Description("The SSH username to verify after the key is installed (for example root, ubuntu, admin)").
+			Value(&value).
+			Validate(func(candidate string) error {
+				candidate = strings.TrimSpace(candidate)
+				if candidate == "" {
+					return errors.New("a login user is required")
+				}
+				if strings.ContainsAny(candidate, "\x00\r\n") {
+					return errors.New("user must be a single line")
+				}
+				return nil
+			}),
+	)).WithInput(input).WithOutput(output).WithTheme(ui.FormTheme()).WithKeyMap(keymap)
 	if err := form.Run(); err != nil {
 		return "", err
 	}

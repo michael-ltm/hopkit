@@ -6,12 +6,11 @@ import (
 )
 
 // ServerRemovalError describes why a configured server cannot be removed.
-// ProjectProfiles and ProxyJumpServers are sorted so callers get stable,
-// actionable diagnostics regardless of map iteration order.
+// ProxyJumpServers is sorted so callers get stable, actionable diagnostics
+// regardless of map iteration order.
 type ServerRemovalError struct {
 	Alias            string
 	NotFound         bool
-	ProjectProfiles  []string
 	ProxyJumpServers []string
 }
 
@@ -22,20 +21,14 @@ func (e *ServerRemovalError) Error() string {
 	if e.NotFound {
 		return fmt.Sprintf("unknown server %q", e.Alias)
 	}
-
-	references := make([]string, 0, 2)
-	if len(e.ProjectProfiles) > 0 {
-		references = append(references, "project profiles: "+strings.Join(e.ProjectProfiles, ", "))
-	}
-	if len(e.ProxyJumpServers) > 0 {
-		references = append(references, "servers using it as ProxyJump: "+strings.Join(e.ProxyJumpServers, ", "))
-	}
-	return fmt.Sprintf("server %q cannot be removed; references remain (%s); update those references first", e.Alias, strings.Join(references, "; "))
+	return fmt.Sprintf("server %q cannot be removed; servers using it as ProxyJump: %s; update those references first", e.Alias, strings.Join(e.ProxyJumpServers, ", "))
 }
 
-// CheckServerRemoval verifies that alias exists and has no project or
-// ProxyJump dependants. Call it again inside the same config.Update callback
-// that performs deletion; an earlier UI/preflight snapshot can become stale.
+// CheckServerRemoval verifies that alias exists and no other server uses it as
+// a ProxyJump. Project profiles no longer block removal; RemoveServer clears
+// any project that pointed at the removed server. Call CheckServerRemoval again
+// inside the same config.Update callback that performs deletion; an earlier
+// UI/preflight snapshot can become stale.
 func CheckServerRemoval(cfg *Config, alias string) error {
 	if cfg == nil {
 		return &ServerRemovalError{Alias: alias, NotFound: true}
@@ -44,26 +37,26 @@ func CheckServerRemoval(cfg *Config, alias string) error {
 		return &ServerRemovalError{Alias: alias, NotFound: true}
 	}
 
-	projects := ProjectsUsingServer(cfg, alias)
 	proxyJumpServers := ServersUsingProxyJump(cfg, alias)
-	if len(projects) == 0 && len(proxyJumpServers) == 0 {
+	if len(proxyJumpServers) == 0 {
 		return nil
 	}
-	return &ServerRemovalError{
-		Alias:            alias,
-		ProjectProfiles:  projects,
-		ProxyJumpServers: proxyJumpServers,
-	}
+	return &ServerRemovalError{Alias: alias, ProxyJumpServers: proxyJumpServers}
 }
 
-// RemoveServer removes one unreferenced server from an in-memory config. It
-// must be called from config.Update so validation and deletion share the same
-// locked snapshot.
+// RemoveServer removes one server from an in-memory config and clears any
+// project profile that referenced it. It must be called from config.Update so
+// validation and deletion share the same locked snapshot.
 func RemoveServer(cfg *Config, alias string) error {
 	if err := CheckServerRemoval(cfg, alias); err != nil {
 		return err
 	}
 	delete(cfg.Servers, alias)
+	for _, project := range cfg.Projects {
+		if project != nil && project.Server == alias {
+			project.Server = ""
+		}
+	}
 	if cfg.Default == alias {
 		cfg.Default = ""
 	}

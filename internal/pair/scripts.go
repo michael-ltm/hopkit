@@ -25,7 +25,7 @@ func BuildScripts(publicKey, callbackURL string, port int) (Scripts, error) {
 		return Scripts{}, fmt.Errorf("public key must be one OpenSSH line")
 	}
 	publicKey = strings.Join(publicKeyFields[:2], " ")
-	if !strings.HasPrefix(callbackURL, "http://") || strings.ContainsAny(callbackURL, "\r\n'") {
+	if callbackURL != "" && (!strings.HasPrefix(callbackURL, "http://") || strings.ContainsAny(callbackURL, "\r\n'")) {
 		return Scripts{}, fmt.Errorf("callback URL is invalid")
 	}
 	if port < 1 || port > 65535 {
@@ -229,10 +229,14 @@ if($LASTEXITCODE -ne 0){throw 'Failed to secure administrators_authorized_keys A
 $firewallRule="SSHM-OpenSSH-In-TCP-$sshPort";$firewallDisplay="SSHM OpenSSH Server (TCP $sshPort)"
 if(Get-Command Get-NetFirewallRule -ErrorAction SilentlyContinue){Get-NetFirewallRule -Name $firewallRule -ErrorAction SilentlyContinue|Remove-NetFirewallRule -ErrorAction SilentlyContinue;New-NetFirewallRule -Name $firewallRule -DisplayName $firewallDisplay -Enabled True -Direction Inbound -Protocol TCP -Action Allow -LocalPort $sshPort|Out-Null}
 else {$netshName="name=$firewallDisplay";& netsh.exe advfirewall firewall delete rule $netshName dir=in protocol=TCP localport=$sshPort|Out-Null;& netsh.exe advfirewall firewall add rule $netshName dir=in action=allow protocol=TCP localport=$sshPort|Out-Null;if($LASTEXITCODE -ne 0){throw "Failed to open Windows Firewall TCP port $sshPort"}}
+if($pairUrl){
 $form=New-Object 'System.Collections.Generic.Dictionary[string,string]';$form['user']=$reportedUser;$form['hostname']=$env:COMPUTERNAME;$form['platform']='windows'
 $handler=New-Object Net.Http.HttpClientHandler;$handler.UseProxy=$false;$client=New-Object Net.Http.HttpClient($handler);$client.Timeout=[TimeSpan]::FromSeconds(15)
 try {$sent=$false;for($attempt=1;$attempt -le 3 -and -not $sent;$attempt++){$content=New-Object Net.Http.FormUrlEncodedContent($form);$response=$null;try{$response=$client.PostAsync($pairUrl,$content).GetAwaiter().GetResult();if($response.IsSuccessStatusCode){$sent=$true}else{throw "HTTP $([int]$response.StatusCode)"}}catch{if($attempt -eq 3){throw "Pair callback failed: $_"};Start-Sleep -Seconds (2*$attempt)}finally{if($response){$response.Dispose()};$content.Dispose()}};$content=New-Object Net.Http.FormUrlEncodedContent($form);$response=$null;try{$response=$client.PostAsync($pairUrl,$content).GetAwaiter().GetResult();if(-not $response.IsSuccessStatusCode){Write-Warning "Pair callback confirmation returned HTTP $([int]$response.StatusCode)"}}catch{Write-Warning "Pair callback confirmation was not received: $($_.Exception.Message)"}finally{if($response){$response.Dispose()};$content.Dispose()}} finally {$client.Dispose();$handler.Dispose()}
 Write-Host "SSHM pair report sent for $reportedUser@$env:COMPUTERNAME; waiting for controller verification."
+} else {
+Write-Host "SSHM pair key installed for $reportedUser@$env:COMPUTERNAME."
+}
 `
 
 const posixScript = `set -eu
@@ -334,6 +338,7 @@ LISTENING=0;LISTEN_STATUS=1;n=0
 while [ "$n" -lt 15 ]; do if port_is_listening; then LISTENING=1;break;else LISTEN_STATUS=$?;[ "$LISTEN_STATUS" -eq 2 ]&&break;fi;n=$((n+1));sleep 1;done
 if [ "$LISTENING" -ne 1 ]; then if [ "$LISTEN_STATUS" -eq 2 ]; then echo "sshd is ready, but neither ss nor netstat is available to verify TCP port $SSH_PORT" >&2;else echo "sshd is not listening on requested TCP port $SSH_PORT" >&2;fi;exit 1;fi
 HOST_NAME="$(hostname 2>/dev/null || uname -n)"
+if [ -n "$PAIR_URL" ]; then
 callback_curl() { curl --fail --silent --show-error --connect-timeout 5 --max-time 15 --noproxy '*' -X POST --data-urlencode "user=$TARGET_USER" --data-urlencode "hostname=$HOST_NAME" --data-urlencode "platform=$PLATFORM" "$PAIR_URL" >/dev/null; }
 callback_wget() { NO_PROXY='*' no_proxy='*' wget -qO- -T 15 -t 1 --post-data="user=$TARGET_USER&hostname=$HOST_NAME&platform=$PLATFORM" "$PAIR_URL" >/dev/null; }
 CALLBACK_SENT=0;CALLBACK_TOOL=''
@@ -342,4 +347,7 @@ if [ "$CALLBACK_SENT" -ne 1 ] && command -v wget >/dev/null 2>&1; then case "$TA
 if [ "$CALLBACK_SENT" -ne 1 ]; then echo 'OpenSSH is ready, but the callback failed after curl/wget retries. Check the route to the controller and rerun this command.' >&2;exit 1;fi
 case "$CALLBACK_TOOL" in curl) callback_curl||true;;wget) callback_wget||true;;esac
 echo "SSHM pair report sent for $TARGET_USER@$HOST_NAME; waiting for controller verification."
+else
+echo "SSHM pair key installed for $TARGET_USER@$HOST_NAME."
+fi
 `

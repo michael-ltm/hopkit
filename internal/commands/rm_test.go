@@ -84,7 +84,7 @@ func TestRm_InteractiveAbortKeepsServer(t *testing.T) {
 	require.Contains(t, reloaded.Servers, "aliyun") // still there
 }
 
-func TestRm_RefusesServerReferencedByProject(t *testing.T) {
+func TestRm_ClearsProjectReferenceOnRemoval(t *testing.T) {
 	dir := t.TempDir()
 	cfgPath := filepath.Join(dir, "config.toml")
 	cfg := config.New()
@@ -97,12 +97,11 @@ func TestRm_RefusesServerReferencedByProject(t *testing.T) {
 	cmd := newRmCmd()
 	cmd.SetArgs([]string{"builder", "-y"})
 	cmd.SetOut(&bytes.Buffer{})
-	err := cmd.Execute()
-	require.Error(t, err)
-	require.Contains(t, err.Error(), "project profiles: app")
+	require.NoError(t, cmd.Execute())
 	reloaded, loadErr := config.Load(cfgPath)
 	require.NoError(t, loadErr)
-	require.Contains(t, reloaded.Servers, "builder")
+	require.NotContains(t, reloaded.Servers, "builder")
+	require.Equal(t, "", reloaded.Projects["app"].Server)
 }
 
 func TestRm_RefusesServerUsedAsProxyJump(t *testing.T) {
@@ -155,7 +154,6 @@ func TestRemoveServerRechecksReferencesInsideAtomicUpdate(t *testing.T) {
 
 	err = removeServer("gateway")
 	require.Error(t, err)
-	require.Contains(t, err.Error(), "project profiles: release")
 	require.Contains(t, err.Error(), "servers using it as ProxyJump: alpha, zeta")
 
 	reloaded, loadErr := config.Load(cfgPath)

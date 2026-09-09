@@ -307,6 +307,22 @@ func TestBuildScripts_POSIXHasPortAndCallbackFallbacks(t *testing.T) {
 	require.NoError(t, syntax.Run())
 }
 
+func TestBuildScripts_NoCallbackSkipsCallback(t *testing.T) {
+	scripts, err := BuildScripts("ssh-ed25519 AAAATEST pair@host", "", 22)
+	require.NoError(t, err)
+	posix := decodePOSIXScript(t, scripts.POSIX)
+
+	// The callback is guarded so an empty callback URL installs the key and
+	// exits cleanly instead of failing on the unreachable controller.
+	require.Contains(t, posix, `if [ -n "$PAIR_URL" ]; then`)
+	require.Contains(t, posix, "SSHM pair key installed for")
+	require.Contains(t, posix, "callback_curl") // still defined, but only reached when PAIR_URL is set
+
+	syntax := exec.Command("sh", "-n")
+	syntax.Stdin = strings.NewReader(posix)
+	require.NoError(t, syntax.Run())
+}
+
 func TestBuildScripts_RejectsInvalidInputs(t *testing.T) {
 	_, err := BuildScripts("not-a-key", "http://100.64.0.1/x", 22)
 	require.Error(t, err)
