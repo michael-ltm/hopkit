@@ -25,6 +25,7 @@ import (
 const defaultPairTimeout = 30 * time.Minute
 const pairCallbackRetryGrace = 25 * time.Second
 const maxPrintedPairCommandBytes = 8190
+const maxPrintedWindowsPairCommandBytes = 8149
 
 type pairOptions struct {
 	host           string
@@ -581,13 +582,14 @@ func validatePrintedPairCommandLengths(target string, scripts pair.Scripts) erro
 		platform string
 		enabled  bool
 		command  string
+		limit    int
 	}{
-		{platform: "Windows", enabled: target == "all" || target == "windows", command: scripts.Windows},
-		{platform: "Linux/macOS", enabled: target == "all" || target == "posix", command: scripts.POSIX},
+		{platform: "Windows", enabled: target == "all" || target == "windows", command: scripts.Windows, limit: maxPrintedWindowsPairCommandBytes},
+		{platform: "Linux/macOS", enabled: target == "all" || target == "posix", command: scripts.POSIX, limit: maxPrintedPairCommandBytes},
 	}
 	for _, candidate := range commands {
-		if candidate.enabled && len(candidate.command) > maxPrintedPairCommandBytes {
-			return fmt.Errorf("%s target command is %d bytes and exceeds the safe %d-byte copy limit; rerun with --script-dir <private-directory> and transfer the generated command file", candidate.platform, len(candidate.command), maxPrintedPairCommandBytes)
+		if candidate.enabled && len(candidate.command) > candidate.limit {
+			return fmt.Errorf("%s target command is %d bytes and exceeds the safe %d-byte copy limit; rerun with --script-dir <private-directory> and transfer the generated command file", candidate.platform, len(candidate.command), candidate.limit)
 		}
 	}
 	return nil

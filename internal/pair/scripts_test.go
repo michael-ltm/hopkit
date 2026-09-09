@@ -327,11 +327,34 @@ func TestBuildScripts_POSIXAcceptsCapitalizedEffectivePort(t *testing.T) {
 	if runtime.GOOS == "windows" {
 		t.Skip("the generated command targets POSIX systems")
 	}
+	output, authorized, err := runGeneratedPOSIXPairCommand(t, "22")
+	require.NoErrorf(t, err, "capitalized sshd -T output was rejected: %s", output)
+	require.Contains(t, output, "SSHM pair key installed for sshmtest@")
+	contents, err := os.ReadFile(authorized)
+	require.NoError(t, err)
+	publicKey := "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAINOjEfy/RAXMoS+13N6XdSP0008UpgHPhIj6H/MQeheu pair@host"
+	require.Equal(t, strings.Join(strings.Fields(publicKey)[:2], " "), strings.TrimSpace(string(contents)))
+}
+
+func TestBuildScripts_POSIXRejectsDifferentCapitalizedEffectivePort(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("the generated command targets POSIX systems")
+	}
+	output, authorized, err := runGeneratedPOSIXPairCommand(t, "2222")
+	require.Error(t, err)
+	require.Contains(t, output, "does not include requested Port 22")
+	require.NoFileExists(t, authorized, "the key must not be installed before the requested port is verified")
+}
+
+func runGeneratedPOSIXPairCommand(t *testing.T, effectivePort string) (string, string, error) {
+	t.Helper()
 	root := t.TempDir()
 	bin := filepath.Join(root, "bin")
 	home := filepath.Join(root, "home")
+	temporaryFiles := filepath.Join(root, "temporary-files")
 	require.NoError(t, os.MkdirAll(bin, 0o700))
 	require.NoError(t, os.MkdirAll(home, 0o700))
+	require.NoError(t, os.MkdirAll(temporaryFiles, 0o700))
 	writeCommand := func(name, body string) {
 		t.Helper()
 		require.NoError(t, os.WriteFile(filepath.Join(bin, name), []byte("#!/bin/sh\n"+body+"\n"), 0o700))
@@ -340,33 +363,30 @@ func TestBuildScripts_POSIXAcceptsCapitalizedEffectivePort(t *testing.T) {
 	writeCommand("getent", `[ "$1" = passwd ] && [ "$2" = sshmtest ] || exit 1
 printf 'sshmtest:x:1000:1000::%s:/bin/sh\n' "$SSHM_TEST_HOME"`)
 	writeCommand("sudo", `exec "$@"`)
-	writeCommand("sshd", `case "$1" in -t) exit 0;; -T) printf 'Port 22\nListenAddress 0.0.0.0:22\n';; *) exit 1;; esac`)
+	writeCommand("sshd", `case "$1" in -t) exit 0;; -T) printf 'PoRt %s\nListenAddress 0.0.0.0:%s\n' "$SSHM_TEST_EFFECTIVE_PORT" "$SSHM_TEST_EFFECTIVE_PORT";; *) exit 1;; esac`)
 	writeCommand("ssh-keygen", `exit 0`)
 	writeCommand("install", `if [ "$*" = '-d -m 755 /run/sshd' ]; then exit 0; fi
 exec /usr/bin/install "$@"`)
 	writeCommand("ufw", `case "$1" in status) echo 'Status: inactive';; esac`)
+	writeCommand("firewall-cmd", `exit 1`)
 	writeCommand("ss", `printf 'LISTEN 0 128 0.0.0.0:22 0.0.0.0:*\n'`)
 	writeCommand("restorecon", `exit 0`)
 
 	publicKey := "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAINOjEfy/RAXMoS+13N6XdSP0008UpgHPhIj6H/MQeheu pair@host"
 	scripts, err := BuildScripts(publicKey, "", 22)
 	require.NoError(t, err)
-	posix := decodePOSIXScript(t, scripts.POSIX)
-	command := exec.Command("sh")
-	command.Stdin = strings.NewReader(posix)
+	command := exec.Command("sh", "-c", scripts.POSIX)
 	command.Env = append(os.Environ(),
 		"HOME="+home,
 		"PATH="+bin+":/usr/bin:/bin",
 		"SSHM_TEST_HOME="+home,
+		"SSHM_TEST_EFFECTIVE_PORT="+effectivePort,
 		"SSH_CONNECTION=127.0.0.1 12345 127.0.0.1 22",
 		"SUDO_USER=",
+		"TMPDIR="+temporaryFiles,
 	)
 	output, err := command.CombinedOutput()
-	require.NoErrorf(t, err, "capitalized sshd -T output was rejected: %s", output)
-	require.Contains(t, string(output), "SSHM pair key installed for sshmtest@")
-	authorized, err := os.ReadFile(filepath.Join(home, ".ssh", "authorized_keys"))
-	require.NoError(t, err)
-	require.Equal(t, strings.Join(strings.Fields(publicKey)[:2], " "), strings.TrimSpace(string(authorized)))
+	return string(output), filepath.Join(home, ".ssh", "authorized_keys"), err
 }
 
 func TestBuildScripts_RejectsInvalidInputs(t *testing.T) {
