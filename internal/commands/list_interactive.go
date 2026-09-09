@@ -328,10 +328,23 @@ func runServerActions(cmd *cobra.Command, alias string) (bool, error) {
 				fmt.Fprintln(cmd.OutOrStdout(), "aborted")
 				continue
 			}
+			cloudToo := false
+			if server.CloudEntry != "" {
+				cloudToo, err = confirmCloudRemoval(cmd)
+				if err != nil {
+					return false, err
+				}
+			}
 			if err := removeServer(alias); err != nil {
 				return false, err
 			}
 			fmt.Fprintf(cmd.OutOrStdout(), "removed %q\n", alias)
+			if cloudToo {
+				if err := removeCloudEntry(cmd, alias, server.CloudEntry); err != nil {
+					return false, fmt.Errorf("local removal succeeded, but the cloud tombstone failed: %w", err)
+				}
+				fmt.Fprintln(cmd.OutOrStdout(), "Cloud entry marked for deletion; run `sshm cloud sync` to push it.")
+			}
 			return true, nil
 		}
 	}

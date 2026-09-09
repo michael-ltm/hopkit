@@ -11,6 +11,7 @@ import (
 
 func newRmCmd() *cobra.Command {
 	var yes bool
+	var cloud bool
 	c := &cobra.Command{
 		Use:   "rm <alias>",
 		Short: "Remove a configured server",
@@ -34,16 +35,31 @@ func newRmCmd() *cobra.Command {
 					return nil
 				}
 			}
+			srv := cfg.Servers[alias]
+			cloudToo := cloud
+			if !cloudToo && !yes && srv != nil && srv.CloudEntry != "" && commandHasTerminal(cmd) {
+				cloudToo, err = confirmCloudRemoval(cmd)
+				if err != nil {
+					return err
+				}
+			}
 			if err := removeServer(alias); err != nil {
 				return err
 			}
 			if _, err := fmt.Fprintf(cmd.OutOrStdout(), "removed %q\n", alias); err != nil {
 				return err
 			}
+			if cloudToo && srv != nil {
+				if err := removeCloudEntry(cmd, alias, srv.CloudEntry); err != nil {
+					return fmt.Errorf("local removal succeeded, but the cloud tombstone failed: %w", err)
+				}
+				fmt.Fprintln(cmd.OutOrStdout(), "Cloud entry marked for deletion; run `sshm cloud sync` to push it.")
+			}
 			return nil
 		},
 	}
 	c.Flags().BoolVarP(&yes, "yes", "y", false, "do not prompt for confirmation")
+	c.Flags().BoolVar(&cloud, "cloud", false, "also tombstone the cloud vault entry (run sshm cloud sync to push)")
 	return c
 }
 

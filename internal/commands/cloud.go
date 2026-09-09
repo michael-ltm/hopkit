@@ -87,6 +87,46 @@ func cloudState() (*cloudsync.State, func(), error) {
 	}
 	return s, release, nil
 }
+// confirmCloudRemoval asks whether removing a local server should also
+// tombstone its cloud vault entry.
+func confirmCloudRemoval(cmd *cobra.Command) (bool, error) {
+	scope := "local"
+	form := huh.NewForm(huh.NewGroup(
+		huh.NewSelect[string]().
+			Title("Delete scope").
+			Description("This server has an encrypted cloud vault entry").
+			Options(
+				huh.NewOption("Local only", "local"),
+				huh.NewOption("Local + cloud vault", "cloud"),
+			).
+			Value(&scope),
+	)).WithInput(cmd.InOrStdin()).WithOutput(cmd.ErrOrStderr()).WithTheme(ui.FormTheme())
+	if err := form.Run(); err != nil {
+		return false, err
+	}
+	return scope == "cloud", nil
+}
+
+// removeCloudEntry tombstones a cloud vault entry by ID (or alias fallback)
+// and saves the draft locally; sshm cloud sync pushes the deletion.
+func removeCloudEntry(cmd *cobra.Command, alias, cloudEntry string) error {
+	s, v, close, err := cloudOpen(cmd)
+	if err != nil {
+		return err
+	}
+	defer close()
+	id := cloudEntry
+	if strings.TrimSpace(id) == "" {
+		id = alias
+	}
+	e, err := v.Data.Find(id)
+	if err != nil {
+		return err
+	}
+	v.Data.Remove(e.ID)
+	return s.SaveDraft(v, cloudsync.StatePath(configPath()))
+}
+
 func cloudSaveRecovery(cmd *cobra.Command, path, recovery string) error {
 	// High-entropy recovery material is written directly to a protected local file,
 	// never to stdout, JSON, audit output or the account web page.
