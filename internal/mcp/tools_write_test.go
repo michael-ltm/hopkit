@@ -86,7 +86,7 @@ func TestHandleRemoveServerRequiresExactAliasConfirmation(t *testing.T) {
 	require.Contains(t, reloaded.Servers, "keep")
 }
 
-func TestHandleRemoveServerRefusesReferencedAlias(t *testing.T) {
+func TestHandleRemoveServerClearsProjectReference(t *testing.T) {
 	dir := t.TempDir()
 	cfgPath := filepath.Join(dir, "config.toml")
 	cfg := config.New()
@@ -95,13 +95,14 @@ func TestHandleRemoveServerRefusesReferencedAlias(t *testing.T) {
 	require.NoError(t, config.Save(cfgPath, cfg))
 	deps := Deps{ConfigPath: cfgPath, AuditPath: filepath.Join(dir, "audit.log"), AllowWrite: true}
 
-	out, err := handleRemoveServer(deps, map[string]any{
+	_, err := handleRemoveServer(deps, map[string]any{
 		"alias": "builder", "confirm_alias": "builder", "reason": "decommission",
 	})
 	require.NoError(t, err)
-	js, _ := jsonResult(out)
-	require.Contains(t, js, "conflict")
-	require.Contains(t, js, "app")
+	reloaded, err := config.Load(cfgPath)
+	require.NoError(t, err)
+	require.NotContains(t, reloaded.Servers, "builder")
+	require.Empty(t, reloaded.Projects["app"].Server)
 }
 
 func TestHandleRemoveServerRefusesProxyJumpAliasWithDependentAliases(t *testing.T) {

@@ -323,6 +323,52 @@ func TestBuildScripts_NoCallbackSkipsCallback(t *testing.T) {
 	require.NoError(t, syntax.Run())
 }
 
+func TestBuildScripts_POSIXAcceptsCapitalizedEffectivePort(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("the generated command targets POSIX systems")
+	}
+	root := t.TempDir()
+	bin := filepath.Join(root, "bin")
+	home := filepath.Join(root, "home")
+	require.NoError(t, os.MkdirAll(bin, 0o700))
+	require.NoError(t, os.MkdirAll(home, 0o700))
+	writeCommand := func(name, body string) {
+		t.Helper()
+		require.NoError(t, os.WriteFile(filepath.Join(bin, name), []byte("#!/bin/sh\n"+body+"\n"), 0o700))
+	}
+	writeCommand("id", `case "$1" in -u) echo 1000;; -un) echo sshmtest;; *) exit 1;; esac`)
+	writeCommand("getent", `[ "$1" = passwd ] && [ "$2" = sshmtest ] || exit 1
+printf 'sshmtest:x:1000:1000::%s:/bin/sh\n' "$SSHM_TEST_HOME"`)
+	writeCommand("sudo", `exec "$@"`)
+	writeCommand("sshd", `case "$1" in -t) exit 0;; -T) printf 'Port 22\nListenAddress 0.0.0.0:22\n';; *) exit 1;; esac`)
+	writeCommand("ssh-keygen", `exit 0`)
+	writeCommand("install", `if [ "$*" = '-d -m 755 /run/sshd' ]; then exit 0; fi
+exec /usr/bin/install "$@"`)
+	writeCommand("ufw", `case "$1" in status) echo 'Status: inactive';; esac`)
+	writeCommand("ss", `printf 'LISTEN 0 128 0.0.0.0:22 0.0.0.0:*\n'`)
+	writeCommand("restorecon", `exit 0`)
+
+	publicKey := "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAINOjEfy/RAXMoS+13N6XdSP0008UpgHPhIj6H/MQeheu pair@host"
+	scripts, err := BuildScripts(publicKey, "", 22)
+	require.NoError(t, err)
+	posix := decodePOSIXScript(t, scripts.POSIX)
+	command := exec.Command("sh")
+	command.Stdin = strings.NewReader(posix)
+	command.Env = append(os.Environ(),
+		"HOME="+home,
+		"PATH="+bin+":/usr/bin:/bin",
+		"SSHM_TEST_HOME="+home,
+		"SSH_CONNECTION=127.0.0.1 12345 127.0.0.1 22",
+		"SUDO_USER=",
+	)
+	output, err := command.CombinedOutput()
+	require.NoErrorf(t, err, "capitalized sshd -T output was rejected: %s", output)
+	require.Contains(t, string(output), "SSHM pair key installed for sshmtest@")
+	authorized, err := os.ReadFile(filepath.Join(home, ".ssh", "authorized_keys"))
+	require.NoError(t, err)
+	require.Equal(t, strings.Join(strings.Fields(publicKey)[:2], " "), strings.TrimSpace(string(authorized)))
+}
+
 func TestBuildScripts_RejectsInvalidInputs(t *testing.T) {
 	_, err := BuildScripts("not-a-key", "http://100.64.0.1/x", 22)
 	require.Error(t, err)

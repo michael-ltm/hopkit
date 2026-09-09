@@ -21,7 +21,7 @@ func TestStartSessionAgentServesManagedSocketWithoutSSHAgentBinary(t *testing.T)
 	t.Setenv("HOME", home)
 	t.Setenv("XDG_CONFIG_HOME", filepath.Join(home, ".config"))
 	t.Setenv("SSH_AUTH_SOCK", "")
-	t.Setenv("PATH", "/usr/bin:/bin")
+	t.Setenv("PATH", t.TempDir())
 
 	ctx, cancel := context.WithCancel(context.Background())
 	t.Cleanup(cancel)

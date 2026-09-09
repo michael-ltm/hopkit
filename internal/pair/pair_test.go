@@ -87,7 +87,7 @@ func TestValidateCallbackHost_OnlyAllowsPrivateOrHostname(t *testing.T) {
 	require.NoError(t, ValidateCallbackHost("fd7a:115c:a1e0::1"))
 	require.Error(t, ValidateCallbackHost("[fe80::1]"), "IPv6 link-local without a zone is not portable")
 	require.Error(t, ValidateCallbackHost("fe80::1%en0"), "a zone-qualified link-local address must fail closed until zones are preserved end to end")
-	require.NoError(t, ValidateCallbackHost("node.tailnet.test"))
+	require.NoError(t, ValidateCallbackHost("node.invalid"), "a syntactically valid unresolved hostname remains eligible for target-side resolution")
 	require.NoError(t, ValidateCallbackHost("att-dev."))
 	require.Error(t, ValidateCallbackHost("8.8.8.8"))
 	require.Error(t, ValidateCallbackHost("8.8.8.8."), "a trailing dot must not bypass public-IP classification")

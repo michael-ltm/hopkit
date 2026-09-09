@@ -81,7 +81,10 @@ func buildPOSIXOneLiner(script string) (string, error) {
 
 func gzipBase64(script string) (string, error) {
 	var compressed bytes.Buffer
-	writer := gzip.NewWriter(&compressed)
+	writer, err := gzip.NewWriterLevel(&compressed, gzip.BestCompression)
+	if err != nil {
+		return "", fmt.Errorf("create pair script compressor: %w", err)
+	}
 	if _, err := writer.Write([]byte(script)); err != nil {
 		return "", fmt.Errorf("compress pair script: %w", err)
 	}
@@ -291,7 +294,7 @@ validate_sshd() { "$SSHD" -t >/dev/null 2>&1 || run_root "$SSHD" -t >/dev/null 2
 read_sshd_effective() { "$SSHD" -T 2>/dev/null || run_root "$SSHD" -T 2>/dev/null; }
 if ! validate_sshd; then echo 'sshd configuration failed sshd -t; fix the configuration, then rerun this command.' >&2;exit 1;fi
 if ! SSHD_EFFECTIVE="$(read_sshd_effective)"; then echo 'Cannot read sshd effective configuration with sshd -T; rerun as root or with working sudo.' >&2;exit 1;fi
-if ! printf '%s\n' "$SSHD_EFFECTIVE"|awk -v p="$SSH_PORT" '$1=="port"&&$2==p{found=1}END{exit !found}'; then
+if ! printf '%s\n' "$SSHD_EFFECTIVE"|awk -v p="$SSH_PORT" 'tolower($1)=="port"&&$2==p{found=1}END{exit !found}'; then
   if [ "$PLATFORM" = darwin ]; then echo "macOS includes an existing sshd even when Remote Login is off; this command will not rewrite it. Enable/configure Remote Login for Port $SSH_PORT, validate with sshd -t, then rerun." >&2
   elif [ "$SSHD_WAS_PRESENT" -eq 1 ]; then echo "Existing sshd effective configuration does not include requested Port $SSH_PORT. Configure that port, validate with sshd -t, then rerun this command." >&2
   else echo "Newly installed sshd effective configuration does not include requested Port $SSH_PORT" >&2;fi
