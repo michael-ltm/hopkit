@@ -4,6 +4,17 @@ All notable changes to this project will be documented in this file. Format: [Ke
 
 ## [Unreleased]
 
+## [0.7.1] — 2026-09-10
+
+### Fixed
+- POSIX pairing accepts the case-insensitive keyword spelling emitted by
+  OpenSSH 10.5 effective-configuration output, including `Port 22`.
+- Pairing payloads use maximum gzip compression so Windows one-line commands
+  remain below the traditional console command-length ceiling.
+- Release tests now isolate the process-local SSH agent fallback from an
+  installed `ssh-agent`, follow the current project-reference deletion
+  behavior through MCP, and avoid proxy-dependent DNS fixtures.
+
 ## [0.8.0-cloud-preview.34] — 2026-09-09
 
 ### Added
