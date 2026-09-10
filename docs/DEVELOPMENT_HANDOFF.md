@@ -18,6 +18,8 @@ Go requirement is declared in `go.mod`. Run `go test ./...` and `go vet ./...`. 
 
 Cloud: install dependencies using the committed pnpm lockfile, then `pnpm --dir cloud check` and `pnpm --dir cloud test`.
 
+Run `pnpm --dir cloud test:ui` for the unlock dialog and terminal eligibility regressions in headless Chromium. It uses a temporary Go-generated encrypted vault and local HTTP fixtures, with no real account or SSH target. Go and Chromium are required; set `CHROMIUM` if the executable is not `/usr/bin/chromium`.
+
 Important fresh-clone boundary: `cloud/public/downloads/` is deliberately ignored. The browser build currently also validates installers against the signed release and all six exact executable assets. Therefore Cloud checks require those local release assets; a clean clone alone is insufficient for that step. Obtain a complete matching signed release through the trusted release workflow. Do not bypass checks or put the signing private key in Git. Generated browser and terminal bundles are also ignored and regenerated. Node modules, Wrangler local databases, account state and credentials are not repository contents.
 
 Release scripts: `scripts/build-cloud-clients.py`, `scripts/sign-cloud-release/`. Rebuilding a published version can produce different bytes; do not overwrite an existing published release with newly rebuilt binaries. Use a new release version and authorized signing environment. Pushing main runs CI; it does not deploy Cloudflare or publish a release tag by itself.

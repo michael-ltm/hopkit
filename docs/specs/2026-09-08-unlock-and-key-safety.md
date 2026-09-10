@@ -2,7 +2,7 @@
 
 ## Browser behavior
 
-The devices approval button remains enabled while locked and opens a local unlock dialog. It resumes only the selected action, then requires the device verification code. Device task dispatch, terminal opening, adding a device to the vault and membership inspection use the same gate. The existing vault-page form remains available.
+The devices approval button remains enabled while locked and opens a local unlock dialog. It resumes only the selected action, then requires the device verification code. Device task dispatch, terminal opening, adding a device to the vault and membership inspection use the same gate. The vault-page unlock button, adding a server, generating a device link command and verifying job receipts also open this shared dialog in place. Closing and immediately reopening the dialog cannot cancel the new action. Server terminal availability follows the live agent's SSH target capability, including stable client versions.
 
 Cancellation, navigation and locking invalidate pending unlock/action tickets. A decrypted result from a cancelled attempt is closed. Approval re-fetches the exact request and checks identity, public key, expiry and displayed request properties. Dismissing the approval dialog during a network/crypto await prevents the approval POST. Phrase fields clear on submission, completion and cancellation; the phrase stays within browser decryption.
 

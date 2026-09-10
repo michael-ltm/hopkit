@@ -9,6 +9,7 @@
     "types": "wrangler types",
     "check": "pnpm run browser && tsc --noEmit",
     "test": "node --test installers/*.node-test.mjs src/browser/*.node-test.mjs && pnpm run browser && vitest run",
+    "test:ui": "node test/unlock-ui.mjs",
     "deploy": "pnpm run browser && wrangler deploy",
     "browser": "node build-browser.mjs"
   },
