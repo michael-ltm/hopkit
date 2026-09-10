@@ -25,6 +25,7 @@ import (
 const defaultPairTimeout = 30 * time.Minute
 const pairCallbackRetryGrace = 25 * time.Second
 const maxPrintedPairCommandBytes = 8190
+const maxPrintedWindowsPairCommandBytes = 8149
 
 type pairOptions struct {
 	host           string
@@ -40,6 +41,7 @@ type pairOptions struct {
 	target         string
 	timeout        time.Duration
 	noEncrypt      bool
+	noCallback     bool
 	connectTimeout time.Duration
 	hostSet        bool
 	portSet        bool
@@ -118,6 +120,7 @@ saved only after sshm verifies a real key-authenticated SSH session.`,
 	c.Flags().BoolVar(&opts.noEncrypt, "no-encrypt", false, "generate an unencrypted private key (not recommended)")
 	addKeyPassphraseFlag(c)
 	c.MarkFlagsMutuallyExclusive("no-encrypt", "passphrase-file")
+	c.Flags().BoolVar(&opts.noCallback, "no-callback", false, "print a self-contained key-install command and poll SSH instead of a target callback (for public IPs)")
 	return c
 }
 
@@ -198,6 +201,9 @@ func runPairCommand(cmd *cobra.Command, alias string, opts pairOptions) error {
 	if err != nil {
 		return err
 	}
+	if opts.noCallback {
+		return runPairNoCallback(cmd, alias, server, opts, existing, exists, path)
+	}
 	callbackHost := strings.TrimSpace(strings.Trim(opts.callbackHost, "[]"))
 	if callbackHost == "" {
 		callbackHost, err = pair.DiscoverCallbackHost(server.Host, server.Port)
@@ -205,11 +211,23 @@ func runPairCommand(cmd *cobra.Command, alias string, opts pairOptions) error {
 			if !commandHasTerminal(cmd) {
 				return err
 			}
-			fmt.Fprintf(cmd.ErrOrStderr(), "Automatic callback route could not be used: %v\n", err)
-			callbackHost, err = wizard.RunCallbackHost(cmd.InOrStdin(), cmd.ErrOrStderr(), pair.ValidateCallbackHost)
-			if err != nil {
-				return err
+			// The target cannot reach back to this computer (public IP or no
+			// Tailscale/LAN route). Pair by installing the embedded key and
+			// polling SSH instead of asking for a callback address.
+			fmt.Fprintf(cmd.ErrOrStderr(), "Callback route unavailable (%v); pairing by key-install instead.\n", err)
+			if strings.TrimSpace(server.User) == "" {
+				defaultUser := "root"
+				if opts.target == "windows" {
+					defaultUser = "Administrator"
+				}
+				user, uerr := wizard.RunPairUser(cmd.InOrStdin(), cmd.ErrOrStderr(), defaultUser)
+				if uerr != nil {
+					return uerr
+				}
+				server.User = user
 			}
+			opts.noCallback = true
+			return runPairNoCallback(cmd, alias, server, opts, existing, exists, path)
 		}
 	} else if err := pair.ValidateCallbackHost(callbackHost); err != nil {
 		return err
@@ -335,7 +353,20 @@ func runPairCommand(cmd *cobra.Command, alias string, opts pairOptions) error {
 	}
 	server.Platform = platformFromPairReport(report.Platform)
 
-	if err := config.Update(path, func(latest *config.Config) error {
+	if err := savePairedServer(path, alias, server, existing, exists, opts); err != nil {
+		return fmt.Errorf("SSH pairing was verified but the config could not be saved: %w; %s", err, pairRetryInstruction(alias, exists, opts.keyPath, keyPath))
+	}
+
+	fmt.Fprintf(out, "paired %q: verified %s on %s via key-authenticated SSH\n", alias, strings.TrimSpace(verifiedUser), strings.TrimSpace(verifiedHost))
+	// The target sends one identical confirmation after its first successful
+	// callback. Keep the listener available for a bounded grace period in case
+	// the first 202 response was lost on the return path.
+	waitForPairCallbackRetry(cmd.Context(), retryAcknowledged, pairCallbackRetryGrace)
+	return nil
+}
+
+func savePairedServer(path, alias string, server, existing *config.Server, exists bool, opts pairOptions) error {
+	return config.Update(path, func(latest *config.Config) error {
 		current, currentExists := latest.Servers[alias]
 		saved := server
 		if exists {
@@ -378,15 +409,84 @@ func runPairCommand(cmd *cobra.Command, alias string, opts pairOptions) error {
 			latest.Default = alias
 		}
 		return nil
-	}); err != nil {
+	})
+}
+
+func runPairNoCallback(cmd *cobra.Command, alias string, server *config.Server, opts pairOptions, existing *config.Server, exists bool, path string) error {
+	if strings.TrimSpace(server.User) == "" {
+		return fmt.Errorf("--no-callback requires --user (the target login to verify); the target cannot report its username without a callback")
+	}
+	keyPath := opts.keyPath
+	if keyPath == "" && server.KeyPath != "" {
+		keyPath = server.KeyPath
+	}
+	if keyPath == "" {
+		keyPath = filepath.Join("~", ".ssh", "id_ed25519_"+alias)
+	}
+	expandedKey, err := sshpkg.ExpandHome(keyPath)
+	if err != nil {
+		return err
+	}
+	publicKey, generated, err := preparePairKey(cmd, alias, expandedKey, opts.noEncrypt)
+	if err != nil {
+		return err
+	}
+	keepGenerated := false
+	defer func() {
+		if generated && !keepGenerated {
+			keys.RemoveGeneratedKeyPair(expandedKey)
+		}
+	}()
+	server.Auth = config.AuthKey
+	server.KeyPath = keyPath
+
+	scripts, err := pair.BuildScripts(publicKey, "", server.Port)
+	if err != nil {
+		return err
+	}
+	if opts.scriptDir == "" {
+		if err := validatePrintedPairCommandLengths(opts.target, scripts); err != nil {
+			return err
+		}
+	}
+	out := cmd.OutOrStdout()
+	fmt.Fprintf(out, "Pairing %q at %s (no callback; the key is embedded in the command below)\n", alias, sshpkg.Address(server))
+	if generated {
+		fmt.Fprintf(out, "Generated key: %s\n", expandedKey)
+	}
+	if opts.scriptDir != "" {
+		paths, err := writePairCommandFiles(opts.scriptDir, alias, opts.target, scripts)
+		if err != nil {
+			return err
+		}
+		for _, p := range paths {
+			fmt.Fprintf(out, "Target command file: %s\n", p)
+		}
+	} else {
+		if opts.target == "all" || opts.target == "windows" {
+			fmt.Fprintln(out, "\nWindows (run in Administrator PowerShell):")
+			fmt.Fprintln(out, scripts.Windows)
+		}
+		if opts.target == "all" || opts.target == "posix" {
+			fmt.Fprintln(out, "\nLinux/macOS (run as the target login user; sudo may prompt):")
+			fmt.Fprintln(out, scripts.POSIX)
+		}
+	}
+	fmt.Fprintf(out, "\nRun the command on the target, then sshm retries key login as %s for up to %s (Ctrl+C to stop)...\n", server.User, opts.timeout)
+
+	verifyCtx, verifyCancel := context.WithTimeout(cmd.Context(), opts.timeout)
+	defer verifyCancel()
+	verifiedUser, verifiedHost, err := verifyPairedServer(verifyCtx, server)
+	if err != nil {
+		return fmt.Errorf("no-callback pairing timed out waiting for key login as %s@%s: %w; %s", server.User, sshpkg.Address(server), err, pairRetryInstruction(alias, exists, opts.keyPath, keyPath))
+	}
+	server.User = verifiedUser
+
+	if err := savePairedServer(path, alias, server, existing, exists, opts); err != nil {
 		return fmt.Errorf("SSH pairing was verified but the config could not be saved: %w; %s", err, pairRetryInstruction(alias, exists, opts.keyPath, keyPath))
 	}
-
+	keepGenerated = true
 	fmt.Fprintf(out, "paired %q: verified %s on %s via key-authenticated SSH\n", alias, strings.TrimSpace(verifiedUser), strings.TrimSpace(verifiedHost))
-	// The target sends one identical confirmation after its first successful
-	// callback. Keep the listener available for a bounded grace period in case
-	// the first 202 response was lost on the return path.
-	waitForPairCallbackRetry(cmd.Context(), retryAcknowledged, pairCallbackRetryGrace)
 	return nil
 }
 
@@ -484,13 +584,14 @@ func validatePrintedPairCommandLengths(target string, scripts pair.Scripts) erro
 		platform string
 		enabled  bool
 		command  string
+		limit    int
 	}{
-		{platform: "Windows", enabled: target == "all" || target == "windows", command: scripts.Windows},
-		{platform: "Linux/macOS", enabled: target == "all" || target == "posix", command: scripts.POSIX},
+		{platform: "Windows", enabled: target == "all" || target == "windows", command: scripts.Windows, limit: maxPrintedWindowsPairCommandBytes},
+		{platform: "Linux/macOS", enabled: target == "all" || target == "posix", command: scripts.POSIX, limit: maxPrintedPairCommandBytes},
 	}
 	for _, candidate := range commands {
-		if candidate.enabled && len(candidate.command) > maxPrintedPairCommandBytes {
-			return fmt.Errorf("%s target command is %d bytes and exceeds the safe %d-byte copy limit; rerun with --script-dir <private-directory> and transfer the generated command file", candidate.platform, len(candidate.command), maxPrintedPairCommandBytes)
+		if candidate.enabled && len(candidate.command) > candidate.limit {
+			return fmt.Errorf("%s target command is %d bytes and exceeds the safe %d-byte copy limit; rerun with --script-dir <private-directory> and transfer the generated command file", candidate.platform, len(candidate.command), candidate.limit)
 		}
 	}
 	return nil

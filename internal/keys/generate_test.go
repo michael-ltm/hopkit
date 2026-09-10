@@ -32,7 +32,12 @@ func TestGenerateED25519_WritesBothFiles(t *testing.T) {
 	pubStat, err := os.Stat(path + ".pub")
 	require.NoError(t, err)
 	if osIsUnix() {
-		require.Equal(t, os.FileMode(0o644), pubStat.Mode().Perm())
+		// Creation must honor the caller's umask, including private 0077 shells.
+		control := filepath.Join(dir, "public-mode-control")
+		require.NoError(t, os.WriteFile(control, nil, 0o644))
+		controlStat, err := os.Stat(control)
+		require.NoError(t, err)
+		require.Equal(t, controlStat.Mode().Perm(), pubStat.Mode().Perm())
 	}
 }
 

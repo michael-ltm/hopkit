@@ -64,6 +64,32 @@ func TestPairRetryInstructionIsExecutableForNewAndExistingAliases(t *testing.T) 
 	require.Contains(t, pairRetryInstruction("new-pc", false, "/keys/custom", "/keys/custom"), `kept key "/keys/custom"`)
 }
 
+func TestPairNoCallbackFailurePreservesExistingPassphraseFile(t *testing.T) {
+	dir := t.TempDir()
+	keyPath := filepath.Join(dir, "pair-key")
+	recovery := []byte("user-managed recovery must survive pairing failure")
+	require.NoError(t, os.WriteFile(keyPath+".passphrase", recovery, 0o600))
+	cmd := &cobra.Command{}
+	var output bytes.Buffer
+	cmd.SetOut(&output)
+	opts := defaultPairOptions()
+	opts.keyPath = keyPath
+	opts.noEncrypt = true
+	opts.noCallback = true
+	opts.target = "posix"
+	opts.scriptDir = "invalid\nscript-directory"
+	server := &config.Server{Host: "target.invalid", Port: 22, User: "ops"}
+
+	err := runPairNoCallback(cmd, "test-pair", server, opts, nil, false, filepath.Join(dir, "config.toml"))
+	require.ErrorContains(t, err, "script directory is invalid")
+	require.Contains(t, output.String(), "Generated key:")
+	require.NoFileExists(t, keyPath)
+	require.NoFileExists(t, keyPath+".pub")
+	got, err := os.ReadFile(keyPath + ".passphrase")
+	require.NoError(t, err)
+	require.Equal(t, recovery, got)
+}
+
 func TestWaitForPairCallbackRetryReturnsWhenTargetConfirms(t *testing.T) {
 	retries := make(chan struct{}, 1)
 	retries <- struct{}{}
@@ -181,21 +207,40 @@ func TestWritePairCommandFiles_WritesPrivateLaunchersAndScripts(t *testing.T) {
 }
 
 func TestValidatePrintedPairCommandLengthsGuardsClipboardOutputOnly(t *testing.T) {
-	short := strings.Repeat("x", maxPrintedPairCommandBytes)
-	tooLong := short + "x"
-	require.NoError(t, validatePrintedPairCommandLengths("all", pair.Scripts{Windows: short, POSIX: short}))
+	windowsShort := strings.Repeat("x", maxPrintedWindowsPairCommandBytes)
+	windowsTooLong := windowsShort + "x"
+	posixShort := strings.Repeat("x", maxPrintedPairCommandBytes)
+	posixTooLong := posixShort + "x"
+	require.NoError(t, validatePrintedPairCommandLengths("all", pair.Scripts{Windows: windowsShort, POSIX: posixShort}))
 
-	err := validatePrintedPairCommandLengths("posix", pair.Scripts{Windows: short, POSIX: tooLong})
+	err := validatePrintedPairCommandLengths("posix", pair.Scripts{Windows: windowsTooLong, POSIX: posixTooLong})
 	require.Error(t, err)
 	require.Contains(t, err.Error(), "Linux/macOS")
 	require.Contains(t, err.Error(), "--script-dir")
 
-	err = validatePrintedPairCommandLengths("windows", pair.Scripts{Windows: tooLong, POSIX: short})
+	err = validatePrintedPairCommandLengths("windows", pair.Scripts{Windows: windowsTooLong, POSIX: posixShort})
 	require.Error(t, err)
 	require.Contains(t, err.Error(), "Windows")
 	require.Contains(t, err.Error(), "--script-dir")
 
-	require.NoError(t, validatePrintedPairCommandLengths("windows", pair.Scripts{Windows: short, POSIX: tooLong}), "an unselected command must not block file/clipboard output")
+	require.NoError(t, validatePrintedPairCommandLengths("windows", pair.Scripts{Windows: windowsShort, POSIX: posixTooLong}), "an unselected command must not block file/clipboard output")
+}
+
+func TestValidatePrintedPairCommandLengthsRejectsGeneratedWindowsCommandWithoutHeadroom(t *testing.T) {
+	host := "6por21snmdcn2p8rypsju9cfaxkn2dkbeh0ni58vmp8zup0b6x.43m50ruhcjeh8nq9knmhwrud83mxo"
+	scripts, err := pair.BuildScripts(
+		"ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIK7m3yZ9Qf0xV8u2nR4sP6cD1bH5jL7eT9wA2gM4 pair@host",
+		"http://"+host+":65535/v1/pair/9f1b7c3d5e8a2046Qx7_pL2zN8vR4mT6wY0kC5hZ7Qa",
+		22,
+	)
+	require.NoError(t, err)
+	require.Greater(t, len(scripts.Windows), maxPrintedWindowsPairCommandBytes)
+	require.LessOrEqual(t, len(scripts.Windows), maxPrintedPairCommandBytes, "this specifically exercises the former 8150..8190-byte acceptance gap")
+
+	err = validatePrintedPairCommandLengths("windows", scripts)
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "Windows")
+	require.Contains(t, err.Error(), "8149-byte")
 }
 
 func TestPreparePairKeyExistingKeyMustPassSigningPreflight(t *testing.T) {

@@ -4,8 +4,40 @@ All notable changes to this project will be documented in this file. Format: [Ke
 
 ## [Unreleased]
 
+## [0.7.1] — 2026-09-10
+
+### Fixed
+- POSIX pairing accepts the case-insensitive keyword spelling emitted by
+  OpenSSH 10.5 effective-configuration output, including `Port 22`.
+- Pairing payloads use maximum gzip compression so Windows one-line commands
+  remain below the traditional console command-length ceiling.
+- Release tests now isolate the process-local SSH agent fallback from an
+  installed `ssh-agent`, follow the current project-reference deletion
+  behavior through MCP, and avoid proxy-dependent DNS fixtures.
+
+## [0.8.0-cloud-preview.34] — 2026-09-09
+
+### Added
+- `sshm pair` now pairs public-IP servers without a target callback: when the
+  controller cannot be reached back, it installs the embedded key and polls SSH
+  instead of prompting for a callback address. The login user defaults to root
+  (Administrator on Windows), and the wait follows `--timeout`.
+
+### Changed
+- The home menu compacts its header and groups entries (main / cloud / more);
+  the update status only appears when a release is available. `sshm add`
+  defaults to manual entry and labels the pairing option "any network".
+- `sshm rm` and the interactive delete action can tombstone the cloud vault
+  entry in the same step, and removal is no longer blocked by project-profile
+  references, which are cleared on delete.
+
 ### Fixed
 
+- Unlocking the cloud vault loads decryptable SSH identities into a session
+  agent without rewriting private keys. `CloudEntry` no longer blocks local
+  key or agent authentication; `auth=cloud` can use a local key or an exact
+  agent match, including sibling `alias~xxxxxxxx` public keys. See
+  `docs/2026-09-09-vault-unlock-ssh-recovery.md`.
 - `copy-id` now reports success only after a real key-authenticated reconnect;
   when the key is installed but rejected by sshd, it returns an actionable error.
 - `exec --ask-password` now securely prompts for password-auth aliases, matching

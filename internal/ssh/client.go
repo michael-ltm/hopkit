@@ -135,22 +135,24 @@ func buildAuth(s *config.Server, opts BuildOpts) ([]gssh.AuthMethod, io.Closer, 
 		if len(opts.Signers) > 0 {
 			return []gssh.AuthMethod{gssh.PublicKeys(opts.Signers...)}, closeAll(opts.SignerClosers), nil
 		}
-		if s.Auth == config.AuthCloud {
-			path := opts.ConfigPath
-			if path == "" {
-				path = config.ConfigPath()
+		var keyErr error
+		if s.Auth == config.AuthKey || s.KeyPath != "" {
+			key, closer, err := loadKeySigner(s.KeyPath)
+			if err == nil {
+				return []gssh.AuthMethod{gssh.PublicKeys(key)}, closer, nil
 			}
-			signers, closer, err := loadLocalAgentSigners(path, s)
-			if err != nil {
-				return nil, nil, errors.New("no local SSH identity is available; run 'sshm cloud agent' locally to unlock and load it")
-			}
+			keyErr = err
+		}
+		// An unlocked vault identity is usable only when its public key was
+		// cached for this exact route and cloud binding, never by alias alone.
+		signers, closer, err := loadLocalAgentSigners(opts.ConfigPath, s)
+		if err == nil {
 			return []gssh.AuthMethod{gssh.PublicKeys(signers...)}, closer, nil
 		}
-		key, closer, err := loadKeySigner(s.KeyPath)
-		if err != nil {
-			return nil, nil, err
+		if s.Auth == config.AuthKey {
+			return nil, nil, keyErr
 		}
-		return []gssh.AuthMethod{gssh.PublicKeys(key)}, closer, nil
+		return nil, nil, errors.New("no local SSH identity is available; run 'sshm cloud agent' locally to unlock and load it")
 	case config.AuthPassword:
 		if opts.Password == "" {
 			return nil, nil, errors.New("password not provided for auth=password")

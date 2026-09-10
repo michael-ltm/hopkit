@@ -9,6 +9,7 @@ import (
 	"github.com/michael-ltm/sshm/internal/cloudsync"
 	"github.com/michael-ltm/sshm/internal/config"
 	"github.com/michael-ltm/sshm/internal/inventory"
+	"github.com/michael-ltm/sshm/internal/keystore"
 	"github.com/spf13/cobra"
 	"os"
 	"os/signal"
@@ -199,6 +200,9 @@ func runCloudAgent(ctx context.Context, cmd *cobra.Command, state *cloudsync.Sta
 			<-errorsCh
 		}
 	}()
+	if err := keystore.StartSessionAgent(ctx); err != nil {
+		fmt.Fprintln(cmd.ErrOrStderr(), "Local SSH Agent could not be started; check the local Agent configuration.")
+	}
 	preload(state, v)
 	fmt.Fprintf(cmd.OutOrStdout(), "Cloud agent running; web shell enabled: %t. Master stays in process memory; restart requires unlock or browser approval.\n", allowShell)
 	if allowShell {

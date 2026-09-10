@@ -400,7 +400,7 @@ func registerWriteTools(s *server.MCPServer, deps Deps, names []string) []string
 		handleEditServer)
 
 	reg(mcp.NewTool("remove_server",
-		mcp.WithDescription("Remove an unreferenced server after explicit exact-alias confirmation (audited)."),
+		mcp.WithDescription("Remove a server not used as a ProxyJump after explicit exact-alias confirmation; project references are cleared (audited)."),
 		mcp.WithString("alias", mcp.Required(), mcp.Description("server alias")),
 		mcp.WithString("confirm_alias", mcp.Required(), mcp.Description("must exactly equal alias")),
 		mcp.WithString("reason", mcp.Required(), mcp.Description("why this server is being removed (audited)"))),

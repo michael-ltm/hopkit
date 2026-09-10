@@ -28,7 +28,12 @@ type Home struct {
 	width, height, cursor int
 	color                 bool
 }
-type homeItem struct{ id, title, detail string }
+type homeItem struct{ id, title, detail, section string }
+type homeRow struct {
+	title   string
+	section bool
+	cursor  bool
+}
 
 func NewHome(cfg *config.Config, summary HomeSummary, version string, color bool) Home {
 	return Home{Config: cfg, Summary: summary, Version: version, width: 100, height: 28, color: color}
@@ -41,16 +46,27 @@ func (m Home) items() []homeItem {
 		accountHelp = m.tr("Account status, log out or manage devices", "查看账号状态、退出登录和管理设备")
 	}
 	return []homeItem{
-		{"servers", m.tr("Servers", "服务器列表"), m.tr("Recent connections first · search, connect and manage", "最近使用优先 · 搜索、连接和管理")},
-		{"add", m.tr("Add server / device", "添加服务器 / 设备"), m.tr("SSH server, cloud device or enable this computer", "添加 SSH 服务器、云端设备，或允许连接本机")},
-		{"sync", m.tr("Sync", "同步保险库"), m.tr("Sync encrypted connections and deletions", "同步加密连接和删除记录")},
-		{"devices", m.tr("Cloud devices", "云端设备"), m.tr("View account devices and connection availability", "查看账号下的设备与连接状态")},
-		{"account", account, accountHelp},
-		{"update", m.tr("Check for updates", "检查更新"), m.tr("Verify signed releases · choose update or skip", "验证签名版本 · 自行选择更新或跳过")},
-		{"settings", m.tr("Settings", "设置"), m.tr("Language, color and terminal symbols", "语言、颜色和终端符号")},
-		{"help", m.tr("Help / AI integrations", "帮助 / AI 集成"), m.tr("Common commands and Codex / Claude Code integration status", "常用命令与 Codex / Claude Code 集成状态")},
-		{"quit", m.tr("Quit", "退出"), m.tr("Close this menu; keep your account signed in", "关闭菜单，保留账号登录状态")},
+		{"servers", m.tr("Servers", "服务器列表"), m.tr("Recent connections first · search, connect and manage", "最近使用优先 · 搜索、连接和管理"), "main"},
+		{"add", m.tr("Add server / device", "添加服务器 / 设备"), m.tr("SSH server, cloud device or enable this computer", "添加 SSH 服务器、云端设备，或允许连接本机"), "main"},
+		{"sync", m.tr("Sync", "同步保险库"), m.tr("Sync encrypted connections and deletions", "同步加密连接和删除记录"), "cloud"},
+		{"devices", m.tr("Cloud devices", "云端设备"), m.tr("View account devices and connection availability", "查看账号下的设备与连接状态"), "cloud"},
+		{"account", account, accountHelp, "cloud"},
+		{"settings", m.tr("Settings", "设置"), m.tr("Language, color and terminal symbols", "语言、颜色和终端符号"), "more"},
+		{"update", m.tr("Check for updates", "检查更新"), m.tr("Verify signed releases · choose update or skip", "验证签名版本 · 自行选择更新或跳过"), "more"},
+		{"help", m.tr("Help / AI integrations", "帮助 / AI 集成"), m.tr("Common commands and Codex / Claude Code integration status", "常用命令与 Codex / Claude Code 集成状态"), "more"},
+		{"quit", m.tr("Quit", "退出"), m.tr("Close this menu; keep your account signed in", "关闭菜单，保留账号登录状态"), "more"},
 	}
+}
+func (m Home) sectionTitle(section string) string {
+	switch section {
+	case "main":
+		return m.tr("Main", "主要")
+	case "cloud":
+		return m.tr("Cloud", "云端")
+	case "more":
+		return m.tr("More", "其他")
+	}
+	return ""
 }
 func (m Home) Init() tea.Cmd { return m.Check }
 func (m Home) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
@@ -104,54 +120,67 @@ func (m Home) View() string {
 		return b.fit([]string{"SSHM", m.tr("Resize terminal to 30 x 15", "请放大终端至 30 × 15"), "q · " + m.tr("quit", "退出")})
 	}
 	w := max(1, m.width-4)
-	status := m.tr("Checking update…", "正在检查更新…")
-	if m.Check == nil {
-		status = m.tr("Not checked", "未检查更新")
-	}
-	if m.Release.Err != "" {
-		status = m.tr("Update check unavailable", "暂时无法检查更新")
-	}
-	if m.Release.Verified {
-		status = m.tr("Up to date", "已是最新版本")
-		if m.Release.Available {
-			status = m.tr("Update available: ", "发现新版本：") + SanitizeTerminalText(m.Release.Latest)
-		}
-	}
 	account := m.tr("Local mode · not logged in", "本地模式 · 未登录")
 	if m.Summary.Account != "" {
 		account = m.tr("Account: ", "账号：") + SanitizeTerminalText(m.Summary.Account) + m.tr("  ·  Vault locked", "  ·  保险库已锁定")
-	}
-	cloud := "—"
-	if m.Summary.CloudKnown {
-		cloud = fmt.Sprint(m.Summary.Cloud)
 	}
 	counts := fmt.Sprintf(m.tr("%d in local list  ·  %d local-only  ·  %d cloud-linked", "本机列表 %d  ·  仅本地 %d  ·  云端关联 %d"), m.Summary.Total, m.Summary.Local, m.Summary.Linked)
 	if m.Summary.Unlinked > 0 {
 		counts += fmt.Sprintf(m.tr("  ·  %d need sync", "  ·  待同步关联 %d"), m.Summary.Unlinked)
 	}
-	sync := m.tr("Cloud snapshot: ", "云端快照：") + cloud
-	if m.Summary.Synced != "" {
-		sync += m.tr("  ·  last sync ", "  ·  上次同步 ") + m.Summary.Synced
-	} else {
-		sync += m.tr("  ·  sync to refresh", "  ·  同步后刷新")
+	lines := []string{
+		b.paint("SSHM", "brand") + b.paint("   v"+SanitizeTerminalText(m.Version), "muted") + "   " + b.paint(account, "muted"),
+		b.paint(counts, "muted"),
 	}
-	if m.Summary.Pending {
-		sync += m.tr("  ·  unpublished changes", "  ·  有待同步更改")
-	}
-	lines := []string{b.paint("SSHM", "brand") + b.paint("   v"+SanitizeTerminalText(m.Version), "muted"), b.paint(status, "muted"), "", account, b.paint(counts, "muted")}
 	if m.Summary.Account != "" {
+		cloud := "—"
+		if m.Summary.CloudKnown {
+			cloud = fmt.Sprint(m.Summary.Cloud)
+		}
+		sync := m.tr("Cloud snapshot: ", "云端快照：") + cloud
+		if m.Summary.Synced != "" {
+			sync += m.tr("  ·  last sync ", "  ·  上次同步 ") + m.Summary.Synced
+		} else {
+			sync += m.tr("  ·  sync to refresh", "  ·  同步后刷新")
+		}
+		if m.Summary.Pending {
+			sync += m.tr("  ·  unpublished changes", "  ·  有待同步更改")
+		}
 		lines = append(lines, b.paint(sync, "muted"))
+	}
+	if m.Release.Verified && m.Release.Available {
+		lines = append(lines, b.paint(m.tr("Update available: ", "发现新版本：")+SanitizeTerminalText(m.Release.Latest), "brand"))
 	}
 	lines = append(lines, "", b.paint(strings.Repeat("─", w), "rule"))
 	items := m.items()
-	capacity := max(1, min(len(items), m.height-len(lines)-5))
-	offset := max(0, min(m.cursor-capacity+1, len(items)-capacity))
-	for i := offset; i < min(len(items), offset+capacity); i++ {
-		line := "  " + items[i].title
-		if i == m.cursor {
-			line = b.paint(PadRightWidth("› "+items[i].title, w), "selected")
+	rows := make([]homeRow, 0, len(items)+3)
+	lastSection := ""
+	for i, it := range items {
+		if it.section != lastSection {
+			rows = append(rows, homeRow{title: m.sectionTitle(it.section), section: true})
+			lastSection = it.section
 		}
-		lines = append(lines, line)
+		rows = append(rows, homeRow{title: it.title, cursor: i == m.cursor})
+	}
+	capacity := max(1, min(len(rows), m.height-len(lines)-5))
+	cursorRow := 0
+	for i, r := range rows {
+		if r.cursor {
+			cursorRow = i
+			break
+		}
+	}
+	offset := max(0, min(cursorRow-capacity+1, len(rows)-capacity))
+	for i := offset; i < min(len(rows), offset+capacity); i++ {
+		r := rows[i]
+		switch {
+		case r.section:
+			lines = append(lines, b.paint("  "+r.title, "muted"))
+		case r.cursor:
+			lines = append(lines, b.paint(PadRightWidth("› "+r.title, w), "selected"))
+		default:
+			lines = append(lines, "  "+r.title)
+		}
 	}
 	lines = append(lines, b.paint(strings.Repeat("─", w), "rule"), b.paint(items[m.cursor].detail, "muted"), "", b.paint(m.tr("↑↓ move   Enter select   s servers   y sync   , settings   q quit", "↑↓ 选择   Enter 打开   s 列表   y 同步   , 设置   q 退出"), "muted"))
 	return b.fit(lines)

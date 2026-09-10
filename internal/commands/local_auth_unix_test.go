@@ -151,6 +151,21 @@ func TestLocalCloudCLIWithoutIdentityExplainsLocalUnlock(t *testing.T) {
 	require.Zero(t, accepted.Load())
 }
 
+func TestCloudCLIWithoutInventoryBindingUsesCachedLocalIdentity(t *testing.T) {
+	path, target, ring, accepted := localAuthFixture(t)
+	signers, err := ring.Signers()
+	require.NoError(t, err)
+	require.Len(t, signers, 1)
+	target.CloudEntry, target.CloudVault = "", ""
+	// A known local signing identity does not require rebuilding cloud inventory.
+	require.NoError(t, sshpkg.StoreLocalAgentIdentities(path, target, []gssh.PublicKey{signers[0].PublicKey()}))
+	previous := flagConfigPath
+	flagConfigPath = path
+	t.Cleanup(func() { flagConfigPath = previous })
+	require.NoError(t, connect("local-test", target, false, path))
+	require.EqualValues(t, 1, accepted.Load())
+}
+
 func TestCloudLinkedAgentCLIWithoutSignersExplainsLocalUnlock(t *testing.T) {
 	path, target, ring, accepted := localAuthFixture(t)
 	require.NoError(t, ring.RemoveAll())

@@ -14,7 +14,7 @@ SSHM manages local SSH connections and optional client-encrypted cloud synchroni
 
 ## Local checks
 
-Go requirement is declared in `go.mod`. Run `go test ./...` and `go vet ./...`. Live integration tests are opt-in and must use disposable accounts/targets. A plain source build currently defaults to `0.7.0`; pass an explicit `internal/commands.Version` linker value for versioned development builds. Do not confuse the default with the deployed release.
+Go requirement is declared in `go.mod`. Run `go test ./...` and `go vet ./...`. Live integration tests are opt-in and must use disposable accounts/targets. A plain source build currently defaults to `0.7.1`; pass an explicit `internal/commands.Version` linker value for versioned development builds. Do not confuse the default with the deployed release.
 
 Cloud: install dependencies using the committed pnpm lockfile, then `pnpm --dir cloud check` and `pnpm --dir cloud test`.
 

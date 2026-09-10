@@ -26,3 +26,14 @@ func EnsureAgent() error {
 	}
 	return c.Close()
 }
+
+// StartSessionAgent reuses a reachable agent or starts the Windows OpenSSH
+// agent service. Windows has no in-process fallback (the unix serveGoAgent
+// path serves a unix socket that does not apply to the OpenSSH named pipe).
+func StartSessionAgent(_ context.Context) error {
+	if c, e := sshpkg.DialAgent(); e == nil {
+		c.Close()
+		return nil
+	}
+	return EnsureAgent()
+}

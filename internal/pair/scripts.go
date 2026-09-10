@@ -25,7 +25,7 @@ func BuildScripts(publicKey, callbackURL string, port int) (Scripts, error) {
 		return Scripts{}, fmt.Errorf("public key must be one OpenSSH line")
 	}
 	publicKey = strings.Join(publicKeyFields[:2], " ")
-	if !strings.HasPrefix(callbackURL, "http://") || strings.ContainsAny(callbackURL, "\r\n'") {
+	if callbackURL != "" && (!strings.HasPrefix(callbackURL, "http://") || strings.ContainsAny(callbackURL, "\r\n'")) {
 		return Scripts{}, fmt.Errorf("callback URL is invalid")
 	}
 	if port < 1 || port > 65535 {
@@ -81,7 +81,10 @@ func buildPOSIXOneLiner(script string) (string, error) {
 
 func gzipBase64(script string) (string, error) {
 	var compressed bytes.Buffer
-	writer := gzip.NewWriter(&compressed)
+	writer, err := gzip.NewWriterLevel(&compressed, gzip.BestCompression)
+	if err != nil {
+		return "", fmt.Errorf("create pair script compressor: %w", err)
+	}
 	if _, err := writer.Write([]byte(script)); err != nil {
 		return "", fmt.Errorf("compress pair script: %w", err)
 	}
@@ -229,10 +232,14 @@ if($LASTEXITCODE -ne 0){throw 'Failed to secure administrators_authorized_keys A
 $firewallRule="SSHM-OpenSSH-In-TCP-$sshPort";$firewallDisplay="SSHM OpenSSH Server (TCP $sshPort)"
 if(Get-Command Get-NetFirewallRule -ErrorAction SilentlyContinue){Get-NetFirewallRule -Name $firewallRule -ErrorAction SilentlyContinue|Remove-NetFirewallRule -ErrorAction SilentlyContinue;New-NetFirewallRule -Name $firewallRule -DisplayName $firewallDisplay -Enabled True -Direction Inbound -Protocol TCP -Action Allow -LocalPort $sshPort|Out-Null}
 else {$netshName="name=$firewallDisplay";& netsh.exe advfirewall firewall delete rule $netshName dir=in protocol=TCP localport=$sshPort|Out-Null;& netsh.exe advfirewall firewall add rule $netshName dir=in action=allow protocol=TCP localport=$sshPort|Out-Null;if($LASTEXITCODE -ne 0){throw "Failed to open Windows Firewall TCP port $sshPort"}}
+if($pairUrl){
 $form=New-Object 'System.Collections.Generic.Dictionary[string,string]';$form['user']=$reportedUser;$form['hostname']=$env:COMPUTERNAME;$form['platform']='windows'
 $handler=New-Object Net.Http.HttpClientHandler;$handler.UseProxy=$false;$client=New-Object Net.Http.HttpClient($handler);$client.Timeout=[TimeSpan]::FromSeconds(15)
 try {$sent=$false;for($attempt=1;$attempt -le 3 -and -not $sent;$attempt++){$content=New-Object Net.Http.FormUrlEncodedContent($form);$response=$null;try{$response=$client.PostAsync($pairUrl,$content).GetAwaiter().GetResult();if($response.IsSuccessStatusCode){$sent=$true}else{throw "HTTP $([int]$response.StatusCode)"}}catch{if($attempt -eq 3){throw "Pair callback failed: $_"};Start-Sleep -Seconds (2*$attempt)}finally{if($response){$response.Dispose()};$content.Dispose()}};$content=New-Object Net.Http.FormUrlEncodedContent($form);$response=$null;try{$response=$client.PostAsync($pairUrl,$content).GetAwaiter().GetResult();if(-not $response.IsSuccessStatusCode){Write-Warning "Pair callback confirmation returned HTTP $([int]$response.StatusCode)"}}catch{Write-Warning "Pair callback confirmation was not received: $($_.Exception.Message)"}finally{if($response){$response.Dispose()};$content.Dispose()}} finally {$client.Dispose();$handler.Dispose()}
 Write-Host "SSHM pair report sent for $reportedUser@$env:COMPUTERNAME; waiting for controller verification."
+} else {
+Write-Host "SSHM pair key installed for $reportedUser@$env:COMPUTERNAME."
+}
 `
 
 const posixScript = `set -eu
@@ -287,19 +294,28 @@ validate_sshd() { "$SSHD" -t >/dev/null 2>&1 || run_root "$SSHD" -t >/dev/null 2
 read_sshd_effective() { "$SSHD" -T 2>/dev/null || run_root "$SSHD" -T 2>/dev/null; }
 if ! validate_sshd; then echo 'sshd configuration failed sshd -t; fix the configuration, then rerun this command.' >&2;exit 1;fi
 if ! SSHD_EFFECTIVE="$(read_sshd_effective)"; then echo 'Cannot read sshd effective configuration with sshd -T; rerun as root or with working sudo.' >&2;exit 1;fi
-if ! printf '%s\n' "$SSHD_EFFECTIVE"|awk -v p="$SSH_PORT" '$1=="port"&&$2==p{found=1}END{exit !found}'; then
+if ! printf '%s\n' "$SSHD_EFFECTIVE"|awk -v p="$SSH_PORT" 'tolower($1)=="port"&&$2==p{found=1}END{exit !found}'; then
   if [ "$PLATFORM" = darwin ]; then echo "macOS includes an existing sshd even when Remote Login is off; this command will not rewrite it. Enable/configure Remote Login for Port $SSH_PORT, validate with sshd -t, then rerun." >&2
   elif [ "$SSHD_WAS_PRESENT" -eq 1 ]; then echo "Existing sshd effective configuration does not include requested Port $SSH_PORT. Configure that port, validate with sshd -t, then rerun this command." >&2
   else echo "Newly installed sshd effective configuration does not include requested Port $SSH_PORT" >&2;fi
   exit 1
 fi
+INIT_COMM="$(ps -p 1 -o comm= 2>/dev/null | tr -d '[:space:]')"
+SYSTEMD_RUNNING=0
+if [ "$INIT_COMM" = systemd ] && command -v systemctl >/dev/null 2>&1; then SYSTEMD_RUNNING=1;fi
+STANDALONE_SSHD=0
+if [ "$PLATFORM" = linux ] && [ "$SYSTEMD_RUNNING" -eq 0 ] && [ "$INIT_COMM" != init ] && [ "$INIT_COMM" != openrc-init ] && [ ! -d /run/openrc ]; then STANDALONE_SSHD=1;fi
 SSH_ACTIVE=0
 if [ -n "${SSH_CONNECTION:-}" ]; then SSH_ACTIVE=1
 elif [ "$PLATFORM" = darwin ] && launchctl print system/com.openssh.sshd >/dev/null 2>&1; then SSH_ACTIVE=1
-elif command -v systemctl >/dev/null 2>&1 && { systemctl is-active --quiet sshd || systemctl is-active --quiet ssh; }; then SSH_ACTIVE=1
+elif [ "$SYSTEMD_RUNNING" -eq 1 ] && { systemctl is-active --quiet sshd || systemctl is-active --quiet ssh; }; then SSH_ACTIVE=1
+elif [ "$STANDALONE_SSHD" -eq 1 ] && command -v pgrep >/dev/null 2>&1 && pgrep -x sshd >/dev/null 2>&1; then SSH_ACTIVE=1
 fi
-if [ "$SSH_CONFIG_CHANGED" -eq 1 ]; then
-  if command -v systemctl >/dev/null 2>&1; then run_root systemctl enable sshd >/dev/null 2>&1 || run_root systemctl enable ssh >/dev/null 2>&1;run_root systemctl restart sshd >/dev/null 2>&1 || run_root systemctl restart ssh >/dev/null 2>&1
+if [ "$STANDALONE_SSHD" -eq 1 ] && { [ "$SSH_ACTIVE" -ne 1 ] || [ "$SSH_CONFIG_CHANGED" -eq 1 ]; }; then
+  run_root "$SSHD"
+  echo 'Started sshd without an init service manager; container recreation requires its startup command to launch sshd again.' >&2
+elif [ "$SSH_CONFIG_CHANGED" -eq 1 ]; then
+  if [ "$SYSTEMD_RUNNING" -eq 1 ]; then run_root systemctl enable sshd >/dev/null 2>&1 || run_root systemctl enable ssh >/dev/null 2>&1;run_root systemctl restart sshd >/dev/null 2>&1 || run_root systemctl restart ssh >/dev/null 2>&1
   elif command -v rc-service >/dev/null 2>&1; then run_root rc-update add sshd default >/dev/null 2>&1 || true;run_root rc-service sshd restart
   elif command -v service >/dev/null 2>&1; then run_root service ssh restart >/dev/null 2>&1 || run_root service sshd restart >/dev/null 2>&1
   else echo 'OpenSSH custom port is configured, but no supported service manager was found to restart sshd' >&2;exit 1;fi
@@ -307,7 +323,7 @@ elif [ "$SSH_ACTIVE" -ne 1 ]; then
   if [ "$PLATFORM" = darwin ]; then
     run_root systemsetup -setremotelogin on >/dev/null 2>&1 || run_root launchctl load -w /System/Library/LaunchDaemons/ssh.plist >/dev/null 2>&1
   else
-    if command -v systemctl >/dev/null 2>&1; then run_root systemctl enable --now sshd >/dev/null 2>&1 || run_root systemctl enable --now ssh >/dev/null 2>&1
+    if [ "$SYSTEMD_RUNNING" -eq 1 ]; then run_root systemctl enable --now sshd >/dev/null 2>&1 || run_root systemctl enable --now ssh >/dev/null 2>&1
     elif command -v rc-service >/dev/null 2>&1; then run_root rc-update add sshd default >/dev/null 2>&1 || true; run_root rc-service sshd restart
     elif command -v service >/dev/null 2>&1; then run_root service ssh restart >/dev/null 2>&1 || run_root service sshd restart >/dev/null 2>&1
     else echo 'OpenSSH is installed but no supported service manager was found' >&2; exit 1; fi
@@ -334,6 +350,7 @@ LISTENING=0;LISTEN_STATUS=1;n=0
 while [ "$n" -lt 15 ]; do if port_is_listening; then LISTENING=1;break;else LISTEN_STATUS=$?;[ "$LISTEN_STATUS" -eq 2 ]&&break;fi;n=$((n+1));sleep 1;done
 if [ "$LISTENING" -ne 1 ]; then if [ "$LISTEN_STATUS" -eq 2 ]; then echo "sshd is ready, but neither ss nor netstat is available to verify TCP port $SSH_PORT" >&2;else echo "sshd is not listening on requested TCP port $SSH_PORT" >&2;fi;exit 1;fi
 HOST_NAME="$(hostname 2>/dev/null || uname -n)"
+if [ -n "$PAIR_URL" ]; then
 callback_curl() { curl --fail --silent --show-error --connect-timeout 5 --max-time 15 --noproxy '*' -X POST --data-urlencode "user=$TARGET_USER" --data-urlencode "hostname=$HOST_NAME" --data-urlencode "platform=$PLATFORM" "$PAIR_URL" >/dev/null; }
 callback_wget() { NO_PROXY='*' no_proxy='*' wget -qO- -T 15 -t 1 --post-data="user=$TARGET_USER&hostname=$HOST_NAME&platform=$PLATFORM" "$PAIR_URL" >/dev/null; }
 CALLBACK_SENT=0;CALLBACK_TOOL=''
@@ -342,4 +359,7 @@ if [ "$CALLBACK_SENT" -ne 1 ] && command -v wget >/dev/null 2>&1; then case "$TA
 if [ "$CALLBACK_SENT" -ne 1 ]; then echo 'OpenSSH is ready, but the callback failed after curl/wget retries. Check the route to the controller and rerun this command.' >&2;exit 1;fi
 case "$CALLBACK_TOOL" in curl) callback_curl||true;;wget) callback_wget||true;;esac
 echo "SSHM pair report sent for $TARGET_USER@$HOST_NAME; waiting for controller verification."
+else
+echo "SSHM pair key installed for $TARGET_USER@$HOST_NAME."
+fi
 `

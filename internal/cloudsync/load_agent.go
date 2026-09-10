@@ -5,7 +5,10 @@ import (
 	"crypto/rand"
 	"errors"
 	"fmt"
+	"os"
+	"path/filepath"
 	"sort"
+	"strings"
 	"time"
 
 	"github.com/michael-ltm/sshm/internal/config"
@@ -17,8 +20,8 @@ import (
 
 type LoadReport struct {
 	// Loaded counts distinct identities proved usable, including existing keys.
-	Loaded  int
-	Skipped []string
+	Loaded  int      `json:"loaded"`
+	Skipped []string `json:"skipped,omitempty"`
 }
 
 // LoadMatchingKeysIntoAgent uses only this unlocked vault and explicit owner.
@@ -57,17 +60,19 @@ func LoadMatchingKeysIntoAgent(state *State, v *Vault, cfg *config.Config, confi
 			if credential.Kind != "key" {
 				continue
 			}
-			raw, err := gssh.ParseRawPrivateKey(credential.Key)
-			var missing *gssh.PassphraseMissingError
-			if errors.As(err, &missing) {
-				if len(credential.Passphrase) == 0 {
-					report.Skipped = append(report.Skipped, fmt.Sprintf("%q: encrypted key requires its SSH key passphrase", alias))
-					continue
+			raw, err := parseAgentPrivateKey(credential.Key, credential.Passphrase)
+			if err != nil && server.KeyPath != "" {
+				if recovered, recoveryErr := recoverLocalAgentKey(state, v.Data, entry, server.KeyPath, credential); recoveryErr == nil {
+					raw, err = recovered, nil
 				}
-				raw, err = gssh.ParseRawPrivateKeyWithPassphrase(credential.Key, credential.Passphrase)
 			}
 			if err != nil {
-				report.Skipped = append(report.Skipped, fmt.Sprintf("%q: private key could not be unlocked or parsed", alias))
+				var missing *gssh.PassphraseMissingError
+				if errors.As(err, &missing) && len(credential.Passphrase) == 0 {
+					report.Skipped = append(report.Skipped, fmt.Sprintf("%q: encrypted key requires its SSH key passphrase", alias))
+				} else {
+					report.Skipped = append(report.Skipped, fmt.Sprintf("%q: private key could not be unlocked or parsed", alias))
+				}
 				continue
 			}
 			signer, err := gssh.NewSignerFromKey(raw)
@@ -176,4 +181,111 @@ func loadTimedAndProve(raw any, public gssh.PublicKey) error {
 		return err
 	}
 	return public.Verify(challenge, signature)
+}
+
+// parseAgentPrivateKey also accepts an unencrypted vault copy that carries a
+// passphrase for the matching encrypted local identity.
+func parseAgentPrivateKey(key, passphrase []byte) (any, error) {
+	raw, err := gssh.ParseRawPrivateKey(key)
+	var missing *gssh.PassphraseMissingError
+	if errors.As(err, &missing) && len(passphrase) > 0 {
+		return gssh.ParseRawPrivateKeyWithPassphrase(key, passphrase)
+	}
+	return raw, err
+}
+
+// recoverLocalAgentKey only restores a local identity declared by the selected
+// active entry. Ordinary login passwords are never SSH passphrase candidates.
+func recoverLocalAgentKey(state *State, data Data, entry Entry, keyPath string, credential Credential) (any, error) {
+	unavailable := errors.New("local identity unlock material unavailable")
+	path, err := sshpkg.ExpandHome(keyPath)
+	if err != nil {
+		return nil, unavailable
+	}
+	path = filepath.Clean(path)
+	local, err := os.ReadFile(path)
+	if err != nil {
+		return nil, unavailable
+	}
+	defer Wipe(local)
+	public, err := publicIdentity(local, path)
+	if err != nil {
+		return nil, unavailable
+	}
+	fingerprint := gssh.FingerprintSHA256(public)
+	if credential.Fingerprint != "" {
+		if credential.Fingerprint != fingerprint {
+			return nil, unavailable
+		}
+	} else {
+		declared, err := publicIdentity(credential.Key, "")
+		if err != nil || !bytes.Equal(public.Marshal(), declared.Marshal()) {
+			return nil, unavailable
+		}
+	}
+	proveIdentity := func(passphrase []byte) (any, error) {
+		raw, err := parseAgentPrivateKey(local, passphrase)
+		if err != nil {
+			return nil, unavailable
+		}
+		signer, err := gssh.NewSignerFromKey(raw)
+		if err != nil || !bytes.Equal(signer.PublicKey().Marshal(), public.Marshal()) {
+			return nil, unavailable
+		}
+		return raw, nil
+	}
+	if raw, err := proveIdentity(credential.Passphrase); err == nil {
+		return raw, nil
+	}
+	for _, id := range entry.CredentialIDs {
+		sidecar := data.Credentials[id]
+		if sidecar.Kind != "password" || sidecar.Password == "" || !strings.HasPrefix(sidecar.Fingerprint, "sshm-sidecar-backup:") {
+			continue
+		}
+		if raw, err := proveIdentity([]byte(sidecar.Password)); err == nil {
+			return raw, nil
+		}
+	}
+	// Historical hardening receipts stored sidecars outside entry references.
+	// Their exact device/path marker supplies the binding, after entry and public
+	// identity verification above; unrelated backups cannot be tried.
+	if state.DeviceID != "" {
+		marker := "sshm-sidecar-backup:" + Digest([]string{state.DeviceID, path})
+		for _, sidecar := range data.Credentials {
+			if sidecar.Kind != "password" || sidecar.Password == "" || sidecar.Fingerprint != marker {
+				continue
+			}
+			if raw, err := proveIdentity([]byte(sidecar.Password)); err == nil {
+				return raw, nil
+			}
+		}
+	}
+	return nil, unavailable
+}
+
+func publicIdentity(local []byte, path string) (gssh.PublicKey, error) {
+	if raw, err := gssh.ParseRawPrivateKey(local); err == nil {
+		signer, err := gssh.NewSignerFromKey(raw)
+		if err != nil {
+			return nil, err
+		}
+		return signer.PublicKey(), nil
+	} else {
+		var missing *gssh.PassphraseMissingError
+		if errors.As(err, &missing) && missing.PublicKey != nil {
+			return missing.PublicKey, nil
+		}
+	}
+	if path == "" {
+		return nil, errors.New("public identity unavailable")
+	}
+	data, err := os.ReadFile(path + ".pub")
+	if err != nil {
+		return nil, err
+	}
+	pub, _, options, rest, err := gssh.ParseAuthorizedKey(data)
+	if err != nil || len(options) != 0 || len(bytes.TrimSpace(rest)) != 0 || pub == nil {
+		return nil, errors.New("public identity unavailable")
+	}
+	return pub, nil
 }
