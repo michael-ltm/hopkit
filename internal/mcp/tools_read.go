@@ -228,10 +228,16 @@ func handleCheckSSH(ctx context.Context, deps Deps, args map[string]any) (any, e
 		cli *sshpkg.Client
 		err error
 	}
-	ch := make(chan dialResult, 1)
+	ch := make(chan dialResult)
 	go func() {
-		cli, err := sshpkg.Dial(s, sshpkg.BuildOpts{ConfigPath: deps.ConfigPath, Timeout: 15 * time.Second, Alias: alias})
-		ch <- dialResult{cli: cli, err: err}
+		cli, err := sshpkg.Dial(s, deps.sshOptions(dialCtx, sshpkg.BuildOpts{ConfigPath: deps.ConfigPath, Timeout: 15 * time.Second, Alias: alias}))
+		select {
+		case ch <- dialResult{cli: cli, err: err}:
+		case <-dialCtx.Done():
+			if cli != nil {
+				_ = cli.Close()
+			}
+		}
 	}()
 	var cli *sshpkg.Client
 	select {
@@ -285,7 +291,7 @@ func handleGetStatus(ctx context.Context, deps Deps, args map[string]any) (any, 
 	}
 	ctx, cancel := context.WithTimeout(ctx, 20*time.Second)
 	defer cancel()
-	snap, err := status.Collect(ctx, s, sshpkg.BuildOpts{ConfigPath: deps.ConfigPath, Alias: alias})
+	snap, err := status.Collect(ctx, s, deps.sshOptions(ctx, sshpkg.BuildOpts{ConfigPath: deps.ConfigPath, Alias: alias}))
 	if err != nil {
 		return errResult("ssh", safety.MaskSecrets(err.Error())), nil
 	}

@@ -25,8 +25,13 @@ type Client struct {
 // jump was selected but the connection fails, Dial retries once with a direct
 // TCP dial — this recovers the common TUN/VPN case where the host is reachable
 // directly but the configured SOCKS proxy is not (or vice versa is already the
-// direct path).
+// direct path). StrictRoute (always enabled for resolved cloud bindings)
+// disables environment proxies and direct fallback.
 func Dial(s *config.Server, opts BuildOpts) (_ *Client, dialErr error) {
+	if s == nil {
+		return nil, errors.New("SSH target is required")
+	}
+
 	defer func() {
 		if dialErr != nil && opts.Alias != "" && !opts.ProbeOnly {
 			path := opts.ConfigPath
@@ -36,6 +41,21 @@ func Dial(s *config.Server, opts BuildOpts) (_ *Client, dialErr error) {
 			_ = config.RecordSSHCheck(path, opts.Alias, s, FailureCategory(dialErr), time.Now())
 		}
 	}()
+
+	if opts.ResolveCloud != nil && (s.CloudEntry != "" || s.Auth == config.AuthCloud) {
+		resolved, resolvedOpts, cleanup, err := opts.ResolveCloud(s, opts)
+		if cleanup != nil {
+			defer cleanup()
+		}
+		if err != nil {
+			return nil, err
+		}
+		if resolved == nil || resolved.CloudEntry != "" || resolved.Auth == config.AuthCloud {
+			return nil, errors.New("cloud credential resolution did not produce an authenticated target")
+		}
+		s, opts = resolved, resolvedOpts
+		opts.StrictRoute = true
+	}
 
 	cfg, closer, err := BuildClientConfig(s, opts)
 	if err != nil {
@@ -81,7 +101,7 @@ func Dial(s *config.Server, opts BuildOpts) (_ *Client, dialErr error) {
 	}
 
 	client, auxClosers, kind, err := dialOnce(false)
-	if err != nil && kind != kindDirect {
+	if err != nil && kind != kindDirect && !opts.StrictRoute {
 		// A proxy/jump was selected and failed; fall back to a direct dial.
 		directClient, directAux, directKind, directErr := dialOnce(true)
 		if directErr == nil {

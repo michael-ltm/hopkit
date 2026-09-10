@@ -69,7 +69,10 @@ not include these commands. Use `sshm update` for signed, confirmed updates and 
 - `add` (huh wizard) / `edit` / `rm` / `show`; exact-alias confirmation for destructive removal
 - `connect` (interactive shell) / `exec` (one-off) / `test` (single + --all)
 - `status` (remote resource snapshot) / `init` (baseline hardening)
-- `gen-key` (ed25519) / `copy-id` (one-shot password, never stored)
+- `gen-key` (encrypted ed25519, hidden passphrase prompt; no plaintext recovery
+  sidecar) / `copy-id` (one-shot password, never stored). Automation can supply
+  `--passphrase-file` from a separately managed private file; see
+  [credential handling](docs/security.md#credential-handling).
 - `upload` / `download` (single-file SFTP with `.part`, resume, SHA-256)
 - **`mcp` — built-in MCP server** so AI assistants (Claude Code, Cursor,
   Codex, Gemini CLI) can manage your servers — including layered SSH checks,

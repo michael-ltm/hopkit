@@ -60,6 +60,10 @@ var socksEnvVars = []string{
 // ProxyCommand > ProxyJump > Proxy/env-SOCKS5 > Direct. The selection
 // performs no I/O so it is unit testable.
 func resolveTransportKind(s *config.Server) (transportKind, string, *proxy.Auth) {
+	return resolveRouteTransportKind(s, false)
+}
+
+func resolveRouteTransportKind(s *config.Server, strict bool) (transportKind, string, *proxy.Auth) {
 	if v := strings.TrimSpace(s.ProxyCommand); v != "" {
 		return kindProxyCommand, v, nil
 	}
@@ -69,8 +73,10 @@ func resolveTransportKind(s *config.Server) (transportKind, string, *proxy.Auth)
 	if hostPort, auth := parseSocksAddr(s.Proxy); hostPort != "" {
 		return kindSOCKS5, hostPort, auth
 	}
-	if hostPort, auth := socksProxyFromEnv(); hostPort != "" {
-		return kindSOCKS5, hostPort, auth
+	if !strict {
+		if hostPort, auth := socksProxyFromEnv(); hostPort != "" {
+			return kindSOCKS5, hostPort, auth
+		}
 	}
 	return kindDirect, "", nil
 }
@@ -273,15 +279,16 @@ var directDialFunc = func(addr string, timeout time.Duration) (net.Conn, error) 
 // a net.Conn to the target plus any auxiliary closer that must stay open for
 // the connection's lifetime (e.g. the ProxyJump SSH client). When forceDirect
 // is true the proxy/jump configuration is ignored and a direct TCP dial is
-// used. The returned transportKind reports which path was actually taken.
+// used unless StrictRoute is enabled. The returned transportKind reports
+// which path was actually taken.
 func dialTransport(s *config.Server, opts BuildOpts, timeout time.Duration, forceDirect bool) (net.Conn, io.Closer, error) {
 	conn, aux, _, err := dialTransportKind(s, opts, timeout, forceDirect)
 	return conn, aux, err
 }
 
 func dialTransportKind(s *config.Server, opts BuildOpts, timeout time.Duration, forceDirect bool) (net.Conn, io.Closer, transportKind, error) {
-	kind, param, auth := resolveTransportKind(s)
-	if forceDirect {
+	kind, param, auth := resolveRouteTransportKind(s, opts.StrictRoute)
+	if forceDirect && !opts.StrictRoute {
 		kind, param, auth = kindDirect, "", nil
 	}
 	switch kind {
@@ -375,6 +382,24 @@ func dialViaJump(s *config.Server, spec string, opts BuildOpts, timeout time.Dur
 	if err != nil {
 		return nil, nil, err
 	}
+	if opts.ResolveCloud != nil && (jump.CloudEntry != "" || jump.Auth == config.AuthCloud) {
+		resolved, resolvedOpts, cleanup, err := opts.ResolveCloud(jump, jumpOpts)
+		if cleanup != nil {
+			defer cleanup()
+		}
+		if err != nil {
+			return nil, nil, err
+		}
+		if resolved == nil || resolved.CloudEntry != "" || resolved.Auth == config.AuthCloud {
+			return nil, nil, errors.New("cloud jump credential resolution did not produce an authenticated target")
+		}
+		if resolved.ProxyJump != "" {
+			return nil, nil, errors.New("nested cloud proxy jumps are not supported")
+		}
+		jump, jumpOpts = resolved, resolvedOpts
+		jumpOpts.StrictRoute = true
+	}
+	jumpOpts.StrictRoute = jumpOpts.StrictRoute || opts.StrictRoute
 
 	// Build the jump host's own client config + transport. Reuse the target's
 	// insecure/timeout posture but never inherit the target's password.

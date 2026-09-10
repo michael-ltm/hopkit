@@ -22,7 +22,7 @@ func GenerateED25519(keyPath, comment string) (pubLine string, err error) {
 // GenerateED25519Encrypted writes a new ed25519 private key to keyPath
 // (mode 0600) and its public key to keyPath+".pub" (mode 0644), returning the
 // OpenSSH public-key line. When passphrase != "" the private key is encrypted
-// with it. Refuses to overwrite an existing private key.
+// with it. Refuses to overwrite either existing key file, including symlinks.
 func GenerateED25519Encrypted(keyPath, comment, passphrase string) (pubLine string, err error) {
 	comment = strings.Map(func(r rune) rune {
 		if r == '\n' || r == '\r' {
@@ -31,10 +31,12 @@ func GenerateED25519Encrypted(keyPath, comment, passphrase string) (pubLine stri
 		return r
 	}, comment)
 
-	if _, err = os.Stat(keyPath); err == nil {
-		return "", fmt.Errorf("key already exists at %s (delete it first to regenerate)", keyPath)
-	} else if !errors.Is(err, os.ErrNotExist) {
-		return "", err
+	for _, output := range []string{keyPath, keyPath + ".pub"} {
+		if _, err = os.Lstat(output); err == nil {
+			return "", fmt.Errorf("key file already exists at %s (choose a new path)", output)
+		} else if !errors.Is(err, os.ErrNotExist) {
+			return "", err
+		}
 	}
 
 	var pub ed25519.PublicKey
@@ -54,7 +56,7 @@ func GenerateED25519Encrypted(keyPath, comment, passphrase string) (pubLine stri
 	if mErr != nil {
 		return "", fmt.Errorf("marshal private key: %w", mErr)
 	}
-	if err = os.WriteFile(keyPath, encodePEM(pemBlock), 0o600); err != nil {
+	if err = writeNewKeyFile(keyPath, encodePEM(pemBlock), 0o600); err != nil {
 		return "", fmt.Errorf("write private key %s: %w", keyPath, err)
 	}
 	defer func() {
@@ -73,7 +75,7 @@ func GenerateED25519Encrypted(keyPath, comment, passphrase string) (pubLine stri
 	}
 	pubLine = string(gssh.MarshalAuthorizedKey(sshPub))
 	pubLine = pubLine[:len(pubLine)-1] + " " + comment + "\n"
-	if err = os.WriteFile(keyPath+".pub", []byte(pubLine), 0o644); err != nil {
+	if err = writeNewKeyFile(keyPath+".pub", []byte(pubLine), 0o644); err != nil {
 		err = fmt.Errorf("write public key %s: %w", keyPath+".pub", err)
 		return "", err
 	}
@@ -92,4 +94,28 @@ func RemoveGenerated(keyPath string) {
 	os.Remove(keyPath)
 	os.Remove(keyPath + ".pub")
 	os.Remove(keyPath + ".passphrase")
+}
+
+// RemoveGeneratedKeyPair rolls back a newly generated key pair without touching
+// a pre-existing recovery sidecar. Use when generation created no recovery file.
+func RemoveGeneratedKeyPair(keyPath string) {
+	_ = os.Remove(keyPath)
+	_ = os.Remove(keyPath + ".pub")
+}
+
+// Exclusive creation closes the race between output inspection and writing.
+func writeNewKeyFile(path string, data []byte, mode os.FileMode) error {
+	f, err := os.OpenFile(path, os.O_WRONLY|os.O_CREATE|os.O_EXCL, mode)
+	if err != nil {
+		return err
+	}
+	_, err = f.Write(data)
+	closeErr := f.Close()
+	if err == nil {
+		err = closeErr
+	}
+	if err != nil {
+		_ = os.Remove(path)
+	}
+	return err
 }

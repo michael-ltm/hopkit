@@ -6,9 +6,26 @@
   `exec --ask-password` read a password from the TTY for a single operation
   and zero the input buffer afterward.
 - Private keys are never read except when about to be used, never logged,
-  and never returned through the MCP server. Generated private keys and
-  passphrase-recovery files use `0600` on POSIX and a protected DACL granting
+  and never returned through the MCP server. Generated private keys use `0600` on POSIX and a protected DACL granting
   access only to the current user and LocalSystem on Windows.
+- New encrypted keys from `gen-key`, `provision`, and `pair` prompt for a
+  user-managed passphrase without echo and confirm it twice. They do not print
+  the passphrase or write a `.passphrase` recovery sidecar. Keep a strong,
+  unique passphrase in your password manager; the SSH agent may lose keys at
+  logout or reboot. Use `ssh-add <key-path>` to unlock a saved key again.
+- For automation, explicitly provide `--passphrase-file <private-file>` (MCP:
+  `passphrase_file`). SSHM only reads this file; it does not create or delete it.
+  It must be a regular non-symlink file, at most 1024 bytes with one nonempty
+  line, and private on POSIX (`0600`). Windows currently refuses passphrase
+  files because ACL validation is not implemented; use the interactive prompt. Keep the input file separate from key backups and never put its contents
+  in command arguments, chat, or logs. `--no-encrypt` remains an explicit CLI
+  opt-out and cannot be combined with `--passphrase-file`.
+- Existing `.passphrase` files are preserved. Copying an encrypted private key
+  together with its plaintext sidecar defeats the file encryption. Migrate old
+  sidecars only after verifying durable encrypted recovery and key usability;
+  `cloud link --harden-keys` backs up and confirms
+  encrypted cloud storage, verifies SSH signing, then removes eligible sidecars.
+  See [cloud sync](cloud-sync.md) for the migration flow.
 - `config.toml` and `audit.log` are written with mode `0600`.
 - `pair` embeds only a public key and random one-time callback token in the
   target command. The callback is accepted once, validates bounded fields, and

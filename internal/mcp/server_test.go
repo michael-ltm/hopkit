@@ -32,6 +32,13 @@ func TestNewServer_ReadOnlyOmitsWriteTools(t *testing.T) {
 	}
 }
 
+func TestDefaultMCPDoesNotRequestBrowserApproval(t *testing.T) {
+	s, _ := NewServer(Deps{ConfigPath: "/tmp/none.toml", AllowWrite: true})
+	for _, name := range []string{"cloud_unlock", "cloud_unlock_status", "cloud_lock"} {
+		require.Nil(t, s.GetTool(name), "local mode must not request browser approval")
+	}
+}
+
 func TestNewServerExecProjectSchema(t *testing.T) {
 	s, _ := NewServer(Deps{
 		ConfigPath: "/tmp/none.toml", AuditPath: "/tmp/audit.log", AllowWrite: true,

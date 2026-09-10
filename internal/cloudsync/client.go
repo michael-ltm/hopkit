@@ -5,7 +5,6 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
-	"fmt"
 	"github.com/michael-ltm/sshm/internal/inventory"
 	"io"
 	"net/http"
@@ -59,7 +58,7 @@ type APIError struct {
 }
 
 func (e *APIError) Error() string {
-	return fmt.Sprintf("cloud request failed (HTTP %d, %s)", e.Status, e.Code)
+	return e.Message("en")
 }
 func StatePath(configPath string) string { return configPath + ".cloud/state.json" }
 func LoadState(path string) (*State, error) {

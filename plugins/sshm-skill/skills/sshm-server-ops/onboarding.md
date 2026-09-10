@@ -20,15 +20,24 @@ installation, but must never enter an AI tool call or chat.
    confirmed host details, and a specific `reason`. Configure proxy, jump host,
    or proxy command only when required.
 5. Choose one fallback key-install path; do not combine them:
-   - **MCP-assisted:** call `gen_key` with a user-confirmed key path, relay
+   - **MCP-assisted:** call `gen_key` with a user-confirmed key path and
+     `passphrase_file` pointing to a protected file the user prepared outside
+     chat. Windows does not support passphrase files until ACL validation is
+     available. On Windows, or if they have no such file, use local
+     `sshm gen-key <alias>` so they
+     enter and save the phrase in their own terminal. Never create that file
+     from a phrase sent through AI tools. Relay
      `copy_id`'s CLI instruction verbatim, then run one `check_ssh mode=exec`.
    - **All-in-one CLI:** before generating a key, have the user run
      `sshm provision <alias> --harden`. It generates, installs, tests, and only
      then disables password login. Do not run it after `gen_key`; it starts by
      generating a new key and will fail when that key path already exists.
 6. `gen_key` creates a passphrase-encrypted ed25519 key, attempts OS
-   keystore/agent persistence, and returns a `recovery_file` path without the
-   passphrase. Never read or echo private-key, passphrase, or recovery contents.
+   keystore/agent persistence, and returns public key metadata. It never creates
+   a plaintext `.passphrase` recovery sidecar. The supplied file must be a
+   protected regular file, not a symlink, with one nonempty line of at most
+   1024 bytes. Keep the phrase in a password manager or other user-controlled
+   secure storage. Never read or echo private-key or passphrase contents.
 7. `bootstrap` applies baseline tooling but does not disable password login.
 
 The one-shot server password stays in the user's terminal. TCP reachability

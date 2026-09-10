@@ -15,6 +15,7 @@ import (
 	"github.com/spf13/cobra"
 	gssh "golang.org/x/crypto/ssh"
 	"golang.org/x/term"
+	"io"
 	"os"
 	"os/signal"
 	"path/filepath"
@@ -54,7 +55,7 @@ func cloudOpen(cmd *cobra.Command) (*cloudsync.State, *cloudsync.Vault, func(), 
 	s, err := cloudsync.LoadState(path)
 	if err != nil {
 		release()
-		return nil, nil, nil, errors.New("cloud account is not configured; run sshm cloud register or login")
+		return nil, nil, nil, cloudStateLoadError(err)
 	}
 	recoverMode, _ := cmd.Flags().GetBool("use-recovery")
 	unlockLabel := "Vault unlock phrase"
@@ -83,7 +84,7 @@ func cloudState() (*cloudsync.State, func(), error) {
 	s, err := cloudsync.LoadState(path)
 	if err != nil {
 		release()
-		return nil, nil, errors.New("cloud account is not configured")
+		return nil, nil, cloudStateLoadError(err)
 	}
 	return s, release, nil
 }
@@ -145,7 +146,7 @@ func newCloudCmd() *cobra.Command {
 			if oldErr == nil && (register || old.Username != username || old.URL != endpoint) && (old.Token != "" || old.Dirty || old.Pending != nil) {
 				return errors.New("another cloud account or unsynced draft exists; use another --config or sync and logout first")
 			}
-			password, err := cloudSecret(cmd, "Account password (6+ characters)", register)
+			password, err := cloudSecret(cmd, textUI("Account password (6+ characters)", "账号密码（至少 6 个字符）"), register)
 			if err != nil {
 				return err
 			}
@@ -153,7 +154,7 @@ func newCloudCmd() *cobra.Command {
 			if !cloudsync.ValidAccountPassword(password) {
 				return errors.New("account password must contain 6-256 characters")
 			}
-			unlock, err := cloudSecret(cmd, "Vault unlock phrase (different from account password, 6+ characters)", register)
+			unlock, err := cloudSecret(cmd, textUI("Vault unlock phrase (different from account password, 6+ characters)", "保险库解锁口令（与账号密码不同，至少 6 个字符）"), register)
 			if err != nil {
 				return err
 			}
@@ -573,10 +574,12 @@ func newCloudCmd() *cobra.Command {
 		return nil
 	}})
 	root.AddCommand(newCloudConnectionCmd(false), newCloudConnectionCmd(true), newCloudWatchCmd(), newCloudPresenceCmd())
+	wrapCloudErrors(root)
 	return root
 }
-func cloudAuth(cmd *cobra.Command, d cloudsync.Data, e cloudsync.Entry, selected string) ([]gssh.Signer, string, error) {
+func cloudAuth(cmd *cobra.Command, d cloudsync.Data, e cloudsync.Entry, selected string) ([]gssh.Signer, []io.Closer, string, error) {
 	var signers []gssh.Signer
+	var closers []io.Closer
 	var locked []cloudsync.Credential
 	password := ""
 	matched := selected == ""
@@ -588,7 +591,7 @@ func cloudAuth(cmd *cobra.Command, d cloudsync.Data, e cloudsync.Entry, selected
 		c := d.Credentials[id]
 		if c.Kind == "password" {
 			if password != "" && password != c.Password {
-				return nil, "", fmt.Errorf("multiple saved passwords; choose --credential from: %s", strings.Join(e.CredentialIDs, ", "))
+				return nil, nil, "", fmt.Errorf("multiple saved passwords; choose --credential from: %s", strings.Join(e.CredentialIDs, ", "))
 			}
 			password = c.Password
 			continue
@@ -603,19 +606,27 @@ func cloudAuth(cmd *cobra.Command, d cloudsync.Data, e cloudsync.Entry, selected
 		if err == nil {
 			signers = append(signers, s)
 		} else {
+			var missing *gssh.PassphraseMissingError
+			if errors.As(err, &missing) && missing.PublicKey != nil {
+				if agentSigner, closer, agentErr := sshpkg.AgentSignerForPublicKey(missing.PublicKey); agentErr == nil {
+					signers = append(signers, agentSigner)
+					closers = append(closers, closer)
+					continue
+				}
+			}
 			locked = append(locked, c)
 		}
 	}
 	if !matched {
-		return nil, "", errors.New("selected credential does not belong to this connection")
+		return nil, nil, "", errors.New("selected credential does not belong to this connection")
 	}
 	if e.Server.Auth == config.AuthKey && len(signers) == 0 {
 		if len(locked) == 0 {
-			return nil, "", errors.New("no exported SSH key for this connection")
+			return nil, nil, "", errors.New("no exported SSH key for this connection")
 		}
 		p, err := cloudSecret(cmd, "SSH private key passphrase", false)
 		if err != nil {
-			return nil, "", err
+			return nil, nil, "", err
 		}
 		defer cloudsync.Wipe(p)
 		for _, c := range locked {
@@ -624,18 +635,18 @@ func cloudAuth(cmd *cobra.Command, d cloudsync.Data, e cloudsync.Entry, selected
 			}
 		}
 		if len(signers) == 0 {
-			return nil, "", errors.New("SSH private key could not be unlocked")
+			return nil, nil, "", errors.New("SSH private key could not be unlocked; Vault has no matching passphrase and the macOS agent has no matching identity")
 		}
 	}
 	if e.Server.Auth == config.AuthPassword && password == "" {
 		p, err := cloudSecret(cmd, "Server password (not yet saved)", false)
 		if err != nil {
-			return nil, "", err
+			return nil, nil, "", err
 		}
 		defer cloudsync.Wipe(p)
 		password = string(p)
 	}
-	return signers, password, nil
+	return signers, closers, password, nil
 }
 func newCloudConnectionCmd(run bool) *cobra.Command {
 	use := "connect <alias-or-id>"
@@ -679,11 +690,11 @@ func newCloudConnectionCmd(run bool) *cobra.Command {
 		if !localRoute && !trust && (e.Server.ProxyCommand != "" || e.Server.ProxyJump != "" || e.Server.Proxy != "" || len(e.Server.Forwards) > 0) {
 			return errors.New("connection has device-specific proxy/forward settings; review them on the source device and explicitly use --trust-route")
 		}
-		signers, password, err := cloudAuth(cmd, v.Data, e, credential)
+		signers, signerClosers, password, err := cloudAuth(cmd, v.Data, e, credential)
 		if err != nil {
 			return err
 		}
-		opts := sshpkg.BuildOpts{Signers: signers, Password: password, ConfigPath: configPath()}
+		opts := sshpkg.BuildOpts{Signers: signers, SignerClosers: signerClosers, Password: password, ConfigPath: configPath()}
 		opts.ResolveJump = func(alias string) (*config.Server, sshpkg.BuildOpts, error) {
 			jump, err := v.Data.Find(strings.TrimSpace(alias))
 			if err != nil {
@@ -695,8 +706,8 @@ func newCloudConnectionCmd(run bool) *cobra.Command {
 			if !trust && (jump.Server.ProxyCommand != "" || jump.Server.Proxy != "" || len(jump.Server.Forwards) > 0) {
 				return nil, sshpkg.BuildOpts{}, errors.New("review jump host routing and use --trust-route")
 			}
-			js, jp, err := cloudAuth(cmd, v.Data, jump, "")
-			return &jump.Server, sshpkg.BuildOpts{Signers: js, Password: jp}, err
+			js, jc, jp, err := cloudAuth(cmd, v.Data, jump, "")
+			return &jump.Server, sshpkg.BuildOpts{Signers: js, SignerClosers: jc, Password: jp}, err
 		}
 		client, err := sshpkg.Dial(&e.Server, opts)
 		if err != nil {
@@ -775,7 +786,7 @@ func newCloudWatchCmd() *cobra.Command {
 			}
 			release()
 			if e != nil {
-				fmt.Fprintln(cmd.ErrOrStderr(), safety.MaskSecrets(e.Error()))
+				fmt.Fprintln(cmd.ErrOrStderr(), safety.MaskSecrets(friendlyCloudError(e).Error()))
 			}
 			select {
 			case <-ctx.Done():
@@ -821,7 +832,7 @@ func newCloudPresenceCmd() *cobra.Command {
 				if errors.As(err, &api) && api.Status == 401 {
 					return err
 				}
-				fmt.Fprintln(cmd.ErrOrStderr(), safety.MaskSecrets(err.Error()))
+				fmt.Fprintln(cmd.ErrOrStderr(), safety.MaskSecrets(friendlyCloudError(err).Error()))
 			}
 			select {
 			case <-ctx.Done():
@@ -915,5 +926,6 @@ func newSyncCmd() *cobra.Command {
 		return nil
 	}}
 	c.Flags().Bool("use-recovery", false, "unlock with a recovery code")
+	wrapCloudErrors(c)
 	return c
 }

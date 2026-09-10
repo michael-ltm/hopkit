@@ -39,7 +39,7 @@ func newGenKeyCmd() *cobra.Command {
 
 			var passphrase string
 			if !noEncrypt {
-				passphrase, err = keys.RandomPassphrase()
+				passphrase, err = keyPassphrase(cmd)
 				if err != nil {
 					return err
 				}
@@ -49,7 +49,6 @@ func newGenKeyCmd() *cobra.Command {
 				return err
 			}
 
-			var recoveryPath string
 			var store keystore.Result
 			if passphrase != "" {
 				// Best-effort: the encrypted key on disk is the primary
@@ -57,12 +56,6 @@ func newGenKeyCmd() *cobra.Command {
 				// availability (e.g. a headless host with no ssh-agent), so
 				// a keystore failure must not fail gen-key or orphan the key.
 				store = keystore.BestEffort(keystore.StoreAndLoad(expanded, passphrase))
-
-				recoveryPath, err = keys.WriteRecovery(expanded, passphrase)
-				if err != nil {
-					keys.RemoveGenerated(expanded)
-					return fmt.Errorf("write recovery for %s: %w", expanded, err)
-				}
 			}
 
 			if err := config.Update(configPath(), func(latest *config.Config) error {
@@ -73,7 +66,7 @@ func newGenKeyCmd() *cobra.Command {
 				server.KeyPath = actualPath
 				return nil
 			}); err != nil {
-				keys.RemoveGenerated(expanded)
+				keys.RemoveGeneratedKeyPair(expanded)
 				return fmt.Errorf("save config after generating %s: %w", expanded, err)
 			}
 
@@ -84,15 +77,14 @@ func newGenKeyCmd() *cobra.Command {
 					"public_key":    strings.TrimSpace(pub),
 					"encrypted":     passphrase != "",
 					"persisted":     store.Persisted,
-					"recovery_file": recoveryPath,
+					"recovery_file": "",
 				})
 			}
 			out := cmd.OutOrStdout()
 			fmt.Fprintln(out, expanded)
 			fmt.Fprintln(out, pub)
 			if passphrase != "" {
-				fmt.Fprintf(out, "\nPassphrase (save to your password manager): %s\n", passphrase)
-				fmt.Fprintf(out, "Recovery file (delete after saving): %s\n", recoveryPath)
+				fmt.Fprintln(out, "Keep your key passphrase in your password manager; no recovery file was written.")
 				if store.Persisted {
 					fmt.Fprintln(out, "Stored in keychain — you won't be prompted again.")
 				} else if store.Note != "" {
@@ -104,5 +96,7 @@ func newGenKeyCmd() *cobra.Command {
 	}
 	c.Flags().StringVarP(&path, "path", "p", "", "key path (default ~/.ssh/id_ed25519_<alias>)")
 	c.Flags().BoolVar(&noEncrypt, "no-encrypt", false, "generate an unencrypted key (not recommended)")
+	addKeyPassphraseFlag(c)
+	c.MarkFlagsMutuallyExclusive("no-encrypt", "passphrase-file")
 	return c
 }

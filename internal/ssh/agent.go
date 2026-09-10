@@ -50,6 +50,17 @@ func agentSignerFor(want gssh.PublicKey) (gssh.Signer, io.Closer, error) {
 	return nil, nil, lastErr
 }
 
+// AgentSignerForPublicKey returns an agent-backed signer only for the exact
+// public key supplied by the caller. It never exposes the private key or its
+// passphrase and is used when an encrypted vault copy is unavailable but the
+// user's OS agent has already unlocked the same identity.
+func AgentSignerForPublicKey(want gssh.PublicKey) (gssh.Signer, io.Closer, error) {
+	if want == nil {
+		return nil, nil, errors.New("public key is required")
+	}
+	return agentSignerFor(want)
+}
+
 func signerFromAgent(conn net.Conn, want gssh.PublicKey) (gssh.Signer, io.Closer, error) {
 	if err := conn.SetDeadline(time.Now().Add(30 * time.Second)); err != nil {
 		conn.Close()

@@ -35,7 +35,7 @@ func registerEnvironmentTool(s *server.MCPServer, deps Deps, names []string) []s
 			if !ok {
 				return mcp.NewToolResultError("unknown server alias"), nil
 			}
-			c, e := sshpkg.Dial(target, sshpkg.BuildOpts{ConfigPath: deps.ConfigPath, Alias: alias, ProbeOnly: true})
+			c, e := sshpkg.Dial(target, deps.sshOptions(ctx, sshpkg.BuildOpts{ConfigPath: deps.ConfigPath, Alias: alias, ProbeOnly: true}))
 			if e != nil {
 				return mcp.NewToolResultError(safety.MaskSecrets(e.Error())), nil
 			}

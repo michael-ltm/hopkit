@@ -1,7 +1,12 @@
 package mcp
 
 import (
+	"context"
+	"errors"
+
 	"github.com/mark3labs/mcp-go/server"
+	"github.com/michael-ltm/sshm/internal/config"
+	sshpkg "github.com/michael-ltm/sshm/internal/ssh"
 )
 
 // Deps is the non-global state an MCP server needs: where the config and
@@ -12,6 +17,7 @@ type Deps struct {
 	AllowWrite      bool   // when false, write/exec tools are not registered
 	Version         string // build version (set by ldflags via commands.Version); falls back to "dev"
 	TransferManager *transferManager
+	CloudSession    *CloudSession
 }
 
 // NewServer builds the MCP server with every sshm tool registered, and
@@ -29,6 +35,9 @@ func NewServer(deps Deps) (*server.MCPServer, []string) {
 	names = registerReadTools(s, deps, names)
 	names = registerProjectReadTools(s, deps, names)
 	if deps.AllowWrite {
+		if deps.CloudSession != nil {
+			names = registerCloudTools(s, deps, names)
+		}
 		names = registerWriteTools(s, deps, names)
 		names = registerProjectWriteTools(s, deps, names)
 		names = registerExecTools(s, deps, names)
@@ -38,4 +47,20 @@ func NewServer(deps Deps) (*server.MCPServer, []string) {
 		names = registerTransferTools(s, deps, names)
 	}
 	return s, names
+}
+
+// sshOptions uses local authentication unless a browser session was explicitly supplied.
+func (deps Deps) sshOptions(ctx context.Context, opts sshpkg.BuildOpts) sshpkg.BuildOpts {
+	if deps.CloudSession != nil {
+		// A cloud-bound jump may require approval even when the final target
+		// has native auth. Never bypass a denied jump with direct fallback.
+		opts.StrictRoute = true
+		opts.ResolveCloud = func(target *config.Server, options sshpkg.BuildOpts) (*config.Server, sshpkg.BuildOpts, func(), error) {
+			if !deps.AllowWrite {
+				return nil, options, nil, errors.New("browser credential access is unavailable in read-only MCP mode")
+			}
+			return deps.CloudSession.Resolve(ctx, target, options)
+		}
+	}
+	return opts
 }

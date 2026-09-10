@@ -44,7 +44,10 @@ func connect(alias string, s *config.Server, insecure bool, activeConfigPath str
 	if s.Auth == config.AuthCloud && s.CloudEntry == "" {
 		return fmt.Errorf("cloud connection index needs rebuilding; run sshm sync to unlock and restore it")
 	}
-	if s.CloudEntry != "" {
+	if s.CloudEntry != "" && !sshpkg.HasLocalAuth(s, sshpkg.BuildOpts{ConfigPath: activeConfigPath, Alias: alias}) {
+		if !term.IsTerminal(int(os.Stdin.Fd())) {
+			return fmt.Errorf("no local SSH identity is available; run 'sshm cloud agent' locally to unlock and load it")
+		}
 		return runCloudReference(&cobra.Command{}, s, []string{s.CloudEntry}, false, 0)
 	}
 	c, err := dialInteractive(alias, s, insecure, activeConfigPath)

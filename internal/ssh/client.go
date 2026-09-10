@@ -25,12 +25,20 @@ func (nopCloser) Close() error { return nil }
 // BuildOpts is non-persistent input gathered at connect time (e.g. password
 // prompted from TTY). Never write the contents of BuildOpts to disk.
 type BuildOpts struct {
+	// StrictRoute restricts transport to the configured route: environment
+	// proxies and direct fallback after proxy or jump failure are disabled.
+	StrictRoute bool
+	// ResolveCloud exchanges a cloud binding for a validated target and in-memory
+	// credentials. Dial calls cleanup after authentication or on any failure.
+	ResolveCloud func(*config.Server, BuildOpts) (*config.Server, BuildOpts, func(), error)
 	// ResolveJump supplies a vault-owned jump host and its own credentials.
 	// It must reject unknown or ambiguous aliases; no local fallback is used.
 	ResolveJump func(string) (*config.Server, BuildOpts, error)
 	// Signers are supplied by the unlocked cloud vault and are never persisted.
-	Signers  []gssh.Signer
-	Password string
+	Signers []gssh.Signer
+	// SignerClosers keeps agent connections backing Signers alive for Dial.
+	SignerClosers []io.Closer
+	Password      string
 	// Alias identifies a managed target for best-effort LastUsed tracking after
 	// authentication succeeds. Empty leaves activity metadata untouched.
 	Alias string
@@ -122,13 +130,21 @@ func Address(s *config.Server) string {
 }
 
 func buildAuth(s *config.Server, opts BuildOpts) ([]gssh.AuthMethod, io.Closer, error) {
-	if s.CloudEntry != "" {
-		return nil, nil, errors.New("cloud credential is locked; use sshm connect or sshm cloud connect to unlock the encrypted vault")
-	}
 	switch s.Auth {
-	case config.AuthKey:
+	case config.AuthKey, config.AuthCloud:
 		if len(opts.Signers) > 0 {
-			return []gssh.AuthMethod{gssh.PublicKeys(opts.Signers...)}, nil, nil
+			return []gssh.AuthMethod{gssh.PublicKeys(opts.Signers...)}, closeAll(opts.SignerClosers), nil
+		}
+		if s.Auth == config.AuthCloud {
+			path := opts.ConfigPath
+			if path == "" {
+				path = config.ConfigPath()
+			}
+			signers, closer, err := loadLocalAgentSigners(path, s)
+			if err != nil {
+				return nil, nil, errors.New("no local SSH identity is available; run 'sshm cloud agent' locally to unlock and load it")
+			}
+			return []gssh.AuthMethod{gssh.PublicKeys(signers...)}, closer, nil
 		}
 		key, closer, err := loadKeySigner(s.KeyPath)
 		if err != nil {
@@ -147,8 +163,25 @@ func buildAuth(s *config.Server, opts BuildOpts) ([]gssh.AuthMethod, io.Closer, 
 		}
 		return []gssh.AuthMethod{method}, closer, nil
 	default:
-		return nil, nil, fmt.Errorf("unsupported auth %q (want one of key/password/agent)", s.Auth)
+		return nil, nil, fmt.Errorf("unsupported auth %q (want one of key/password/agent/cloud)", s.Auth)
 	}
+}
+
+type closerGroup []io.Closer
+
+func (g closerGroup) Close() error {
+	for _, c := range g {
+		if c != nil {
+			_ = c.Close()
+		}
+	}
+	return nil
+}
+func closeAll(cs []io.Closer) io.Closer {
+	if len(cs) == 0 {
+		return nil
+	}
+	return closerGroup(cs)
 }
 
 // loadKeySigner returns a signer for the private key at path. Unencrypted

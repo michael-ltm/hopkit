@@ -171,6 +171,26 @@ func addCloudLinkCommands(root *cobra.Command, endpoint, username, label *string
 }
 func runCloudAgent(ctx context.Context, cmd *cobra.Command, state *cloudsync.State, v *cloudsync.Vault, allowShell bool) error {
 	ctx, cancel := context.WithCancel(ctx)
+	// Local signing does not depend on a successful network synchronization.
+	// Keep preload failures separate from the existing sync and shell lifecycle.
+	lastLoadStatus := ""
+	preload := func(s *cloudsync.State, unlocked *cloudsync.Vault) {
+		cfg, err := config.Load(configPath())
+		if err != nil {
+			fmt.Fprintln(cmd.ErrOrStderr(), "Local SSH identities not loaded: configuration could not be read.")
+			return
+		}
+		report, err := cloudsync.LoadMatchingKeysIntoAgent(s, unlocked, cfg, configPath())
+		if err != nil {
+			fmt.Fprintln(cmd.ErrOrStderr(), "Local SSH identities not fully loaded; check the local Agent and vault ownership.")
+		}
+		status := fmt.Sprintf("Local SSH Agent: %d signing identities ready; %d keys skipped. Newly added keys expire after 12 hours.\n", report.Loaded, len(report.Skipped))
+		status += strings.Join(report.Skipped, "\n")
+		if status != lastLoadStatus {
+			fmt.Fprintln(cmd.OutOrStdout(), strings.TrimSpace(status))
+			lastLoadStatus = status
+		}
+	}
 	errorsCh := make(chan error, 1)
 	serveDone := false
 	defer func() {
@@ -179,6 +199,7 @@ func runCloudAgent(ctx context.Context, cmd *cobra.Command, state *cloudsync.Sta
 			<-errorsCh
 		}
 	}()
+	preload(state, v)
 	fmt.Fprintf(cmd.OutOrStdout(), "Cloud agent running; web shell enabled: %t. Master stays in process memory; restart requires unlock or browser approval.\n", allowShell)
 	if allowShell {
 		state.RuntimeVersion = Version
@@ -226,6 +247,7 @@ func runCloudAgent(ctx context.Context, cmd *cobra.Command, state *cloudsync.Sta
 						}
 					}
 					if err == nil {
+						preload(s, opened)
 						err = s.ProcessJobs(ctx, opened, path, func(jobCtx context.Context, job cloudsync.Job) cloudsync.JobResult {
 							return executeCloudJob(jobCtx, s, opened, path, job)
 						})

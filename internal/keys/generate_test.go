@@ -156,3 +156,59 @@ func TestRemoveGenerated_CleansUpAfterFatalWriteRecoveryFailure(t *testing.T) {
 	_, err = GenerateED25519Encrypted(keyPath, "c@sshm", "pw2")
 	require.NoError(t, err, "retry after cleanup must not be wedged")
 }
+
+func TestRemoveGeneratedKeyPairPreservesExistingRecovery(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "generated")
+	_, err := GenerateED25519(path, "test")
+	require.NoError(t, err)
+	recovery := []byte("existing recovery belongs to user")
+	require.NoError(t, os.WriteFile(path+".passphrase", recovery, 0600))
+	RemoveGeneratedKeyPair(path)
+	require.NoFileExists(t, path)
+	require.NoFileExists(t, path+".pub")
+	got, err := os.ReadFile(path + ".passphrase")
+	require.NoError(t, err)
+	require.Equal(t, recovery, got)
+}
+
+func TestGenerateED25519PreservesExistingPublicFile(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "key")
+	existing := []byte("only saved key passphrase")
+	require.NoError(t, os.WriteFile(path+".pub", existing, 0600))
+	_, err := GenerateED25519Encrypted(path, "test", string(existing))
+	require.Error(t, err)
+	require.NoFileExists(t, path)
+	got, err := os.ReadFile(path + ".pub")
+	require.NoError(t, err)
+	require.Equal(t, existing, got)
+}
+
+func TestGenerateED25519RejectsDanglingOutputSymlinks(t *testing.T) {
+	if !osIsUnix() {
+		t.Skip("Unix symlink test")
+	}
+	for _, suffix := range []string{"", ".pub"} {
+		t.Run(suffix, func(t *testing.T) {
+			dir := t.TempDir()
+			path, target := filepath.Join(dir, "key"), filepath.Join(dir, "absent")
+			require.NoError(t, os.Symlink(target, path+suffix))
+			_, err := GenerateED25519(path, "test")
+			require.Error(t, err)
+			require.NoFileExists(t, target)
+			info, err := os.Lstat(path + suffix)
+			require.NoError(t, err)
+			require.NotZero(t, info.Mode()&os.ModeSymlink)
+		})
+	}
+}
+
+func TestWriteNewKeyFileRefusesOutputCreatedAfterPreflight(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "key")
+	original := []byte("newly created user secret")
+	require.NoError(t, os.WriteFile(path, original, 0600))
+	err := writeNewKeyFile(path, []byte("replacement"), 0600)
+	require.ErrorIs(t, err, os.ErrExist)
+	got, err := os.ReadFile(path)
+	require.NoError(t, err)
+	require.Equal(t, original, got)
+}

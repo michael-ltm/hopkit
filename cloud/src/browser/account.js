@@ -3,11 +3,11 @@ import { installControls, refreshControls, closeControls, confirmAction } from '
 import { hardwareCells, closeHardware } from './hardware.js';
 import { openTerminal } from './terminal.js';
 import { addDeviceEntry, deviceConnectionId } from './device-entry.js';
-let pendingDeviceAdd=null;
+import { createUnlockFlow } from './unlock-flow.js';
 import { unlockVault, refreshVault, latestRelease, encryptVault, b64, createLinkGrant, linkCode, signVault, verifyJobReceipt } from './vault.js';
 const $=s=>document.querySelector(s),$$=s=>[...document.querySelectorAll(s)];
 let session=null,devices=[],vault=null,page='devices',group='',lockTimer,backgroundTimer,flashTimer,unlockEpoch=0;
-let agents=[],terminalStop=null,terminalEpoch=0,pendingLink=null;
+let agents=[],terminalStop=null,terminalEpoch=0,pendingLink=null,approvalEpoch=0;
 let releaseVersion=null,releaseChecked=0;
 let serverPage=0,devicePage=0,pageSize=25;const selectedServers=new Set();
 const names={macos:'macOS',darwin:'macOS',linux:'Linux',windows:'Windows',browser:'浏览器',freebsd:'FreeBSD'},icons={darwin:'M',linux:'L',windows:'⊞',browser:'◉'};
@@ -18,9 +18,25 @@ const time=n=>{if(!n)return '尚无记录';const seconds=Math.max(0,Math.floor((
 function timestamp(n,label){const el=node('div','sub',n?label+' '+time(n):'尚无'+label+'记录');if(n)el.title=label+'：'+new Date(n).toLocaleString();return el;}
 function flash(text){$('#flash').textContent=text;$('#flash').hidden=false;clearTimeout(flashTimer);flashTimer=setTimeout(()=>$('#flash').hidden=true,6500);}
 async function api(path,method='GET',body){const headers={'Content-Type':'application/json'};if(session)headers['X-SSHM-Account']=session.username;const r=await fetch('/v1/'+path,{method,headers,body:method==='GET'?undefined:JSON.stringify(body||{}),credentials:'same-origin',cache:'no-store'});const d=await r.json();if(!r.ok){const e=Error(r.status===429?'操作过于频繁，请稍后重试。':r.status===401?'登录已过期或凭据不正确，请重新登录。':r.status===409?'云端已有更新。请重新解锁并核对最新内容，当前编辑尚未保存。':'操作未完成，请检查输入或稍后重试。');e.status=r.status;throw e;}return d;}
+let unlocking=false;
+const unlockFlow=createUnlockFlow({isUnlocked:()=>!!vault,show:label=>{
+ $('#action-unlock-purpose').textContent='解锁后继续：'+label;
+ $('#action-unlock-error').textContent='';$('#action-unlock-form').reset();
+ $('#action-unlock-dialog').showModal();$('#action-unlock-form').elements.phrase.focus();
+}});
+function ensureVault(label,action){return unlockFlow.run(label,action).catch(e=>flash(e.message));}
+function cancelUnlock(){
+ if(unlockFlow.ticket()!==null||unlocking)unlockEpoch++;
+ unlockFlow.cancel();$('#action-unlock-form').reset();$('#unlock-form').reset();
+ $('#action-unlock-error').textContent='';
+ if($('#action-unlock-dialog').open)$('#action-unlock-dialog').close();
+}
+$('#action-unlock-dialog').addEventListener('cancel',event=>{event.preventDefault();cancelUnlock();});
+$('#action-unlock-dialog').addEventListener('close',()=>{if(unlockFlow.ticket()!==null)cancelUnlock();});
 function showLogin(){ $('#login-error').textContent='';$('#login-dialog').showModal();setTimeout(()=>$('#login-form').elements.username.focus(),20); }
 function routeFromPath(){return ['devices','servers','settings'].includes(location.pathname.slice(1))?location.pathname.slice(1):'landing';}
 function navigate(name,{replace=false,writeHistory=true}={}){
+ if(name!==page){cancelUnlock();approvalEpoch++;pendingLink=null;if($('#link-dialog').open)$('#link-dialog').close();}
  page=name;const home=name==='landing';
  for(const id of ['devices','servers','settings'])$('#'+id).hidden=!session||id!==name;
  $('#landing').hidden=!!session&&!home;$('#sidebar').hidden=!session||home;
@@ -31,7 +47,7 @@ function navigate(name,{replace=false,writeHistory=true}={}){
  if(writeHistory&&(session||home)&&location.pathname!==path)history[replace?'replaceState':'pushState']({},'',path);
 }
 window.addEventListener('popstate',()=>{navigate(routeFromPath(),{writeHistory:false});if(!session&&page!=='landing'&&!$('#login-dialog').open)showLogin();});
-function lock(){closeControls();closeHardware();if($('#server-terminal-dialog').open)$('#server-terminal-dialog').close();serverTarget=null;clearTimeout(backgroundTimer);pendingLink=null;if($('#link-dialog').open)$('#link-dialog').close();document.querySelector('.row-menu')?.remove();stopTerminal();unlockEpoch++;selectedServers.clear();serverPage=0;$('#server-bulkbar').hidden=true;for(const id of ['delete-dialog','job-dialog'])if($('#'+id).open)$('#'+id).close();deleteIDs=[];if($('#bulk-dialog').open)$('#bulk-dialog').close();clearTimeout(lockTimer);$('#unlock-form').reset();$('#server-form').reset();$('#server-group').replaceChildren(new Option('所有分组',''));$('#server-search').value='';vault?.close();vault=null;$$('#pending-links button.primary').forEach(b=>b.disabled=true);$('#vault-unlock').hidden=false;$('#vault-content').hidden=true;$('#vault-lock').hidden=true;$('#add-server').hidden=true;$('#server-rows').replaceChildren();if($('#server-dialog').open)$('#server-dialog').close();renderDevices();}
+function lock(){approvalEpoch++;cancelUnlock();closeControls();closeHardware();if($('#server-terminal-dialog').open)$('#server-terminal-dialog').close();serverTarget=null;clearTimeout(backgroundTimer);pendingLink=null;if($('#link-dialog').open)$('#link-dialog').close();document.querySelector('.row-menu')?.remove();stopTerminal();unlockEpoch++;selectedServers.clear();serverPage=0;$('#server-bulkbar').hidden=true;for(const id of ['delete-dialog','job-dialog'])if($('#'+id).open)$('#'+id).close();deleteIDs=[];if($('#bulk-dialog').open)$('#bulk-dialog').close();clearTimeout(lockTimer);$('#unlock-form').reset();$('#server-form').reset();$('#server-group').replaceChildren(new Option('所有分组',''));$('#server-search').value='';vault?.close();vault=null;$$('#pending-links button.primary').forEach(b=>{b.disabled=false;b.textContent='解锁并批准';});$('#vault-unlock').hidden=false;$('#vault-content').hidden=true;$('#vault-lock').hidden=true;$('#add-server').hidden=true;$('#server-rows').replaceChildren();if($('#server-dialog').open)$('#server-dialog').close();renderDevices();}
 function active(){if(vault){clearTimeout(lockTimer);lockTimer=setTimeout(()=>{lock();flash('保险库因闲置已自动锁定。');},300_000);}}
 for(const event of ['pointerdown','keydown'])document.addEventListener(event,active);document.addEventListener('visibilitychange',()=>{clearTimeout(backgroundTimer);if(document.hidden){stopTerminal();backgroundTimer=setTimeout(lock,60_000);}});window.addEventListener('pagehide',lock);
 async function refresh(forceRelease=false){if(forceRelease||Date.now()-releaseChecked>300_000){releaseChecked=Date.now();latestRelease().then(v=>{releaseVersion=v;renderDevices();renderServers();}).catch(()=>{});}const [d,a]=await Promise.all([api('devices'),api('agents')]);devices=d.devices;agents=a.agents;renderDevices();renderSessions();await renderLinks();await refreshUnlockedVault();await refreshJobs();}
@@ -71,8 +87,30 @@ function install(){
 }
 function addDevice(){install();$('#add-dialog').showModal();}
 for(const id of ['add-device','empty-add','top-install','landing-install'])$('#'+id).onclick=addDevice;$('#login-download').onclick=()=>{$('#login-dialog').close();addDevice();};$('#install-os').value=/Windows/i.test(navigator.userAgent)?'windows-amd64.exe':/Mac/i.test(navigator.userAgent)?'darwin-arm64':'linux-amd64';$('#install-os').onchange=install;$('#copy-installer').onclick=()=>navigator.clipboard.writeText($('#installer-command').textContent).then(()=>flash('安装命令已复制。'),()=>flash('请手动复制命令。'));$('#copy-install').onclick=()=>navigator.clipboard.writeText($('#install-login').textContent).then(()=>flash('命令已复制。'),()=>flash('请手动复制命令。'));
-for(const id of ['device-search','device-status','device-platform'])$('#'+id).oninput=()=>{devicePage=0;renderDevices();};$('#refresh').onclick=()=>refresh(true).catch(e=>flash(e.message));for(const b of $$('[data-nav]'))b.onclick=()=>{group='';navigate(b.dataset.nav);renderDevices();};for(const b of $$('[data-close]'))b.onclick=()=>b.closest('dialog').close();$('#top-login').onclick=showLogin;$('#start').onclick=()=>{if(session)navigate('devices');else{page='devices';showLogin();}};$('#top-logout').onclick=logout;
-$('#unlock-form').onsubmit=async e=>{e.preventDefault();const f=e.currentTarget,b=f.querySelector('button');b.disabled=true;$('#unlock-error').textContent='正在本机派生解锁密钥…';try{const epoch=unlockEpoch,snap=await api('vault');const opened=await unlockVault(session.username,snap,f.elements.phrase.value,p=>$('#unlock-error').textContent='正在本机解锁 '+Math.round(p*100)+'%');if(epoch!==unlockEpoch){opened.close();throw Error('页面已离开，请重新解锁。');}vault=opened;$('#unlock-error').textContent='';$('#vault-unlock').hidden=true;$('#vault-content').hidden=false;$('#vault-lock').hidden=false;$('#add-server').hidden=false;active();renderServers();renderDevices();install();await renderLinks();if(pendingDeviceAdd){const id=pendingDeviceAdd;pendingDeviceAdd=null;const d=devices.find(x=>x.id===id);if(d)await addDeviceToVault(d);}}catch(e){$('#unlock-error').textContent=e.message;}finally{f.elements.phrase.value='';b.disabled=false;}};
+for(const id of ['device-search','device-status','device-platform'])$('#'+id).oninput=()=>{devicePage=0;renderDevices();};$('#refresh').onclick=()=>refresh(true).catch(e=>flash(e.message));for(const b of $$('[data-nav]'))b.onclick=()=>{group='';navigate(b.dataset.nav);renderDevices();};for(const b of $$('[data-close]'))b.onclick=()=>{const dialog=b.closest('dialog');if(dialog.id==='action-unlock-dialog')cancelUnlock();else dialog.close();};$('#top-login').onclick=showLogin;$('#start').onclick=()=>{if(session)navigate('devices');else{page='devices';showLogin();}};$('#top-logout').onclick=logout;
+async function submitUnlock(event){
+ event.preventDefault();if(unlocking)return;
+ const form=event.currentTarget,modal=form.id==='action-unlock-form',error=$(modal?'#action-unlock-error':'#unlock-error'),button=form.querySelector('button.primary');
+ const epoch=unlockEpoch,account=session?.username,ticket=unlockFlow.ticket();
+ if(!account){error.textContent='登录已过期，请重新登录。';return;}
+ unlocking=true;button.disabled=true;error.textContent='正在本机派生解锁密钥…';
+ const phrase=form.elements.phrase.value;form.elements.phrase.value='';
+ try{
+  const snapshot=await api('vault');
+  if(epoch!==unlockEpoch||session?.username!==account)return;
+  const opened=await unlockVault(account,snapshot,phrase,p=>{if(epoch===unlockEpoch)error.textContent='正在本机解锁 '+Math.round(p*100)+'%';});
+  if(epoch!==unlockEpoch||session?.username!==account){opened.close();return;}
+  vault=opened;error.textContent='';$('#vault-unlock').hidden=true;$('#vault-content').hidden=false;$('#vault-lock').hidden=false;$('#add-server').hidden=false;
+  active();renderServers();renderDevices();install();
+  // Consume the ticket before closing; the close event must not cancel success.
+  const continuation=unlockFlow.resume(ticket);
+  if(modal)$('#action-unlock-dialog').close();
+  await continuation;await renderLinks();
+ }catch(e){if(epoch===unlockEpoch){if(modal&&!$('#action-unlock-dialog').open)flash(e.message);else error.textContent=e.message;}}
+ finally{form.elements.phrase.value='';button.disabled=false;unlocking=false;}
+}
+$('#unlock-form').onsubmit=submitUnlock;
+$('#action-unlock-form').onsubmit=submitUnlock;
 $('#vault-lock').onclick=lock;
 function renderServers(){
  if(!vault)return;
@@ -117,18 +155,34 @@ $('#bulk-form').onsubmit=async event=>{event.preventDefault();const form=event.c
 
 async function renderLinks(){
  const box=$('#pending-links');if(!session){box.hidden=true;return;}const {requests}=await api('links');box.replaceChildren();box.hidden=!requests.length;if(!requests.length)return;
- box.append(node('h3','','等待批准的设备'),node('p','tip',vault?'仅批准你刚刚发起、验证码完全一致的请求。':'先解锁服务器保险库，才能批准设备。'));
- for(const r of requests){const row=node('div','link-request'),text=node('div');text.append(node('strong','',r.label),node('div','sub',(names[r.platform]||r.platform)+(r.allow_shell?' · 请求启用网页终端':'')),node('code','',await linkCode(r.public_key)));const approve=node('button','primary','核对并批准');approve.dataset.request=r.id;approve.disabled=!vault;approve.onclick=()=>{if(!vault)return;pendingLink=r;$('#link-form').reset();$('#link-error').textContent='';$('#link-device-description').textContent=r.label+' · '+(names[r.platform]||r.platform)+(r.allow_shell?' · 本机已启用网页终端':'');$('#link-dialog').showModal();$('#link-form').elements.code.focus();};const reject=node('button','','拒绝');reject.onclick=()=>api('link/'+r.id,'DELETE').then(refresh).catch(e=>flash(e.message));row.append(text,approve,reject);box.append(row);}
+ box.append(node('h3','','等待批准的设备'),node('p','tip',vault?'仅批准你刚刚发起、验证码完全一致的请求。':'点击批准即可在当前页面解锁，再核对设备验证码。'));
+ for(const r of requests){const row=node('div','link-request'),text=node('div');text.append(node('strong','',r.label),node('div','sub',(names[r.platform]||r.platform)+(r.allow_shell?' · 请求启用网页终端':'')),node('code','',await linkCode(r.public_key)));const approve=node('button','primary',vault?'核对并批准':'解锁并批准');approve.dataset.request=r.id;approve.onclick=()=>ensureVault('批准设备“'+r.label+'”',()=>openLinkApproval(r));const reject=node('button','','拒绝');reject.onclick=()=>api('link/'+r.id,'DELETE').then(refresh).catch(e=>flash(e.message));row.append(text,approve,reject);box.append(row);}
 }
 function stopTerminal(){terminalEpoch++;terminalStop?.();terminalStop=null;if($('#terminal-dialog').open)$('#terminal-dialog').close();}
-async function startTerminal(device,agent,target){if(!vault){navigate('servers');$('#unlock-form').elements.phrase.focus();flash('请先解锁保险库，再打开设备终端。');return;}stopTerminal();const epoch=terminalEpoch;$('#terminal-dialog h2').textContent=target?'服务器终端 · '+target.label:'设备终端 · '+device.label;$('#terminal-dialog').showModal();$('#terminal-status').textContent='准备加密终端…';try{const stop=await openTerminal(vault,device,agent,$('#terminal-container'),$('#terminal-status'),target);if(epoch!==terminalEpoch||!vault){stop();return;}terminalStop=stop;}catch(e){stopTerminal();flash('无法打开终端，请检查设备代理。');}}
+async function currentLink(request){
+ const {requests}=await api('links');
+ const latest=requests.find(r=>r.id===request.id);
+ if(!latest||latest.public_key!==request.public_key||latest.device_id!==request.device_id||latest.expires!==request.expires||latest.expires<=Date.now()||latest.label!==request.label||latest.platform!==request.platform||latest.allow_shell!==request.allow_shell)throw Error('设备请求已过期、被撤销或发生变化，请让客户端重新发起审批。');
+ return latest;
+}
+async function openLinkApproval(request){
+ const current=vault,epoch=unlockEpoch,approval=++approvalEpoch;
+ const latest=await currentLink(request);
+ if(!current||vault!==current||epoch!==unlockEpoch||approval!==approvalEpoch)return;
+ pendingLink=latest;$('#link-form').reset();$('#link-error').textContent='';
+ $('#link-device-description').textContent=latest.label+' · '+(names[latest.platform]||latest.platform)+(latest.allow_shell?' · 本机已启用网页终端':'');
+ $('#link-dialog').showModal();$('#link-form').elements.code.focus();
+}
+async function startTerminal(device,agent,target){if(!vault)return ensureVault('打开设备终端',()=>{const latest=devices.find(d=>d.id===device.id),activeAgent=agents.find(a=>a.device_id===device.id);if(!latest||!activeAgent)throw Error('设备已离线，请刷新后重试。');return startTerminal(latest,activeAgent,target);});stopTerminal();const epoch=terminalEpoch;$('#terminal-dialog h2').textContent=target?'服务器终端 · '+target.label:'设备终端 · '+device.label;$('#terminal-dialog').showModal();$('#terminal-status').textContent='准备加密终端…';try{const stop=await openTerminal(vault,device,agent,$('#terminal-container'),$('#terminal-status'),target);if(epoch!==terminalEpoch||!vault){stop();return;}terminalStop=stop;}catch(e){stopTerminal();flash('无法打开终端，请检查设备代理。');}}
 $('#terminal-dialog').addEventListener('close',()=>{terminalEpoch++;terminalStop?.();terminalStop=null;});
 window.addEventListener('pagehide',stopTerminal);
 
 function rowMenu(label,items){const b=node('button','row-menu-button','···');b.setAttribute('aria-label',label+' 的操作');b.setAttribute('aria-haspopup','menu');b.onclick=()=>{document.querySelector('.row-menu')?.remove();const menu=node('div','row-menu');menu.popover='auto';menu.setAttribute('role','menu');for(const [text,action,cls] of items){const item=node('button',cls||'',text);item.setAttribute('role','menuitem');item.onclick=()=>{menu.hidePopover();menu.remove();action();};menu.append(item);}document.body.append(menu);const r=b.getBoundingClientRect();menu.style.left=Math.max(8,Math.min(innerWidth-190,r.right-180))+'px';menu.style.top=Math.max(8,Math.min(innerHeight-items.length*34-22,r.bottom+5))+'px';menu.showPopover();menu.querySelector('button').focus();menu.onkeydown=e=>{const all=[...menu.querySelectorAll('button')],at=all.indexOf(document.activeElement);if(e.key==='ArrowDown'||e.key==='ArrowUp'){e.preventDefault();all[(at+(e.key==='ArrowDown'?1:-1)+all.length)%all.length].focus();}if(e.key==='Escape')b.focus();};};return b;}
 const navPaths={devices:'<rect x="3" y="4" width="18" height="13" rx="2"/><path d="M8 21h8m-4-4v4"/>',servers:'<rect x="4" y="3" width="16" height="7" rx="2"/><rect x="4" y="14" width="16" height="7" rx="2"/><path d="M7 6.5h.01M7 17.5h.01M11 6.5h6M11 17.5h6"/>',settings:'<path d="M12 3l7 3v6c0 5-7 9-7 9s-7-4-7-9V6l7-3Z"/><path d="m8 12 3 3 5-6"/>'};for(const b of $$('[data-nav]'))b.querySelector('.nav-icon').innerHTML='<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">'+navPaths[b.dataset.nav]+'</svg>';
 
-$('#link-form').onsubmit=async event=>{event.preventDefault();const form=event.currentTarget,button=form.querySelector('button.primary'),r=pendingLink;button.disabled=true;try{const current=vault,epoch=unlockEpoch;if(!current||!r)throw Error('请先解锁并重新选择设备。');if(form.elements.code.value.trim().toUpperCase()!==await linkCode(r.public_key))throw Error('验证码不一致，未批准。');const grant=await createLinkGrant(current,r);if(epoch!==unlockEpoch||current!==vault)throw Error('保险库已锁定。');await api('link/'+r.id,'POST',grant);$('#link-dialog').close();pendingLink=null;flash('已加密批准设备，等待客户端完成同步。');await refresh();}catch(e){$('#link-error').textContent=e.message;}finally{button.disabled=false;}};
+$('#link-dialog').addEventListener('close',()=>{pendingLink=null;approvalEpoch++;});
+$('#link-dialog').addEventListener('cancel',()=>{pendingLink=null;approvalEpoch++;});
+$('#link-form').onsubmit=async event=>{event.preventDefault();const form=event.currentTarget,button=form.querySelector('button.primary'),r=pendingLink;button.disabled=true;try{const current=vault,epoch=unlockEpoch;if(!current||!r)throw Error('请先解锁并重新选择设备。');await currentLink(r);if(current!==vault||epoch!==unlockEpoch||pendingLink!==r)throw Error('审批已取消，请重新选择设备。');if(form.elements.code.value.trim().toUpperCase()!==await linkCode(r.public_key))throw Error('验证码不一致，未批准。');const grant=await createLinkGrant(current,r);if(epoch!==unlockEpoch||current!==vault||pendingLink!==r||!$('#link-dialog').open)throw Error('保险库已锁定或审批已取消。');await api('link/'+r.id,'POST',grant);$('#link-dialog').close();pendingLink=null;flash('已加密批准设备，等待客户端完成同步。');await refresh();}catch(e){$('#link-error').textContent=e.message;}finally{button.disabled=false;}};
 
 function systemIcon(platform){
  const drawings={
@@ -176,7 +230,7 @@ const actionNames={sync:'同步保险库',inspect:'检测服务器',update:'更�
 const jobStates={queued:'等待设备接收',running:'执行中',succeeded:'已完成',failed:'失败',restart_required:'已安装 · 待重启',expired:'已过期',cancelled:'已取消'};
 const jobCodes={cancelled_by_user:'已取消，设备不会执行此任务',update_check_failed:'无法取得或验证签名发布，请检查设备网络',release_changed:'最新发布已改变，请重新确认更新版本',update_install_failed:'安装未完成，请检查写入权限、磁盘空间和更新日志',inspection_failed:'检测中断或超时，请在设备检查配置',local_config_unavailable:'设备本地配置无法读取',sync_failed:'加密同步未完成，本地数据保留，请重试',synced:'已合并并同步保险库',inspected:'已检测并同步状态',up_to_date:'已是指定版本',installed_restart_required:'新版已安装；代理重启并重新解锁后生效',operation_failed:'操作未完成，请检查设备网络、权限和本机配置后重试',interrupted:'执行中断，未自动重试',access_changed:'设备访问凭据已改变',not_received:'24 小时内未接收',receipt_missing:'未收到完成回执，请核对设备后重试'};
 function updateJobHelp(){const action=$('#job-form').elements.action.value;$('#job-action-help').textContent=action==='sync'?'合并所选设备的本地连接到加密保险库，并拉取云端修改与删除标记。保留原本地配置；不覆盖 SSH 文件。':action==='inspect'?'各设备使用已有 SSH 认证检测自己的服务器列表，最多 4 路并发。无法连接会记录失败状态，不弹出密码输入。':'下载并验证签名发布'+(releaseVersion?' '+releaseVersion:'')+'，更新客户端和 SSHM 管理的 Skill。正在运行的代理需重启并重新解锁，任务会显示“待重启”。';}
-function openJobs(id,action='sync'){if(!vault){navigate('servers');flash('先解锁保险库，再签名下发设备任务。');return;}dispatchDraft={};$('#job-form').reset();$('#job-form').elements.action.value=action;$('#job-error').textContent='';const list=$('#job-targets');list.replaceChildren();for(const d of devices.filter(d=>d.kind!=='browser')){const label=node('label','job-target'),box=document.createElement('input');box.type='checkbox';box.name='device';box.value=d.id;box.checked=d.id===id;label.append(box,systemIcon(d.platform),node('span','',d.label),node('span','sub',!d.job_seen?'尚未启动新版代理':Date.now()-d.job_seen<90_000?'可接收任务':'代理离线 · 等待上线'));list.append(label);}updateJobHelp();$('#job-dialog').showModal();}
+function openJobs(id,action='sync'){if(!vault)return ensureVault('下发设备任务',()=>openJobs(id,action));dispatchDraft={};$('#job-form').reset();$('#job-form').elements.action.value=action;$('#job-error').textContent='';const list=$('#job-targets');list.replaceChildren();for(const d of devices.filter(d=>d.kind!=='browser')){const label=node('label','job-target'),box=document.createElement('input');box.type='checkbox';box.name='device';box.value=d.id;box.checked=d.id===id;label.append(box,systemIcon(d.platform),node('span','',d.label),node('span','sub',!d.job_seen?'尚未启动新版代理':Date.now()-d.job_seen<90_000?'可接收任务':'代理离线 · 等待上线'));list.append(label);}updateJobHelp();$('#job-dialog').showModal();}
 $('#dispatch-jobs').onclick=()=>openJobs();$('#server-dispatch').onclick=()=>openJobs();$('#job-form').elements.action.onchange=updateJobHelp;$('#job-select-all').onclick=()=>{const boxes=$$('#job-targets input'),checked=!boxes.every(b=>b.checked);boxes.forEach(b=>b.checked=checked);};
 $('#job-form').onsubmit=async event=>{event.preventDefault();const form=event.currentTarget,button=form.querySelector('button.primary');button.disabled=true;let sent=0;try{const current=vault;if(!current)throw Error('请先解锁保险库。');const ids=$$('#job-targets input:checked').map(b=>b.value),action=form.elements.action.value;if(!ids.length)throw Error('请选择接收设备。');const version=action==='update'?await latestRelease():'';if(version){releaseVersion=version;releaseChecked=Date.now();renderDevices();renderServers();}for(const device of ids){if(vault!==current)throw Error('保险库已锁定。');let j=dispatchDraft[device];if(!j||j.action!==action||j.version!==version){j={id:b64(crypto.getRandomValues(new Uint8Array(18))),device,action,version,expires:Date.now()+86400_000};j.signature=await signVault(current,'sshm-job-v1\n'+session.username+'\n'+j.id+'\n'+j.device+'\n'+j.action+'\n'+j.version+'\n'+j.expires);dispatchDraft[device]=j;}if(vault!==current)throw Error('保险库已锁定。');await api('jobs','POST',j);delete dispatchDraft[device];sent++;const box=$$('#job-targets input').find(b=>b.value===device);if(box)box.checked=false;}$('#job-dialog').close();navigate('devices');$('#job-history').open=true;await refreshJobs();flash('已下发 '+sent+' 个任务，完成后可在下发记录查看结果。');}catch(e){$('#job-error').textContent=(sent?'已确认下发 '+sent+' 个。':'')+e.message+' 请先查看下发记录；在此重试会复用未确认的任务编号。';}finally{button.disabled=false;}};
 async function refreshJobs(){const {jobs}=await api('jobs'),rows=$('#job-rows');rows.replaceChildren();$('#job-summary').textContent=jobs.length?'· '+jobs.filter(j=>['queued','running'].includes(j.status)).length+' 项待完成':'· 暂无';for(const j of jobs){const tr=node('tr'),identity=node('td');identity.append(node('div','',devices.find(d=>d.id===j.device)?.label||'已撤销设备'),node('div','sub',actionNames[j.action]||j.action));const status=node('td');status.append(node('span','job-status '+j.status,jobStates[j.status]||'未知'));const result=node('td'),description=node('div','sub',jobCodes[j.code]||(j.status==='queued'?'等待已解锁的设备代理接收':j.status==='cancelled'?'已取消，设备不会执行此任务':'等待设备回执'));if(j.receipt){let verified=false;try{if(vault)verified=await verifyJobReceipt(vault,j);}catch{}description.append(node('div','sub',verified?'已验证回执签名'+(j.code==='inspected'?' · 成功识别 '+j.count+' 台':j.code==='synced'?' · '+j.count+' 个连接':''):vault?'回执签名无效':'解锁后验证回执签名'));}result.append(description);const when=node('td','sub',time(j.created));when.title=new Date(j.created).toLocaleString();const action=node('td','table-actions');if(j.status==='queued'){const cancel=node('button','','取消');cancel.onclick=async()=>{try{await api('jobs/'+j.id+'/cancel','POST');await refreshJobs();}catch(e){flash(e.message);}};action.append(cancel);}else if(['failed','expired'].includes(j.status)){const retry=node('button','','重新下发');retry.onclick=()=>openJobs(j.device,j.action);action.append(retry);}tr.append(identity,status,result,when,action);rows.append(tr);}}
@@ -200,14 +254,14 @@ function openServerTerminal(entry){
 $('#server-terminal-form').onsubmit=async event=>{event.preventDefault();try{const current=vault,entry=current?.data.entries[serverTarget],form=event.currentTarget,device=devices.find(d=>d.id===form.elements.device.value),agent=agents.find(a=>a.device_id===device?.id);if(!current||!entry||current.data.deleted[entry.id]||current.data.conflicts[entry.id])throw Error('连接已改变或保险库已锁定，请重新选择。');if(!device||!agent?.ssh_targets||!online(device)||!supportsTarget(device.version))throw Error('所选设备已离线或需要更新，请刷新设备列表。');$('#server-terminal-dialog').close();await startTerminal(device,agent,{id:entry.id,label:entry.aliases[0],credential:form.elements.credential.value});}catch(e){$('#server-terminal-error').textContent=e.message;}};
 
 async function addDeviceToVault(device){
- if(!vault){pendingDeviceAdd=device.id;navigate('servers');$('#unlock-form').elements.phrase.focus();flash('解锁保险库后，将自动加入“'+device.label+'”。');return;}
+ if(!vault)return ensureVault('将“'+device.label+'”加入保险库',()=>{const latest=devices.find(d=>d.id===device.id);if(!latest)throw Error('设备已不存在，请刷新后重试。');return addDeviceToVault(latest);});
  if(savingVault){flash('正在保存，请稍后再试。');return;}
  try{const current=vault,next=structuredClone(current.data);await addDeviceEntry(next,device);if(vault!==current)throw Error('保险库已锁定，请重试。');await saveVault(next);navigate('servers');flash('已加入服务器保险库；按设备 ID 去重。其他客户端运行 sshm cloud sync 后即可看到。'+(agents.some(a=>a.device_id===device.id)?'':'目标设备需运行 sshm cloud enable 才能接受连接。'));}catch(e){flash(e.message);}
 }
 
 function deviceMembership(device){
  const cell=node('td','vault-membership');
- if(!vault){const b=node('button','link-name','解锁查看');b.onclick=()=>{navigate('servers');$('#unlock-form').elements.phrase.focus();};cell.append(b);return cell;}
+ if(!vault){const b=node('button','link-name','解锁查看');b.onclick=()=>ensureVault('查看设备是否已加入保险库',()=>renderDevices());cell.append(b);return cell;}
  const entry=Object.values(vault.data.entries).find(e=>deviceConnectionId(e.server)===device.id&&!vault.data.deleted[e.id]);
  if(entry){const badge=node('span','status'+(vault.data.conflicts[entry.id]?'':' online'),vault.data.conflicts[entry.id]?'有冲突':'已加入');cell.append(badge);}
  else{cell.append(node('div','sub','未加入'));const b=node('button','link-name','＋ 加入保险库');b.onclick=()=>addDeviceToVault(device);cell.append(b);}

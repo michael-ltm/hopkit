@@ -37,7 +37,7 @@ a specific `reason`.
 | `transfer_status` | `transfer_id` | — | state, byte counts, error, SHA-256 |
 | `tail_logs` | `alias`, `path`, `reason` | `lines` (default 100, max 5000), `platform=auto\|posix\|windows` | `{alias, path, platform, lines}` or structured masked exec error |
 | `bootstrap` | `alias`, `reason` | — | `{completed, sshd_state}` |
-| `gen_key` | `alias`, `path`, `reason` | — | key metadata and recovery-file pointer; no passphrase |
+| `gen_key` | `alias`, `path`, `passphrase_file`, `reason` | — | encrypted key metadata; user prepares protected passphrase file outside chat; no recovery sidecar; Windows uses local interactive CLI |
 | `copy_id` | `alias`, `reason` | — | terminal-only `action_required` instruction |
 
 `upsert_project` is a partial update: omitted fields stay unchanged; an explicit

@@ -47,7 +47,10 @@ shell or wrap in 'sh -c "..."', e.g.:
 			if err != nil {
 				return err
 			}
-			if s.CloudEntry != "" {
+			if s.CloudEntry != "" && !sshpkg.HasLocalAuth(s, sshpkg.BuildOpts{ConfigPath: configPath(), Alias: args[0]}) {
+				if !term.IsTerminal(int(os.Stdin.Fd())) {
+					return fmt.Errorf("no local SSH identity is available; run 'sshm cloud agent' locally to unlock and load it")
+				}
 				if rawEnvironment {
 					return fmt.Errorf("--raw-environment is only supported for direct SSH connections")
 				}

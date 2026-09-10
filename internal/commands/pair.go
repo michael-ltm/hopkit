@@ -116,6 +116,8 @@ saved only after sshm verifies a real key-authenticated SSH session.`,
 	c.Flags().DurationVar(&opts.timeout, "timeout", defaultPairTimeout, "time to wait for the target command")
 	c.Flags().DurationVar(&opts.connectTimeout, "connect-timeout", 45*time.Second, "time to retry verified SSH after callback")
 	c.Flags().BoolVar(&opts.noEncrypt, "no-encrypt", false, "generate an unencrypted private key (not recommended)")
+	addKeyPassphraseFlag(c)
+	c.MarkFlagsMutuallyExclusive("no-encrypt", "passphrase-file")
 	return c
 }
 
@@ -243,7 +245,7 @@ func runPairCommand(cmd *cobra.Command, alias string, opts pairOptions) error {
 	token, err := pair.NewToken()
 	if err != nil {
 		if generated {
-			keys.RemoveGenerated(expandedKey)
+			keys.RemoveGeneratedKeyPair(expandedKey)
 		}
 		return err
 	}
@@ -584,12 +586,12 @@ func preparePairKey(cmd *cobra.Command, alias, expandedPath string, noEncrypt bo
 		}
 		checkedPublicKey, err := checkPairKeyUsable(expandedPath)
 		if err != nil {
-			keys.RemoveGenerated(expandedPath)
+			keys.RemoveGeneratedKeyPair(expandedPath)
 			return "", false, fmt.Errorf("generated pairing key failed its SSH signing preflight: %w", err)
 		}
 		return checkedPublicKey, true, nil
 	}
-	passphrase, err := keys.RandomPassphrase()
+	passphrase, err := keyPassphrase(cmd)
 	if err != nil {
 		return "", false, err
 	}
@@ -598,26 +600,21 @@ func preparePairKey(cmd *cobra.Command, alias, expandedPath string, noEncrypt bo
 		return "", false, err
 	}
 	generated = true
-	recoveryPath, err := keys.WriteRecovery(expandedPath, passphrase)
-	if err != nil {
-		keys.RemoveGenerated(expandedPath)
-		return "", false, err
-	}
 	store, err := storeAndLoadPairKey(expandedPath, passphrase)
 	if err != nil {
 		return "", false, fmt.Errorf(
-			"generated encrypted pairing key could not be loaded for SSH signing: %w; the key was kept at %q with its recovery passphrase at %q; start or unlock ssh-agent/OpenSSH Authentication Agent, load this key with ssh-add, then retry pairing; after pairing, move the passphrase to your password manager and delete the recovery file",
-			err, expandedPath, recoveryPath,
+			"generated encrypted pairing key could not be loaded for SSH signing: %w; the key was kept at %q; start or unlock ssh-agent/OpenSSH Authentication Agent, load this key with ssh-add using your saved passphrase, then retry pairing",
+			err, expandedPath,
 		)
 	}
 	checkedPublicKey, err := checkPairKeyUsable(expandedPath)
 	if err != nil {
 		return "", false, fmt.Errorf(
-			"generated encrypted pairing key failed its SSH signing preflight: %w; the key was kept at %q with its recovery passphrase at %q; ensure ssh-agent/OpenSSH Authentication Agent is running and unlocked, load this key with ssh-add, then retry pairing; after pairing, move the passphrase to your password manager and delete the recovery file",
-			err, expandedPath, recoveryPath,
+			"generated encrypted pairing key failed its SSH signing preflight: %w; the key was kept at %q; ensure ssh-agent/OpenSSH Authentication Agent is running and unlocked, load this key with ssh-add using your saved passphrase, then retry pairing",
+			err, expandedPath,
 		)
 	}
-	fmt.Fprintf(cmd.OutOrStdout(), "Encrypted key recovery file: %s (move the passphrase to your password manager, then delete it)\n", recoveryPath)
+	fmt.Fprintln(cmd.OutOrStdout(), "Keep your key passphrase in your password manager; no recovery file was written.")
 	if store.Note != "" {
 		fmt.Fprintf(cmd.OutOrStdout(), "Key agent note: %s\n", store.Note)
 	}

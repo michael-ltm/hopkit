@@ -8,6 +8,7 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 	"unicode/utf16"
@@ -15,84 +16,97 @@ import (
 	"github.com/michael-ltm/sshm/internal/config"
 	sshpkg "github.com/michael-ltm/sshm/internal/ssh"
 	"github.com/stretchr/testify/require"
+	gssh "golang.org/x/crypto/ssh"
 )
 
-func TestHandleGenKey_CreatesKeyAndUpdatesConfig(t *testing.T) {
-	// gen_key now always encrypts and persists to the real keystore (no
-	// unencrypted escape hatch on the MCP path), so this exercises the real
-	// keychain/ssh-agent. Opt-in only. See Task 7/8 notes.
-	if os.Getenv("SSHM_KEYSTORE_E2E") == "" {
-		t.Skip("set SSHM_KEYSTORE_E2E=1 to exercise the real keystore path")
+func TestHandleGenKeyRequiresProtectedPassphraseFile(t *testing.T) {
+	for _, kind := range []string{"missing", "insecure", "symlink", "inline"} {
+		t.Run(kind, func(t *testing.T) {
+			if runtime.GOOS == "windows" && (kind == "insecure" || kind == "symlink") {
+				t.Skip("Unix file protections")
+			}
+			dir := t.TempDir()
+			cfgPath := filepath.Join(dir, "config.toml")
+			keyPath := filepath.Join(dir, "key")
+			cfg := config.New()
+			cfg.Servers["srv"] = &config.Server{Host: "example.invalid", Auth: config.AuthPassword}
+			require.NoError(t, config.Save(cfgPath, cfg))
+			args := map[string]any{"alias": "srv", "path": keyPath, "reason": "generate key"}
+			phrasePath := filepath.Join(dir, "secret")
+			switch kind {
+			case "insecure":
+				require.NoError(t, os.WriteFile(phrasePath, []byte("unique-secret-marker"), 0644))
+				require.NoError(t, os.Chmod(phrasePath, 0644))
+				args["passphrase_file"] = phrasePath
+			case "symlink":
+				require.NoError(t, os.WriteFile(phrasePath, []byte("unique-secret-marker"), 0600))
+				link := filepath.Join(dir, "link")
+				require.NoError(t, os.Symlink(phrasePath, link))
+				args["passphrase_file"] = link
+			case "inline":
+				args["passphrase"] = "unique-secret-marker"
+			}
+			out, err := handleGenKey(context.Background(), Deps{ConfigPath: cfgPath, AuditPath: filepath.Join(dir, "audit")}, args)
+			require.NoError(t, err)
+			js, err := jsonResult(out)
+			require.NoError(t, err)
+			require.Contains(t, js, "error")
+			require.NotContains(t, js, "unique-secret-marker")
+			for _, path := range []string{keyPath, keyPath + ".pub", keyPath + ".passphrase"} {
+				require.NoFileExists(t, path)
+			}
+		})
 	}
-	dir := t.TempDir()
-	cfgPath := filepath.Join(dir, "config.toml")
-	cfg := config.New()
-	// Start with auth=password to verify gen_key flips it to key.
-	cfg.Servers["h"] = &config.Server{Host: "1.2.3.4", User: "x", Auth: config.AuthPassword}
-	require.NoError(t, config.Save(cfgPath, cfg))
-	deps := Deps{ConfigPath: cfgPath, AuditPath: filepath.Join(dir, "a.log"), AllowWrite: true}
-
-	keyPath := filepath.Join(dir, "id_test")
-	out, err := handleGenKey(context.Background(), deps, map[string]any{
-		"alias": "h", "path": keyPath, "reason": "rotate key",
-	})
-	require.NoError(t, err)
-	js, _ := jsonResult(out)
-	require.Contains(t, js, "ssh-ed25519")
-
-	cfg2, err := config.Load(cfgPath)
-	require.NoError(t, err)
-	require.Equal(t, keyPath, cfg2.Servers["h"].KeyPath)
-	// Auth must now be key-based.
-	require.Equal(t, config.AuthKey, cfg2.Servers["h"].Auth)
 }
 
-func TestHandleGenKey_PreservesAuthKeyIfAlreadyKey(t *testing.T) {
-	// Same reason as above: gen_key now always hits the real keystore.
-	if os.Getenv("SSHM_KEYSTORE_E2E") == "" {
-		t.Skip("set SSHM_KEYSTORE_E2E=1 to exercise the real keystore path")
+func TestHandleGenKeyUsesSuppliedPassphraseWithoutSidecar(t *testing.T) {
+	if runtime.GOOS != "linux" {
+		t.Skip("isolated Linux agent; other OS keystores need opt-in integration")
 	}
+	t.Setenv("SSH_AUTH_SOCK", filepath.Join(t.TempDir(), "absent-agent"))
 	dir := t.TempDir()
 	cfgPath := filepath.Join(dir, "config.toml")
+	keyPath := filepath.Join(dir, "key")
+	phrasePath := filepath.Join(dir, "secret")
+	auditPath := filepath.Join(dir, "audit")
+	const phrase = "unique-secret-marker"
+	require.NoError(t, os.WriteFile(phrasePath, []byte(phrase+"\n"), 0600))
 	cfg := config.New()
-	cfg.Servers["h"] = &config.Server{Host: "1.2.3.4", User: "x", Auth: config.AuthKey}
+	cfg.Servers["srv"] = &config.Server{Host: "example.invalid", Auth: config.AuthPassword}
 	require.NoError(t, config.Save(cfgPath, cfg))
-	deps := Deps{ConfigPath: cfgPath, AuditPath: filepath.Join(dir, "a.log"), AllowWrite: true}
-
-	keyPath := filepath.Join(dir, "id_test2")
-	out, err := handleGenKey(context.Background(), deps, map[string]any{
-		"alias": "h", "path": keyPath, "reason": "rotate",
-	})
+	out, err := handleGenKey(context.Background(), Deps{ConfigPath: cfgPath, AuditPath: auditPath}, map[string]any{"alias": "srv", "path": keyPath, "passphrase_file": phrasePath, "reason": "generate key"})
 	require.NoError(t, err)
-	js, _ := jsonResult(out)
-	require.Contains(t, js, "ssh-ed25519")
-
-	cfg2, err := config.Load(cfgPath)
+	js, err := jsonResult(out)
 	require.NoError(t, err)
-	require.Equal(t, config.AuthKey, cfg2.Servers["h"].Auth)
+	require.NotContains(t, js, "error")
+	require.NotContains(t, js, phrase)
+	require.NotContains(t, js, "recovery_file")
+	data, err := os.ReadFile(keyPath)
+	require.NoError(t, err)
+	_, err = gssh.ParsePrivateKey(data)
+	require.Error(t, err)
+	_, err = gssh.ParsePrivateKeyWithPassphrase(data, []byte(phrase))
+	require.NoError(t, err)
+	require.NoFileExists(t, keyPath+".passphrase")
+	auditData, err := os.ReadFile(auditPath)
+	require.NoError(t, err)
+	require.NotContains(t, string(auditData), phrase)
+	inputAfter, err := os.ReadFile(phrasePath)
+	require.NoError(t, err)
+	require.Equal(t, phrase+"\n", string(inputAfter))
+	updated, err := config.Load(cfgPath)
+	require.NoError(t, err)
+	require.Equal(t, keyPath, updated.Servers["srv"].KeyPath)
+	require.Equal(t, config.AuthKey, updated.Servers["srv"].Auth)
 }
 
-func TestHandleGenKey_EncryptsAndHidesPassphrase(t *testing.T) {
-	// Opt-in only (real keystore side effects). See Task 7 note.
-	if os.Getenv("SSHM_KEYSTORE_E2E") == "" {
-		t.Skip("set SSHM_KEYSTORE_E2E=1 to exercise the real keystore path")
-	}
-	dir := t.TempDir()
-	cfgPath := filepath.Join(dir, "config.toml")
-	cfg := config.New()
-	cfg.Servers["srv"] = &config.Server{Host: "1.2.3.4", User: "x", Auth: config.AuthPassword}
-	require.NoError(t, config.Save(cfgPath, cfg))
-	deps := Deps{ConfigPath: cfgPath, AuditPath: filepath.Join(dir, "a.log"), AllowWrite: true}
-
-	keyPath := filepath.Join(dir, "id_test3")
-	res, err := handleGenKey(context.Background(), deps, map[string]any{
-		"alias": "srv", "path": keyPath, "reason": "test",
-	})
-	require.NoError(t, err)
-	m := res.(map[string]any)
-	require.Equal(t, true, m["encrypted"])
-	require.NotContains(t, m, "passphrase") // never returned
-	require.Contains(t, m["recovery_file"].(string), ".passphrase")
+func TestGenKeySchemaRequiresFileAndRejectsSecretInputs(t *testing.T) {
+	s, _ := NewServer(Deps{AllowWrite: true})
+	tool := s.GetTool("gen_key")
+	require.NotNil(t, tool)
+	require.Contains(t, tool.Tool.InputSchema.Required, "passphrase_file")
+	require.NotContains(t, tool.Tool.InputSchema.Properties, "passphrase")
+	require.Equal(t, false, tool.Tool.InputSchema.AdditionalProperties)
 }
 
 func TestHandleTailLogs_RequiresReason(t *testing.T) {

@@ -35,7 +35,7 @@ func handleBootstrap(ctx context.Context, deps Deps, args map[string]any) (any, 
 	}
 	ctx, cancel := context.WithTimeout(ctx, 120*time.Second)
 	defer cancel()
-	res, err := bootstrap.Run(ctx, s, sshpkg.BuildOpts{ConfigPath: deps.ConfigPath, Alias: alias})
+	res, err := bootstrap.Run(ctx, s, deps.sshOptions(ctx, sshpkg.BuildOpts{ConfigPath: deps.ConfigPath, Alias: alias}))
 	if err != nil {
 		return errResult("ssh", safety.MaskSecrets(err.Error())), nil
 	}
@@ -56,6 +56,13 @@ func handleBootstrap(ctx context.Context, deps Deps, args map[string]any) (any, 
 }
 
 func handleGenKey(ctx context.Context, deps Deps, args map[string]any) (any, error) {
+	for field := range args {
+		switch field {
+		case "alias", "path", "reason", "passphrase_file":
+		default:
+			return errResult("bad_request", "gen_key accepts only alias, path, reason and passphrase_file; never supply a passphrase in tool arguments"), nil
+		}
+	}
 	reason, err := requireReason(args)
 	if err != nil {
 		return errResult("bad_request", err.Error()), nil
@@ -78,10 +85,20 @@ func handleGenKey(ctx context.Context, deps Deps, args map[string]any) (any, err
 	if err != nil {
 		return errResult("path", err.Error()), nil
 	}
-	passphrase, err := keys.RandomPassphrase()
-	if err != nil {
-		return errResult("keygen", err.Error()), nil
+	phrasePath := strArg(args, "passphrase_file")
+	if strings.TrimSpace(phrasePath) == "" {
+		return errResult("bad_request", "passphrase_file is required: run sshm gen-key in your own terminal to enter and save a passphrase outside chat, or provide the path of an existing protected passphrase file; never send its contents"), nil
 	}
+	phrasePath, err = sshpkg.ExpandHome(phrasePath)
+	if err != nil {
+		return errResult("bad_request", "invalid passphrase_file path"), nil
+	}
+	phraseBytes, err := keys.ReadPassphraseFile(phrasePath)
+	if err != nil {
+		return errResult("bad_request", "passphrase_file must be an existing protected regular file (owner-only permissions, no symlink), containing one nonempty line of at most 1024 bytes. Windows passphrase files are not supported until ACL validation is available: run sshm gen-key in your own terminal to enter and save the phrase outside chat"), nil
+	}
+	defer clear(phraseBytes)
+	passphrase := string(phraseBytes)
 	pub, err := keys.GenerateED25519Encrypted(expanded, alias+"@sshm", passphrase)
 	if err != nil {
 		return errResult("keygen", err.Error()), nil
@@ -91,12 +108,6 @@ func handleGenKey(ctx context.Context, deps Deps, args map[string]any) (any, err
 	// host with no ssh-agent), so a keystore failure must not fail gen_key
 	// or orphan the key file already written to disk.
 	store := keystore.BestEffort(keystore.StoreAndLoad(expanded, passphrase))
-
-	recoveryPath, err := keys.WriteRecovery(expanded, passphrase)
-	if err != nil {
-		keys.RemoveGenerated(expanded)
-		return errResult("recovery", fmt.Errorf("write recovery for %s: %w", expanded, err).Error()), nil
-	}
 
 	// Use Update so the KeyPath/Auth write is serialized against concurrent mutations.
 	if uerr := config.Update(deps.ConfigPath, func(cfg *config.Config) error {
@@ -108,18 +119,17 @@ func handleGenKey(ctx context.Context, deps Deps, args map[string]any) (any, err
 		}
 		return nil
 	}); uerr != nil {
-		keys.RemoveGenerated(expanded)
+		keys.RemoveGeneratedKeyPair(expanded)
 		return errResult("config", fmt.Errorf("update config after generating %s: %w", expanded, uerr).Error()), nil
 	}
 	audit(deps, safety.Entry{Tool: "gen_key", Alias: alias, Reason: reason, Result: "ok"})
 	return map[string]any{
-		"alias":         alias,
-		"key_path":      expanded,
-		"public_key":    strings.TrimSpace(pub),
-		"encrypted":     true,
-		"persisted":     store.Persisted,
-		"recovery_file": recoveryPath,
-		"note":          store.Note,
+		"alias":      alias,
+		"key_path":   expanded,
+		"public_key": strings.TrimSpace(pub),
+		"encrypted":  true,
+		"persisted":  store.Persisted,
+		"note":       store.Note,
 	}, nil
 }
 
@@ -211,7 +221,7 @@ func handleTailLogs(ctx context.Context, deps Deps, args map[string]any) (any, e
 }
 
 func executeTailLogsRemote(ctx context.Context, deps Deps, alias string, s *config.Server, platform, path string, lines int) (string, *sshpkg.ExecResult, string, error) {
-	cli, err := sshpkg.Dial(s, sshpkg.BuildOpts{ConfigPath: deps.ConfigPath, Alias: alias})
+	cli, err := sshpkg.Dial(s, deps.sshOptions(ctx, sshpkg.BuildOpts{ConfigPath: deps.ConfigPath, Alias: alias}))
 	if err != nil {
 		return platform, nil, "ssh", err
 	}
@@ -276,8 +286,10 @@ func registerOpsTools(s *server.MCPServer, deps Deps, names []string) []string {
 		names = append(names, name)
 	}
 	reg("bootstrap", "Run baseline hardening on a server.", handleBootstrap)
-	reg("gen_key", "Generate an ed25519 keypair for a server.", handleGenKey,
-		mcp.WithString("path", mcp.Description("private key path")))
+	reg("gen_key", "Generate an encrypted ed25519 keypair using a user-prepared protected passphrase file. Never send passphrase contents; no recovery sidecar is created. On Windows, use interactive sshm gen-key instead (passphrase-file ACL validation is unavailable).", handleGenKey,
+		mcp.WithSchemaAdditionalProperties(false),
+		mcp.WithString("path", mcp.Required(), mcp.Description("private key path")),
+		mcp.WithString("passphrase_file", mcp.Required(), mcp.Description("path of an existing protected passphrase file prepared outside chat; never its contents")))
 	reg("copy_id", "Get instructions to install the public key (password stays on the CLI).", handleCopyID)
 	reg("tail_logs", "Tail a remote log file using the remote platform's native command.", handleTailLogs,
 		mcp.WithString("path", mcp.Description("remote log file path")),

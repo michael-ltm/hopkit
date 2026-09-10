@@ -6,7 +6,6 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
-	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -256,7 +255,7 @@ func TestPreparePairKeyPublishesTheExactPublicKeyReturnedByPreflight(t *testing.
 	require.False(t, generated)
 }
 
-func TestPreparePairKeyEncryptedAgentLoadFailureIsFatalAndKeepsRecoveryForRetry(t *testing.T) {
+func TestPreparePairKeyEncryptedAgentLoadFailureKeepsKeyWithoutWritingRecovery(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "generated")
 	originalStore := storeAndLoadPairKey
 	originalCheck := checkPairKeyUsable
@@ -283,6 +282,7 @@ func TestPreparePairKeyEncryptedAgentLoadFailureIsFatalAndKeepsRecoveryForRetry(
 	}
 
 	cmd := &cobra.Command{}
+	addTestKeyPassphraseFile(t, cmd)
 	var out bytes.Buffer
 	cmd.SetOut(&out)
 	publicKey, generated, err := preparePairKey(cmd, "new", path, false)
@@ -294,8 +294,8 @@ func TestPreparePairKeyEncryptedAgentLoadFailureIsFatalAndKeepsRecoveryForRetry(
 	require.False(t, generated)
 	require.FileExists(t, path)
 	require.FileExists(t, path+".pub")
-	require.FileExists(t, path+".passphrase")
-	require.Contains(t, err.Error(), strconv.Quote(path+".passphrase"))
+	require.NoFileExists(t, path+".passphrase")
+	require.NotContains(t, err.Error(), "recovery passphrase at")
 	require.Empty(t, out.String(), "recovery instructions are printed only after the key is usable")
 }
 
@@ -313,6 +313,7 @@ func TestPreparePairKeyEncryptedSigningPreflightFailureIsFatal(t *testing.T) {
 	checkPairKeyUsable = func(string) (string, error) { return "", errors.New("sign request rejected") }
 
 	cmd := &cobra.Command{}
+	addTestKeyPassphraseFile(t, cmd)
 	var out bytes.Buffer
 	cmd.SetOut(&out)
 	publicKey, generated, err := preparePairKey(cmd, "new", path, false)
@@ -323,8 +324,8 @@ func TestPreparePairKeyEncryptedSigningPreflightFailureIsFatal(t *testing.T) {
 	require.False(t, generated)
 	require.FileExists(t, path)
 	require.FileExists(t, path+".pub")
-	require.FileExists(t, path+".passphrase")
-	require.Contains(t, err.Error(), strconv.Quote(path+".passphrase"))
+	require.NoFileExists(t, path+".passphrase")
+	require.NotContains(t, err.Error(), "recovery passphrase at")
 	require.Empty(t, out.String())
 }
 
@@ -375,4 +376,15 @@ func TestRunPairCommandDoesNotPrintTargetCommandBeforeSigningPreflight(t *testin
 	require.Empty(t, out.String())
 	require.NotContains(t, out.String(), "Windows (run in Administrator PowerShell)")
 	require.NotContains(t, out.String(), "Linux/macOS")
+}
+
+func addTestKeyPassphraseFile(t *testing.T, cmd *cobra.Command) {
+	t.Helper()
+	if runtime.GOOS == "windows" {
+		t.Skip("automated passphrase-file input is unavailable on Windows")
+	}
+	path := filepath.Join(t.TempDir(), "managed-secret")
+	require.NoError(t, os.WriteFile(path, []byte("test user managed private phrase"), 0600))
+	addKeyPassphraseFlag(cmd)
+	require.NoError(t, cmd.Flags().Set("passphrase-file", path))
 }

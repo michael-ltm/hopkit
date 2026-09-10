@@ -15,13 +15,13 @@ func TestCloudPasswordVariantsRequireSelection(t *testing.T) {
 	d.Credentials["credential_one"] = cloudsync.Credential{Kind: "password", Password: "synthetic-one"}
 	d.Credentials["credential_two"] = cloudsync.Credential{Kind: "password", Password: "synthetic-two"}
 	e := cloudsync.Entry{Server: config.Server{Auth: config.AuthPassword}, CredentialIDs: []string{"credential_one", "credential_two"}}
-	_, _, err := cloudAuth(&cobra.Command{}, d, e, "")
+	_, _, _, err := cloudAuth(&cobra.Command{}, d, e, "")
 	require.Error(t, err)
 	require.NotContains(t, err.Error(), "synthetic")
-	_, p, err := cloudAuth(&cobra.Command{}, d, e, "credential_two")
+	_, _, p, err := cloudAuth(&cobra.Command{}, d, e, "credential_two")
 	require.NoError(t, err)
 	require.Equal(t, "synthetic-two", p)
-	_, _, err = cloudAuth(&cobra.Command{}, d, e, "credential_other")
+	_, _, _, err = cloudAuth(&cobra.Command{}, d, e, "credential_other")
 	require.Error(t, err)
 }
 

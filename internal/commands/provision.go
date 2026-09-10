@@ -84,7 +84,7 @@ func newProvisionCmd() *cobra.Command {
 
 			steps := provisionSteps{
 				genKey: func() (string, error) {
-					passphrase, gerr := keys.RandomPassphrase()
+					passphrase, gerr := keyPassphrase(cmd)
 					if gerr != nil {
 						return "", gerr
 					}
@@ -102,11 +102,7 @@ func newProvisionCmd() *cobra.Command {
 					if serr != nil {
 						return "", serr
 					}
-					rp, serr := keys.WriteRecovery(expanded, passphrase)
-					if serr != nil {
-						return "", serr
-					}
-					fmt.Fprintf(cmd.OutOrStdout(), "Passphrase (save to your password manager): %s\nRecovery file: %s\n", passphrase, rp)
+					fmt.Fprintln(cmd.OutOrStdout(), "Keep your key passphrase in your password manager; no recovery file was written.")
 					if !store.Persisted && store.Note != "" {
 						fmt.Fprintf(cmd.OutOrStdout(), "Note: %s\n", store.Note)
 					}
@@ -156,6 +152,7 @@ func newProvisionCmd() *cobra.Command {
 	}
 	c.Flags().StringVarP(&path, "path", "p", "", "key path (default ~/.ssh/id_ed25519_<alias>)")
 	c.Flags().BoolVar(&doHarden, "harden", false, "after key auth works, disable password login on the server")
+	addKeyPassphraseFlag(c)
 	return c
 }
 
