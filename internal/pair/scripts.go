@@ -300,13 +300,22 @@ if ! printf '%s\n' "$SSHD_EFFECTIVE"|awk -v p="$SSH_PORT" 'tolower($1)=="port"&&
   else echo "Newly installed sshd effective configuration does not include requested Port $SSH_PORT" >&2;fi
   exit 1
 fi
+INIT_COMM="$(ps -p 1 -o comm= 2>/dev/null | tr -d '[:space:]')"
+SYSTEMD_RUNNING=0
+if [ "$INIT_COMM" = systemd ] && command -v systemctl >/dev/null 2>&1; then SYSTEMD_RUNNING=1;fi
+STANDALONE_SSHD=0
+if [ "$PLATFORM" = linux ] && [ "$SYSTEMD_RUNNING" -eq 0 ] && [ "$INIT_COMM" != init ] && [ "$INIT_COMM" != openrc-init ] && [ ! -d /run/openrc ]; then STANDALONE_SSHD=1;fi
 SSH_ACTIVE=0
 if [ -n "${SSH_CONNECTION:-}" ]; then SSH_ACTIVE=1
 elif [ "$PLATFORM" = darwin ] && launchctl print system/com.openssh.sshd >/dev/null 2>&1; then SSH_ACTIVE=1
-elif command -v systemctl >/dev/null 2>&1 && { systemctl is-active --quiet sshd || systemctl is-active --quiet ssh; }; then SSH_ACTIVE=1
+elif [ "$SYSTEMD_RUNNING" -eq 1 ] && { systemctl is-active --quiet sshd || systemctl is-active --quiet ssh; }; then SSH_ACTIVE=1
+elif [ "$STANDALONE_SSHD" -eq 1 ] && command -v pgrep >/dev/null 2>&1 && pgrep -x sshd >/dev/null 2>&1; then SSH_ACTIVE=1
 fi
-if [ "$SSH_CONFIG_CHANGED" -eq 1 ]; then
-  if command -v systemctl >/dev/null 2>&1; then run_root systemctl enable sshd >/dev/null 2>&1 || run_root systemctl enable ssh >/dev/null 2>&1;run_root systemctl restart sshd >/dev/null 2>&1 || run_root systemctl restart ssh >/dev/null 2>&1
+if [ "$STANDALONE_SSHD" -eq 1 ] && { [ "$SSH_ACTIVE" -ne 1 ] || [ "$SSH_CONFIG_CHANGED" -eq 1 ]; }; then
+  run_root "$SSHD"
+  echo 'Started sshd without an init service manager; container recreation requires its startup command to launch sshd again.' >&2
+elif [ "$SSH_CONFIG_CHANGED" -eq 1 ]; then
+  if [ "$SYSTEMD_RUNNING" -eq 1 ]; then run_root systemctl enable sshd >/dev/null 2>&1 || run_root systemctl enable ssh >/dev/null 2>&1;run_root systemctl restart sshd >/dev/null 2>&1 || run_root systemctl restart ssh >/dev/null 2>&1
   elif command -v rc-service >/dev/null 2>&1; then run_root rc-update add sshd default >/dev/null 2>&1 || true;run_root rc-service sshd restart
   elif command -v service >/dev/null 2>&1; then run_root service ssh restart >/dev/null 2>&1 || run_root service sshd restart >/dev/null 2>&1
   else echo 'OpenSSH custom port is configured, but no supported service manager was found to restart sshd' >&2;exit 1;fi
@@ -314,7 +323,7 @@ elif [ "$SSH_ACTIVE" -ne 1 ]; then
   if [ "$PLATFORM" = darwin ]; then
     run_root systemsetup -setremotelogin on >/dev/null 2>&1 || run_root launchctl load -w /System/Library/LaunchDaemons/ssh.plist >/dev/null 2>&1
   else
-    if command -v systemctl >/dev/null 2>&1; then run_root systemctl enable --now sshd >/dev/null 2>&1 || run_root systemctl enable --now ssh >/dev/null 2>&1
+    if [ "$SYSTEMD_RUNNING" -eq 1 ]; then run_root systemctl enable --now sshd >/dev/null 2>&1 || run_root systemctl enable --now ssh >/dev/null 2>&1
     elif command -v rc-service >/dev/null 2>&1; then run_root rc-update add sshd default >/dev/null 2>&1 || true; run_root rc-service sshd restart
     elif command -v service >/dev/null 2>&1; then run_root service ssh restart >/dev/null 2>&1 || run_root service sshd restart >/dev/null 2>&1
     else echo 'OpenSSH is installed but no supported service manager was found' >&2; exit 1; fi

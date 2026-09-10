@@ -346,7 +346,44 @@ func TestBuildScripts_POSIXRejectsDifferentCapitalizedEffectivePort(t *testing.T
 	require.NoFileExists(t, authorized, "the key must not be installed before the requested port is verified")
 }
 
+func TestBuildScripts_POSIXServiceManagerRuntime(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("the generated command targets POSIX systems")
+	}
+	for _, tc := range []struct {
+		name, init string
+		fail       bool
+	}{
+		{"container with installed systemctl", "bash", false},
+		{"container daemon startup fails", "bash", true},
+		{"running systemd", "systemd", false},
+		{"systemd failure must not bypass manager", "systemd", true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			output, authorized, err := runGeneratedPOSIXPairScenario(t, "22", tc.init, tc.fail)
+			if tc.fail {
+				require.Error(t, err, "%s", output)
+				require.NoFileExists(t, authorized, "do not install a key after startup failed")
+			} else {
+				require.NoError(t, err, "%s", output)
+				require.FileExists(t, authorized)
+			}
+			if tc.init == "bash" {
+				require.Contains(t, output, "event:standalone")
+				require.NotContains(t, output, "event:systemctl")
+			} else {
+				require.Contains(t, output, "event:systemctl")
+				require.NotContains(t, output, "event:standalone")
+			}
+		})
+	}
+}
+
 func runGeneratedPOSIXPairCommand(t *testing.T, effectivePort string) (string, string, error) {
+	return runGeneratedPOSIXPairScenario(t, effectivePort, "", false)
+}
+
+func runGeneratedPOSIXPairScenario(t *testing.T, effectivePort, init string, failStart bool) (string, string, error) {
 	t.Helper()
 	root := t.TempDir()
 	bin := filepath.Join(root, "bin")
@@ -363,29 +400,53 @@ func runGeneratedPOSIXPairCommand(t *testing.T, effectivePort string) (string, s
 	writeCommand("getent", `[ "$1" = passwd ] && [ "$2" = sshmtest ] || exit 1
 printf 'sshmtest:x:1000:1000::%s:/bin/sh\n' "$SSHM_TEST_HOME"`)
 	writeCommand("sudo", `exec "$@"`)
-	writeCommand("sshd", `case "$1" in -t) exit 0;; -T) printf 'PoRt %s\nListenAddress 0.0.0.0:%s\n' "$SSHM_TEST_EFFECTIVE_PORT" "$SSHM_TEST_EFFECTIVE_PORT";; *) exit 1;; esac`)
+	writeCommand("sshd", `case "$1" in -t) exit 0;; -T) printf 'PoRt %s\nListenAddress 0.0.0.0:%s\n' "$SSHM_TEST_EFFECTIVE_PORT" "$SSHM_TEST_EFFECTIVE_PORT";; '') echo event:standalone >>"$SSHM_TEST_EVENTS"; [ "$SSHM_TEST_START_FAIL" != 1 ] || exit 1; touch "$SSHM_TEST_STARTED";; *) exit 1;; esac`)
+	writeCommand("uname", `echo Linux`)
+	writeCommand("ps", `printf '%s\n' "$SSHM_TEST_INIT"`)
+	writeCommand("pgrep", `exit 1`)
+	writeCommand("systemctl", `echo event:systemctl >>"$SSHM_TEST_EVENTS"
+[ "$SSHM_TEST_INIT" = systemd ] || exit 1
+[ "$1" != is-active ] || exit 1
+[ "$SSHM_TEST_START_FAIL" != 1 ] || exit 1
+touch "$SSHM_TEST_STARTED"`)
 	writeCommand("ssh-keygen", `exit 0`)
 	writeCommand("install", `if [ "$*" = '-d -m 755 /run/sshd' ]; then exit 0; fi
 exec /usr/bin/install "$@"`)
 	writeCommand("ufw", `case "$1" in status) echo 'Status: inactive';; esac`)
 	writeCommand("firewall-cmd", `exit 1`)
-	writeCommand("ss", `printf 'LISTEN 0 128 0.0.0.0:22 0.0.0.0:*\n'`)
+	writeCommand("ss", `if [ -z "$SSHM_TEST_INIT" ] || [ -f "$SSHM_TEST_STARTED" ]; then printf 'LISTEN 0 128 0.0.0.0:22 0.0.0.0:*\n'; fi`)
 	writeCommand("restorecon", `exit 0`)
 
 	publicKey := "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAINOjEfy/RAXMoS+13N6XdSP0008UpgHPhIj6H/MQeheu pair@host"
 	scripts, err := BuildScripts(publicKey, "", 22)
 	require.NoError(t, err)
 	command := exec.Command("sh", "-c", scripts.POSIX)
+	sshConnection := "127.0.0.1 12345 127.0.0.1 22"
+	if init != "" {
+		sshConnection = ""
+	}
+	fail := "0"
+	if failStart {
+		fail = "1"
+	}
+	events := filepath.Join(root, "events")
 	command.Env = append(os.Environ(),
 		"HOME="+home,
 		"PATH="+bin+":/usr/bin:/bin",
 		"SSHM_TEST_HOME="+home,
 		"SSHM_TEST_EFFECTIVE_PORT="+effectivePort,
-		"SSH_CONNECTION=127.0.0.1 12345 127.0.0.1 22",
+		"SSH_CONNECTION="+sshConnection,
+		"SSHM_TEST_INIT="+init,
+		"SSHM_TEST_START_FAIL="+fail,
+		"SSHM_TEST_STARTED="+filepath.Join(root, "started"),
+		"SSHM_TEST_EVENTS="+events,
 		"SUDO_USER=",
 		"TMPDIR="+temporaryFiles,
 	)
 	output, err := command.CombinedOutput()
+	if recorded, readErr := os.ReadFile(events); readErr == nil {
+		output = append(output, recorded...)
+	}
 	return string(output), filepath.Join(home, ".ssh", "authorized_keys"), err
 }
 
