@@ -24,6 +24,26 @@ Important fresh-clone boundary: `cloud/public/downloads/` is deliberately ignore
 
 Release scripts: `scripts/build-cloud-clients.py`, `scripts/sign-cloud-release/`. Rebuilding a published version can produce different bytes; do not overwrite an existing published release with newly rebuilt binaries. Use a new release version and authorized signing environment. Pushing main runs CI; it does not deploy Cloudflare or publish a release tag by itself.
 
+The release builder requires `--version` and `--darwin-dir`. Build both Darwin architectures on macOS from the same source revision with `CGO_ENABLED=1` to retain native Keychain support. Omit `-trimpath` for these two builds: the staging validator reads the embedded linker assignment as well as `GOOS`, `GOARCH`, and `CGO_ENABLED` from `go version -m -json`.
+
+```sh
+# On macOS, from the intended release source revision; choose a new version.
+release_version=0.8.0-cloud-preview.35
+darwin_build_dir=/tmp/sshm-native-$release_version
+mkdir -p "$darwin_build_dir"
+for arch in amd64 arm64; do
+  CGO_ENABLED=1 GOOS=darwin GOARCH="$arch" go build \
+    -ldflags "-s -w -X github.com/michael-ltm/sshm/internal/commands.Version=$release_version" \
+    -o "$darwin_build_dir/sshm-darwin-$arch" ./cmd/sshm
+done
+
+# Transfer only those two binaries to the release workstation, then stage all six.
+python3 scripts/build-cloud-clients.py --version "$release_version" \
+  --darwin-dir /path/to/native-binaries --output /path/to/new-staging-directory
+```
+
+Without `--output`, staging uses `dist/releases/<version>`. Existing output directories are rejected, and `cloud/public/downloads` remains untouched. The builder validates both copied Darwin binaries before building Linux/Windows with `CGO_ENABLED=0`, then writes `SHA256SUMS`. Sign the complete staged directory with `go run ./scripts/sign-cloud-release --version <version> --assets <staging-directory> --key <existing-private-key-path>` in the authorized signing environment before preparing public downloads and deploying. Run the staging safety tests with `python3 -B -m unittest discover -s scripts -p 'test_build_cloud_clients.py'`.
+
 ## Runtime distinctions and pending operational work
 
 - Installed file, running MCP process, running cloud agent, and last heartbeat are distinct. Version `.30` records installation observations separately from legacy process heartbeats.

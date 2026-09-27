@@ -141,6 +141,8 @@ func TestStaleSocketRecoveryAndSymlinkRefusal(t *testing.T) {
 	require.NoError(t, os.MkdirAll(filepath.Dir(path), 0700))
 	ln, e := net.Listen("unix", path)
 	require.NoError(t, e)
+	// Match the private socket created by the service, independent of umask.
+	require.NoError(t, os.Chmod(path, 0600))
 	ln.(*net.UnixListener).SetUnlinkOnClose(false)
 	require.NoError(t, ln.Close())
 	_, stop := start(t, s)

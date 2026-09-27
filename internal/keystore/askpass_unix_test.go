@@ -12,11 +12,11 @@ import (
 	"time"
 
 	"github.com/stretchr/testify/require"
+	"golang.org/x/sys/unix"
 )
 
 func TestAskpassUsesPipeWithoutSecretFiles(t *testing.T) {
-	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
-	defer cancel()
+	ctx := t.Context()
 	secret := "space ' quote \\ and $dollar secret"
 	path, cleanup, err := writeAskpass(ctx, secret)
 	require.NoError(t, err)
@@ -73,12 +73,11 @@ func TestAskpassRejectsUnsupportedInputWithoutEcho(t *testing.T) {
 
 func TestAskpassDeliversBoundaryValues(t *testing.T) {
 	for _, secret := range []string{"", strings.Repeat("x", 511), "密碼 with spaces"} {
-		ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+		ctx := t.Context()
 		path, cleanup, err := writeAskpass(ctx, secret)
 		require.NoError(t, err)
 		out, err := exec.CommandContext(ctx, path).Output()
 		cleanup()
-		cancel()
 		require.NoError(t, err)
 		require.Equal(t, secret+"\n", string(out))
 	}
@@ -101,8 +100,7 @@ func TestSSHAddRunnerSuppressesEchoedSecretAndRemovesHelper(t *testing.T) {
 	require.NoError(t, os.WriteFile(fake, []byte("#!/bin/sh\nprintf '%s' \"$SSH_ASKPASS\" > \"$1\"\n\"$SSH_ASKPASS\"\nexit 1\n"), 0700))
 	t.Setenv("PATH", dir+string(os.PathListSeparator)+os.Getenv("PATH"))
 	marker := filepath.Join(dir, "helper-path")
-	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
-	defer cancel()
+	ctx := t.Context()
 	err := runSSHAddWithAskpass(ctx, "never-echo-this-secret", marker)
 	require.Error(t, err)
 	require.NotContains(t, err.Error(), "never-echo-this-secret")
@@ -115,17 +113,39 @@ func TestSSHAddRunnerSuppressesEchoedSecretAndRemovesHelper(t *testing.T) {
 func TestSSHAddRunnerCancelsSecondAskpassAndCleansUp(t *testing.T) {
 	dir := t.TempDir()
 	fake := filepath.Join(dir, "ssh-add")
-	require.NoError(t, os.WriteFile(fake, []byte("#!/bin/sh\nprintf '%s' \"$SSH_ASKPASS\" > \"$1\"\n\"$SSH_ASKPASS\" >/dev/null\n\"$SSH_ASKPASS\" >/dev/null\n"), 0700))
+	require.NoError(t, os.WriteFile(fake, []byte("#!/bin/sh\n\"$SSH_ASKPASS\" >/dev/null || exit 1\nprintf '%s' \"$SSH_ASKPASS\" > \"$1\"\n\"$SSH_ASKPASS\" >/dev/null\n"), 0700))
 	t.Setenv("PATH", dir+string(os.PathListSeparator)+os.Getenv("PATH"))
 	marker := filepath.Join(dir, "helper-path")
-	ctx, cancel := context.WithTimeout(context.Background(), 200*time.Millisecond)
+	ctx, cancel := context.WithCancel(t.Context())
 	defer cancel()
+	done := make(chan error, 1)
+	go func() { done <- runSSHAddWithAskpass(ctx, "one-shot-secret", marker) }()
+
+	// Wait until the first passphrase was consumed and the second helper has
+	// opened the FIFO. Process startup can be slow on macOS; the cancellation
+	// bound below measures cancellation itself, not shell startup.
+	var helper []byte
+	fd := -1
+	require.Eventually(t, func() bool {
+		var err error
+		helper, err = os.ReadFile(marker)
+		if err != nil || len(helper) == 0 {
+			return false
+		}
+		fd, err = unix.Open(filepath.Join(filepath.Dir(string(helper)), "phrase"), unix.O_WRONLY|unix.O_NONBLOCK|unix.O_CLOEXEC, 0)
+		return err == nil
+	}, 10*time.Second, 10*time.Millisecond)
+	// Keep the writer open so the second helper stays blocked until cancelled.
+	defer unix.Close(fd)
 	started := time.Now()
-	err := runSSHAddWithAskpass(ctx, "one-shot-secret", marker)
-	require.ErrorIs(t, err, context.DeadlineExceeded)
+	cancel()
+	select {
+	case err := <-done:
+		require.ErrorIs(t, err, context.Canceled)
+	case <-time.After(2 * time.Second):
+		t.Fatal("ssh-add cancellation blocked with a second FIFO reader")
+	}
 	require.Less(t, time.Since(started), 2*time.Second)
-	helper, err := os.ReadFile(marker)
-	require.NoError(t, err)
-	_, err = os.Stat(filepath.Dir(string(helper)))
+	_, err := os.Stat(filepath.Dir(string(helper)))
 	require.True(t, os.IsNotExist(err))
 }
