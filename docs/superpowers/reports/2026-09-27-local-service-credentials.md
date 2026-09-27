@@ -2,6 +2,8 @@
 
 日期：2026-09-27。对应 [设计](../specs/2026-09-27-local-service-credentials-design.md) 与 [实施计划](../plans/2026-09-27-local-service-credentials.md)。
 
+本文记录本机重构和恢复阶段；后续 macOS 原生验证、`.35` 正式网站发布及各设备升级结果见 [发布记录](2026-09-27-preview35-release.md)，其中的最新验证覆盖本文早期尚未验证的项目。
+
 ## 实现结果
 
 CLI、默认 MCP、SSH 执行和传输共用本机加密凭据解析器。配对或迁移后，不再因 MCP 换进程、兼容 Agent 退出、云登录过期或云端网络异常而反复要求解锁。后台服务提供可选同步和私有 Agent 接口，普通 SSH 不需要等待它。

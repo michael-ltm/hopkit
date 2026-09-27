@@ -1,6 +1,6 @@
-# SSHM development handoff — 2026-09-08
+# SSHM development handoff — 2026-09-27
 
-SSHM manages local SSH connections and optional client-encrypted cloud synchronization. Production endpoint: https://sshm.yunmini.net. Latest client release target: `0.8.0-cloud-preview.33`. See `docs/2026-09-08-device-version-reporting.md` for deployment evidence and `docs/cloud-sync.md` for architecture.
+SSHM manages local SSH connections and optional client-encrypted cloud synchronization. Production endpoint: https://sshm.yunmini.net. Published cloud client release: `0.8.0-cloud-preview.35`. See [the September 27 release report](superpowers/reports/2026-09-27-preview35-release.md) for current deployment evidence and `docs/cloud-sync.md` for architecture. The older `docs/2026-09-08-device-version-reporting.md` records the previous rollout.
 
 ## Start here
 
@@ -32,7 +32,7 @@ release_version=0.8.0-cloud-preview.35
 darwin_build_dir=/tmp/sshm-native-$release_version
 mkdir -p "$darwin_build_dir"
 for arch in amd64 arm64; do
-  CGO_ENABLED=1 GOOS=darwin GOARCH="$arch" go build \
+  MACOSX_DEPLOYMENT_TARGET=12.0 CGO_ENABLED=1 GOOS=darwin GOARCH="$arch" go build \
     -ldflags "-s -w -X github.com/michael-ltm/sshm/internal/commands.Version=$release_version" \
     -o "$darwin_build_dir/sshm-darwin-$arch" ./cmd/sshm
 done
@@ -44,14 +44,16 @@ python3 scripts/build-cloud-clients.py --version "$release_version" \
 
 Without `--output`, staging uses `dist/releases/<version>`. Existing output directories are rejected, and `cloud/public/downloads` remains untouched. The builder validates both copied Darwin binaries before building Linux/Windows with `CGO_ENABLED=0`, then writes `SHA256SUMS`. Sign the complete staged directory with `go run ./scripts/sign-cloud-release --version <version> --assets <staging-directory> --key <existing-private-key-path>` in the authorized signing environment before preparing public downloads and deploying. Run the staging safety tests with `python3 -B -m unittest discover -s scripts -p 'test_build_cloud_clients.py'`.
 
+After validating the complete public assets and generated installers, deploy with `pnpm --dir cloud run deploy`. The explicit `run` is necessary: bare `pnpm deploy` selects pnpm's workspace deployment command. The older tag-triggered GoReleaser workflow still builds Darwin with CGO disabled; do not use that workflow for this native-Keychain-compatible cloud release.
+
 ## Runtime distinctions and pending operational work
 
 - Installed file, running MCP process, running cloud agent, and last heartbeat are distinct. Version `.30` records installation observations separately from legacy process heartbeats.
-- MacBook Air / Mac mini / GrokBot were updated to `.30`. Existing older agents were not forcibly interrupted. Restarting an agent may need local unlock or approved device linking; do not copy its in-memory vault key.
+- MacBook Air, Mac mini, GrokBot and the local Linux workstation now have `.35`; executable hashes match the signed release. Fresh MCP initialization on each remote host reports `.35`. The local service and Mac mini desktop helper were restarted. Existing AI sessions and cloud agents retain their loaded process until restarted; do not copy in-memory vault keys.
 - `tmp-ai-compute` was offline at final version-display acceptance. Its last `.25` heartbeat is historical, not proof of installed version or a completed update.
 - Continuous terminals use protocol v3 with short admission authorization; old protocol requests retain their original lifetime. Existing agents must actually load the new binary.
-- A previous old MCP process dropped unknown cloud binding fields while writing activity. Compatibility sidecars and authenticated sync recovery were implemented in `.27–.29`. The user's local binding recovery still requires an unlocked sync unless verified separately; do not guess identities or report it completed from this document.
-- Plugin-managed Codex / Claude skills are preserved by the updater; update their owning plugin through its supported mechanism. Never silently rewrite plugin caches.
+- A previous old MCP process dropped unknown cloud binding fields while writing activity. Compatibility sidecars and authenticated sync recovery were implemented in `.27–.29`. The September 27 recovery separately verified persistent local credentials for `prod-go`, `grokbot`, `aliyun-hcg-prod` and `racing-server`, with an unavailable external Agent. This does not establish recovery for every historical cloud entry.
+- Plugin-managed Codex / Claude skills are preserved by the updater; update their owning plugin through its supported mechanism. Never silently rewrite plugin caches. Installed SSHM plugins on the three remote machines now use the current `0.7.1` plugin assets; this version is independent of the `.35` executable. Existing enabled/disabled states were preserved. Restart Claude or open a new Codex thread to load the updated integration.
 
 ## Execution environment
 
