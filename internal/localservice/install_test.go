@@ -2,21 +2,24 @@ package localservice
 
 import (
 	"encoding/xml"
-	"github.com/stretchr/testify/require"
+	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/stretchr/testify/require"
 )
 
 func TestInstallTemplatesQuoteLiteralPaths(t *testing.T) {
-	binary := "/home/test/a \"quote\" %name$/sshm"
-	path := "/home/test/config %test$.toml"
+	dir := t.TempDir()
+	binary := filepath.Join(dir, "a \"quote\" %name$", "sshm")
+	path := filepath.Join(dir, "config %test$.toml")
 	unit, e := renderSystemd(binary, path)
 	require.NoError(t, e)
 	require.Contains(t, unit, `\"quote\"`)
 	require.Contains(t, unit, "%%name$$")
 	require.Contains(t, unit, "Restart=on-failure")
 	require.NotContains(t, unit, "/bin/sh")
-	_, e = renderSystemd("/bin/sshm\n[Service]", path)
+	_, e = renderSystemd(binary+"\n[Service]", path)
 	require.Error(t, e)
 	plist, e := renderLaunchAgent("test-label", binary, path)
 	require.NoError(t, e)

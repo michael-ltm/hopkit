@@ -15,6 +15,8 @@ import (
 func syntheticUserRuntime(t *testing.T) string {
 	t.Helper()
 	dir := t.TempDir()
+	// Match /run/user/<uid> even when the test runner has a permissive umask.
+	require.NoError(t, os.Chmod(dir, 0700))
 	// Only metadata is needed: no listener or real session manager is started.
 	require.NoError(t, syscall.Mknod(filepath.Join(dir, "bus"), syscall.S_IFSOCK|0666, 0))
 	return dir
