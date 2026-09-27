@@ -100,6 +100,19 @@ else:
         self.assertEqual(list(self.output.iterdir()), [sentinel])
         self.assert_public_unchanged()
 
+    def test_accepts_empty_optional_go_settings(self):
+        # Real `go version -m -json` omits Value for empty optional flags.
+        for arch in ('amd64', 'arm64'):
+            path = self.native / f'sshm-darwin-{arch}'
+            info = json.loads(path.read_text())
+            info['Settings'].extend({'Key': key} for key in
+                                    ('CGO_CFLAGS', 'CGO_CPPFLAGS', 'CGO_CXXFLAGS', 'CGO_LDFLAGS'))
+            path.write_text(json.dumps(info))
+        result = self.build()
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertTrue((self.output / 'SHA256SUMS').is_file())
+        self.assert_public_unchanged()
+
     def test_failed_build_does_not_leave_partial_release(self):
         self.env['FAIL_BUILD'] = 'arm64'
         result = self.build()

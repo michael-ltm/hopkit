@@ -26,7 +26,7 @@ def verify_darwin(path, arch, version):
     info = json.loads(result.stdout)
     if info.get('Path') != 'github.com/michael-ltm/sshm/cmd/sshm':
         raise ValueError(f'{path.name}: not an SSHM command binary')
-    settings = {item['Key']: item['Value'] for item in info.get('Settings', [])}
+    settings = {item['Key']: item.get('Value', '') for item in info.get('Settings', [])}
     for key, expected in [('GOOS', 'darwin'), ('GOARCH', arch), ('CGO_ENABLED', '1')]:
         if settings.get(key) != expected:
             raise ValueError(f'{path.name}: requires {key}={expected}; got {settings.get(key)!r}')
