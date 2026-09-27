@@ -5,6 +5,7 @@ package devicekey
 import (
 	"context"
 	"crypto/rand"
+	"strings"
 )
 
 func (System) Seal(ctx context.Context, id string, value []byte) (string, []byte, error) {
@@ -21,14 +22,27 @@ func (System) Seal(ctx context.Context, id string, value []byte) (string, []byte
 	}
 	defer clear(key)
 	b, e := wrap(key, value, id)
-	return "keychain:" + ref, b, e
+	return "keychain-host:" + ref, b, e
 }
 func (System) Open(ctx context.Context, id, backend string, blob []byte) ([]byte, error) {
-	ref, e := reference(backend, "keychain")
+	prefix := "keychain-host"
+	legacy := strings.HasPrefix(backend, "keychain:")
+	if legacy {
+		prefix = "keychain"
+	}
+	ref, e := reference(backend, prefix)
 	if e != nil {
 		return nil, e
 	}
-	key, e := keychainKey(ctx, ref, false)
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
+	var key []byte
+	if legacy {
+		key, e = readKeychainKey(ref)
+	} else {
+		key, e = keychainKey(ctx, ref, false)
+	}
 	if e != nil {
 		return nil, e
 	}
@@ -40,15 +54,15 @@ func keychainKey(ctx context.Context, id string, create bool) ([]byte, error) {
 		return nil, err
 	}
 	if !create {
-		return readKeychainKey(id)
+		return keychainHostOperation(ctx, id, nil)
 	}
 	key := make([]byte, 32)
 	if _, e := rand.Read(key); e != nil {
 		return nil, e
 	}
 	defer clear(key)
-	if e := addKeychainKey(id, key); e != nil {
+	if _, e := keychainHostOperation(ctx, id, key); e != nil {
 		return nil, e
 	}
-	return readKeychainKey(id)
+	return keychainHostOperation(ctx, id, nil)
 }

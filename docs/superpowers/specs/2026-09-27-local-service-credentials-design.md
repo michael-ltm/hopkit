@@ -86,8 +86,10 @@ flowchart LR
 | 平台/环境 | 保护机制与恢复时机 |
 | --- | --- |
 | Linux | 优先 `systemd-creds --user --with-key=host --no-ask-password`；首次创建可回退 Secret Service，随后固定后端且非交互读取。系统保护材料在 SSHM 数据目录之外；当前实现不自动配置 TPM 或系统级服务 |
-| macOS | 原生 CGO 构建通过 Security.framework 非交互 Keychain API 保存材料；LaunchAgent 在用户登录后恢复。CGO 关闭时明确不可用，发布流程需原生构建后验证 |
+| macOS | 新项目通过 Apple 签名的固定 `/usr/bin/osascript` 宿主调用 Security.framework，保持升级前后的 Keychain 应用身份；LaunchAgent 在用户登录后恢复。旧项目保留原生读取路径，因此官方发布仍要求 CGO 原生构建和验证 |
 | Windows | 用户范围 DPAPI 保护凭据，由相同用户身份启动服务/任务；不使用向整台机器所有用户放开的解密范围 |
+
+macOS 新建的 `sshm.device` 项目通过固定的系统宿主和嵌入脚本访问 Keychain，不增加通用解密 ACL，也不更改默认 owner/change-ACL 权限。随机设备密钥仅通过捕获的 stdin/stdout 管道传递，不进入命令参数、环境变量或临时脚本。相同用户在已解锁会话中的其他进程也可调用该宿主；此方案防止仅泄漏配置或加密私钥文件，不提供当前登录用户内的应用隔离。旧 `keychain:` 项目仍由原生接口读取，不自动迁移或修改权限；新项目采用 `keychain-host:` 后端。SSHM 不解锁 Keychain、不弹出认证窗口，也不改变系统设置。GUI 会话可用不代表 SSH/background 会话也可访问；受限会话中按保护不可用返回，保留已有密文。
 
 已在这台 Linux 主机用真实 systemd-user 保护后端验证合成凭据：全新 CLI、两个独立默认 MCP 进程以及重启的本地 Agent 都成功使用同一加密存储。Secret Service 回退、macOS/Windows 原生后端和真正的系统重启未在本机验证。
 

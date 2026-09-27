@@ -326,13 +326,13 @@ sshm service status
 
 本地库位于 `<config>.local/credentials.json`，使用 AES-256-GCM 和独立系统保护密钥。
 Linux 使用用户级 systemd 加密凭据，首次创建可回退 Secret Service；Windows 使用用户 DPAPI；
-macOS 原生 CGO 构建使用无交互 Keychain API。无可用后端时明确失败，不退回明文。
+macOS 新项目通过 Apple 签名的固定系统宿主调用无交互 Keychain API，避免升级 SSHM 时改变 Keychain 应用身份；旧项目保留原生读取路径。无可用后端时明确失败，不退回明文。
 账号登录密码不落盘，服务端继续保存加盐密码哈希；本地云端令牌和保险库主密钥进入加密库。
 复制 SSHM 配置/库文件不等于获得可直接使用的 SSH 私钥；已控制的同用户会话仍可使用该用户的凭据。
 
 `service install` 提供 Linux systemd 用户服务、macOS LaunchAgent 和 Windows 用户登录任务。
-本版本已在 Linux 验证系统加密及进程重启；macOS/Windows 原生登录、系统重启恢复尚未验证。
-macOS 禁用 CGO 的构建不能使用此 Keychain 后端。`--system` 暂不支持；无用户登录的开机启动
+本版本已在 Linux 验证系统加密及进程重启，并在 macOS GUI 会话验证合成凭据跨进程及二进制替换后可用；真实系统重启恢复尚未验证。
+macOS 官方发布仍要求 CGO，以兼容旧 `keychain:` 项目；新 `keychain-host:` 后端不依赖 CGO。SSH/background 会话可能无法访问 GUI 会话可用的 Keychain；SSHM 不自动解锁或弹出提示。`--system` 暂不支持；无用户登录的开机启动
 与登录后恢复是不同场景，本版本没有宣称完成真实系统重启测试。
 
 ### 可选 MCP 浏览器批准访问云端凭据

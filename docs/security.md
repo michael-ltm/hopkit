@@ -20,10 +20,22 @@
   that identity. A locked, corrupt or unavailable protected store remains an error.
 - Local credentials use a versioned AES-256-GCM envelope. Its data key is protected
   outside the SSHM data directory by Linux user-scoped systemd credentials
-  (Secret Service fallback on creation), macOS Keychain (native CGO build), or
+  (Secret Service fallback on creation), macOS Keychain, or
   Windows user DPAPI. Failed decryption never overwrites the original or falls
   back to plaintext. The same user's authorized applications can use these
   credentials; device protection is not isolation from a compromised login.
+- New macOS `sshm.device` items use Apple's stable signed `/usr/bin/osascript`
+  host to call Security.framework with a fixed embedded script. This preserves
+  the Keychain application identity across SSHM binary upgrades without adding
+  broad decrypt rules or changing default owner/ACL permissions. Device key
+  bytes travel only through captured stdin/stdout pipes, never command arguments,
+  environment variables, or temporary scripts. This provides current-user
+  protection: another process in the owning unlocked session can invoke the same
+  host. Existing native items keep their original native reader and are not
+  migrated automatically; official builds retain CGO for that compatibility.
+  SSHM never unlocks the Keychain or displays authentication dialogs. An
+  SSH/background session may lack access even while the same user's GUI session
+  can use it; access then fails closed without changing saved credentials.
 - Cloud account passwords are not persisted locally. The server stores salted
   password hashes. CLI bearer tokens and remembered vault masters are encrypted
   in the local store; cloud snapshots remain end-to-end encrypted. Migrating a

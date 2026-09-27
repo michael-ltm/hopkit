@@ -24,7 +24,7 @@ Important fresh-clone boundary: `cloud/public/downloads/` is deliberately ignore
 
 Release scripts: `scripts/build-cloud-clients.py`, `scripts/sign-cloud-release/`. Rebuilding a published version can produce different bytes; do not overwrite an existing published release with newly rebuilt binaries. Use a new release version and authorized signing environment. Pushing main runs CI; it does not deploy Cloudflare or publish a release tag by itself.
 
-The release builder requires `--version` and `--darwin-dir`. Build both Darwin architectures on macOS from the same source revision with `CGO_ENABLED=1` to retain native Keychain support. Omit `-trimpath` for these two builds: the staging validator reads the embedded linker assignment as well as `GOOS`, `GOARCH`, and `CGO_ENABLED` from `go version -m -json`.
+The release builder requires `--version` and `--darwin-dir`. Build both Darwin architectures on macOS from the same source revision with `CGO_ENABLED=1` to retain the native reader for existing `keychain:` items. New `keychain-host:` items use the stable Apple-signed `/usr/bin/osascript` host with fixed embedded JavaScript and Security.framework; replacing the SSHM executable therefore preserves its Keychain caller identity without broader ACL grants. Omit `-trimpath` for these two builds: the staging validator reads the embedded linker assignment as well as `GOOS`, `GOARCH`, and `CGO_ENABLED` from `go version -m -json`.
 
 ```sh
 # On macOS, from the intended release source revision; choose a new version.
