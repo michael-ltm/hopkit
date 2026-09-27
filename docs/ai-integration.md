@@ -76,18 +76,25 @@ terminal; agents must not request these secrets in chat or tool arguments.
 
 ## Password-free SSH for AI tools
 
-For an encrypted local key, MCP asks the existing SSH Agent to sign; it never
-reads the sibling `.passphrase` recovery file. On macOS, when a GUI-launched MCP
-does not inherit `SSH_AUTH_SOCK`, SSHM consults the current user's launchd
-environment and accepts only an existing socket owned by that user. An explicit
-socket always takes precedence. This does not load keys or unlock a keychain.
+Default MCP and CLI share device-protected local credentials. New keys from
+`gen_key` need no secret input: the device saves their generated protection
+material before writing the encrypted key file. `passphrase_file` remains optional.
 
-Once the key is available in the agent, AI calls do not require typing its
-passphrase each time. After reboot, logout, or agent expiration, an OS keychain
-or a one-time user unlock may be needed. A Skill supplies instructions; it does
-not store passwords or grant SSH access. Another process with access to the
-same logged-in user's agent can potentially use its signing authority too.
+Migrate legacy credentials once with `sshm service setup` in your own terminal,
+then `sshm service install` for background startup. Setup automatically uses safe
+legacy recovery sidecars and reports unavailable identities without stopping
+other imports. Use `sshm service setup --ask-passphrases` only when you know a
+missing SSH secret; empty input skips it. Multiple MCP processes reuse the same store;
+cloud network failures and token expiry do not gate local SSH. `service status`
+shows local readiness. A stopped service does not prevent direct CLI/MCP recovery.
 
-Do not remove recovery files just because an agent currently holds a key:
-first verify a durable recovery copy and post-login key loading. Do not leave
-an unencrypted key as the mechanism for unattended access.
+Treat `local_device_locked` as an explicit user choice: only a local
+`sshm service unlock` clears it. Missing credentials need migration/registration;
+network errors need route diagnosis, not repeated cloud unlock. Proxy changes do
+not change credential identity. Explicit `--cloud-auth browser` retains its
+separate online approval policy; it is optional.
+
+Native key files and external Agents still work. Do not remove recovery files
+merely because an Agent holds a key. Device encryption protects copied SSHM data;
+it does not prevent programs already acting as the same logged-in user from
+using that user's credentials. See [local trust and migration](cloud-sync.md#默认本地-ssh-与本机信任).

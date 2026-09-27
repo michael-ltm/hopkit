@@ -96,7 +96,7 @@ func executeCloudJob(ctx context.Context, s *cloudsync.State, v *cloudsync.Vault
 	}
 	fail.Code = "sync_failed"
 	if j.Action == "sync" {
-		if _, e = v.Data.Import(cfg, s.DeviceID, true); e != nil {
+		if _, e = v.Data.ImportProtected(ctx, cfg, s.DeviceID, true, localCredentialStore(configPath()), cloudsync.InventoryIdentity(s)); e != nil {
 			return fail
 		}
 		count = len(v.Data.Entries)

@@ -1,6 +1,7 @@
 package ssh
 
 import (
+	"encoding/json"
 	"errors"
 	"io"
 	"net"
@@ -15,6 +16,7 @@ import (
 	"github.com/michael-ltm/sshm/internal/config"
 	"github.com/stretchr/testify/require"
 	gssh "golang.org/x/crypto/ssh"
+	"golang.org/x/crypto/ssh/agent"
 )
 
 func TestBuildAuthNativeKeyIgnoresCloudBindingMetadata(t *testing.T) {
@@ -24,7 +26,7 @@ func TestBuildAuthNativeKeyIgnoresCloudBindingMetadata(t *testing.T) {
 		KeyPath:    path,
 		CloudEntry: "entry-1",
 		CloudVault: "vault-1",
-	}, BuildOpts{})
+	}, BuildOpts{ConfigPath: filepath.Join(t.TempDir(), "config.toml")})
 	require.NoError(t, err)
 	require.Len(t, auth, 1)
 	require.Nil(t, closer)
@@ -105,6 +107,7 @@ func TestDialCloudMarkerAuthenticatesWithExactCachedAgentIdentity(t *testing.T) 
 	client, err := Dial(target, BuildOpts{ConfigPath: configPath, Insecure: true, Timeout: time.Second})
 	require.NoError(t, err)
 	require.True(t, authenticated.Load())
+	require.Equal(t, "direct", client.Route())
 	require.NoError(t, client.Close())
 	select {
 	case <-done:
@@ -113,7 +116,7 @@ func TestDialCloudMarkerAuthenticatesWithExactCachedAgentIdentity(t *testing.T) 
 	}
 }
 
-func TestBuildAuthCloudRejectsDifferentRouteOrBinding(t *testing.T) {
+func TestBuildAuthCloudRejectsDifferentTargetOrBinding(t *testing.T) {
 	skipIfNoUnixSockets(t)
 	privateKey := genEd25519(t)
 	signer, err := gssh.NewSignerFromKey(privateKey)
@@ -128,10 +131,6 @@ func TestBuildAuthCloudRejectsDifferentRouteOrBinding(t *testing.T) {
 		func(s *config.Server) { s.Host = "other.invalid" },
 		func(s *config.Server) { s.Port++ },
 		func(s *config.Server) { s.User = "other" },
-		func(s *config.Server) { s.ProxyJump = "other-jump" },
-		func(s *config.Server) { s.ProxyCommand = "other-command" },
-		func(s *config.Server) { s.Proxy = "socks5://127.0.0.1:9999" },
-		func(s *config.Server) { s.Forwards = []string{"L:8081:127.0.0.1:80"} },
 		func(s *config.Server) { s.CloudEntry = "entry-2" },
 		func(s *config.Server) { s.CloudVault = "vault-2" },
 	} {
@@ -139,7 +138,7 @@ func TestBuildAuthCloudRejectsDifferentRouteOrBinding(t *testing.T) {
 		changed.Forwards = append([]string(nil), server.Forwards...)
 		mutate(&changed)
 		_, _, err := buildAuth(&changed, BuildOpts{ConfigPath: configPath})
-		require.ErrorContains(t, err, "sshm cloud agent")
+		require.ErrorContains(t, err, "sshm service setup")
 	}
 }
 
@@ -154,7 +153,7 @@ func TestBuildAuthCloudRejectsAgentWithoutCachedIdentity(t *testing.T) {
 	require.NoError(t, StoreLocalAgentIdentities(configPath, server, []gssh.PublicKey{cachedSigner.PublicKey()}))
 
 	_, _, err = buildAuth(server, BuildOpts{ConfigPath: configPath})
-	require.ErrorContains(t, err, "sshm cloud agent")
+	require.Equal(t, "local_identity_unavailable", FailureCategory(err))
 	require.NotContains(t, err.Error(), string(gssh.MarshalAuthorizedKey(cachedSigner.PublicKey())))
 	require.False(t, HasLocalAuth(server, BuildOpts{ConfigPath: configPath}))
 }
@@ -164,6 +163,7 @@ func TestHasLocalAuthClosesResolvedSignerResources(t *testing.T) {
 	require.NoError(t, err)
 	closer := &trackingCloser{}
 	require.True(t, HasLocalAuth(&config.Server{Auth: config.AuthCloud}, BuildOpts{
+		ConfigPath:    filepath.Join(t.TempDir(), "config.toml"),
 		Signers:       []gssh.Signer{signer},
 		SignerClosers: []io.Closer{closer},
 	}))
@@ -171,13 +171,13 @@ func TestHasLocalAuthClosesResolvedSignerResources(t *testing.T) {
 }
 
 func TestHasLocalAuthNilTargetIsUnavailable(t *testing.T) {
-	require.False(t, HasLocalAuth(nil, BuildOpts{}))
+	require.False(t, HasLocalAuth(nil, BuildOpts{ConfigPath: filepath.Join(t.TempDir(), "config.toml")}))
 }
 
 func TestHasLocalAuthAgentWithSignerIsAvailable(t *testing.T) {
 	skipIfNoUnixSockets(t)
 	t.Setenv("SSH_AUTH_SOCK", serveTestAgent(t, genEd25519(t)))
-	require.True(t, HasLocalAuth(&config.Server{Auth: config.AuthAgent}, BuildOpts{}))
+	require.True(t, HasLocalAuth(&config.Server{Auth: config.AuthAgent}, BuildOpts{ConfigPath: filepath.Join(t.TempDir(), "config.toml")}))
 }
 
 func TestStoreLocalAgentIdentitiesUsesPrivatePublicOnlyCache(t *testing.T) {
@@ -245,7 +245,7 @@ func TestBuildAuthCloudRejectsMalformedOversizedOrSymlinkCache(t *testing.T) {
 		write   func(*testing.T, string)
 	}{
 		{name: "malformed", wantErr: "invalid public key", write: func(t *testing.T, path string) {
-			require.NoError(t, os.WriteFile(path, []byte(`{"public_keys":["not a public key"]}`), 0o600))
+			require.NoError(t, os.WriteFile(path, []byte(`{"version":2,"public_keys":["not a public key"]}`), 0o600))
 		}},
 		{name: "oversized", wantErr: "invalid local identity cache file", write: func(t *testing.T, path string) {
 			require.NoError(t, os.WriteFile(path, make([]byte, maxLocalIdentityCacheSize+1), 0o600))
@@ -317,4 +317,123 @@ func (malformedPublicKey) Marshal() []byte {
 }
 func (malformedPublicKey) Verify([]byte, *gssh.Signature) error {
 	return errors.New("invalid")
+}
+
+func TestLocalIdentitySurvivesRouteChangesAndSigns(t *testing.T) {
+	skipIfNoUnixSockets(t)
+	raw := genEd25519(t)
+	signer, err := gssh.NewSignerFromKey(raw)
+	require.NoError(t, err)
+	t.Setenv("SSH_AUTH_SOCK", serveTestAgent(t, raw))
+	path := filepath.Join(t.TempDir(), "config.toml")
+	target := localIdentityServer()
+	require.NoError(t, StoreLocalAgentIdentities(path, target, []gssh.PublicKey{signer.PublicKey()}))
+	target.Proxy = "socks5://127.0.0.1:9999"
+	require.True(t, HasLocalAuth(target, BuildOpts{ConfigPath: path}))
+	signers, closer, err := loadLocalAgentSigners(path, target)
+	require.NoError(t, err)
+	defer closer.Close()
+	signature, err := signers[0].Sign(nil, []byte("route-independent challenge"))
+	require.NoError(t, err)
+	require.NoError(t, signer.PublicKey().Verify([]byte("route-independent challenge"), signature))
+	for _, mutate := range []func(*config.Server){
+		func(target *config.Server) { target.ProxyJump = "different-jump" },
+		func(target *config.Server) { target.ProxyCommand = "different-command" },
+		func(target *config.Server) { target.Forwards = nil },
+	} {
+		changed := *target
+		mutate(&changed)
+		require.True(t, HasLocalAuth(&changed, BuildOpts{ConfigPath: path}))
+	}
+}
+
+func TestCloudLocalIdentityDiagnosticsDoNotRecommendUnlockForInvalidBinding(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "config.toml")
+	target := localIdentityServer()
+	_, _, err := buildAuth(target, BuildOpts{ConfigPath: path})
+	require.Equal(t, "local_credential_missing", FailureCategory(err))
+	cachePath, err := localIdentityCachePath(path, target)
+	require.NoError(t, err)
+	require.NoError(t, os.MkdirAll(filepath.Dir(cachePath), 0700))
+	require.NoError(t, os.WriteFile(cachePath, []byte("invalid json"), 0600))
+	_, _, err = buildAuth(target, BuildOpts{ConfigPath: path})
+	require.Equal(t, "local_binding_invalid", FailureCategory(err))
+	require.NotContains(t, err.Error(), "cloud agent")
+}
+
+func TestLegacyIdentityMigrationUsesOnlyExactOrReconstructedDirectTarget(t *testing.T) {
+	skipIfNoUnixSockets(t)
+	raw := genEd25519(t)
+	signer, err := gssh.NewSignerFromKey(raw)
+	require.NoError(t, err)
+	t.Setenv("SSH_AUTH_SOCK", serveTestAgent(t, raw))
+	for _, mode := range []string{"exact", "direct", "unrelated-route", "wrong-target"} {
+		t.Run(mode, func(t *testing.T) {
+			path := filepath.Join(t.TempDir(), "config.toml")
+			target := localIdentityServer()
+			legacy := *target
+			if mode == "direct" {
+				legacy.Proxy, legacy.ProxyJump, legacy.ProxyCommand, legacy.Forwards = "", "", "", nil
+			}
+			if mode == "unrelated-route" {
+				legacy.Proxy = "socks5://other:8888"
+			}
+			if mode == "wrong-target" {
+				legacy.User = "root"
+			}
+			oldPath, err := legacyLocalIdentityCachePath(path, &legacy)
+			require.NoError(t, err)
+			require.NoError(t, os.MkdirAll(filepath.Dir(oldPath), 0700))
+			encoded := strings.TrimSpace(string(gssh.MarshalAuthorizedKey(signer.PublicKey())))
+			data, err := json.Marshal(map[string]any{"public_keys": []string{encoded}})
+			require.NoError(t, err)
+			require.NoError(t, os.WriteFile(oldPath, data, 0600))
+			require.Equal(t, mode == "exact" || mode == "direct", HasLocalAuth(target, BuildOpts{ConfigPath: path}))
+			newPath, err := localIdentityCachePath(path, target)
+			require.NoError(t, err)
+			if mode == "exact" || mode == "direct" {
+				require.FileExists(t, newPath)
+			} else {
+				require.NoFileExists(t, newPath)
+			}
+		})
+	}
+}
+
+func TestCloudLocalIdentityDiagnosticsDistinguishUnavailableAgent(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("uses Unix Agent socket")
+	}
+	path := filepath.Join(t.TempDir(), "config.toml")
+	target := localIdentityServer()
+	signer, err := gssh.NewSignerFromKey(genEd25519(t))
+	require.NoError(t, err)
+	require.NoError(t, StoreLocalAgentIdentities(path, target, []gssh.PublicKey{signer.PublicKey()}))
+	t.Setenv("SSH_AUTH_SOCK", filepath.Join(t.TempDir(), "missing-agent"))
+	_, _, err = buildAuth(target, BuildOpts{ConfigPath: path})
+	require.Equal(t, "local_agent_unavailable", FailureCategory(err))
+	require.NotContains(t, err.Error(), "cloud agent")
+}
+
+func TestLegacyMigrationRequiresAgentSigningProof(t *testing.T) {
+	skipIfNoUnixSockets(t)
+	raw := genEd25519(t)
+	signer, err := gssh.NewSignerFromKey(raw)
+	require.NoError(t, err)
+	keyring := agent.NewKeyring()
+	require.NoError(t, keyring.Add(agent.AddedKey{PrivateKey: raw}))
+	t.Setenv("SSH_AUTH_SOCK", serveAgentBackend(t, rejectingSignAgent{Agent: keyring}))
+	path := filepath.Join(t.TempDir(), "config.toml")
+	target := localIdentityServer()
+	oldPath, err := legacyLocalIdentityCachePath(path, target)
+	require.NoError(t, err)
+	require.NoError(t, os.MkdirAll(filepath.Dir(oldPath), 0700))
+	data, err := json.Marshal(localIdentityCache{PublicKeys: []string{strings.TrimSpace(string(gssh.MarshalAuthorizedKey(signer.PublicKey())))}})
+	require.NoError(t, err)
+	require.NoError(t, os.WriteFile(oldPath, data, 0600))
+	require.False(t, HasLocalAuth(target, BuildOpts{ConfigPath: path}))
+	newPath, err := localIdentityCachePath(path, target)
+	require.NoError(t, err)
+	require.NoFileExists(t, newPath)
+	require.FileExists(t, oldPath)
 }

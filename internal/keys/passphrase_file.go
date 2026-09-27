@@ -11,6 +11,20 @@ import (
 // ReadPassphraseFile reads a user-managed secret without creating a recovery
 // copy. Callers must clear the returned bytes when finished and never log them.
 func ReadPassphraseFile(path string) ([]byte, error) {
+	b, err := readPrivatePassphraseFile(path)
+	if err != nil {
+		return nil, err
+	}
+	pass, err := parsePassphraseLine(b)
+	if err != nil {
+		clear(b)
+	}
+	return pass, err
+}
+
+// readPrivatePassphraseFile is shared with legacy recovery migration; format
+// handling must not bypass the no-symlink, private-file and size checks.
+func readPrivatePassphraseFile(path string) ([]byte, error) {
 	if runtime.GOOS == "windows" {
 		return nil, errors.New("passphrase files are not supported on Windows until ACL validation is available; use the local interactive CLI passphrase prompt")
 	}
@@ -45,10 +59,13 @@ func ReadPassphraseFile(path string) ([]byte, error) {
 		clear(b)
 		return nil, errors.New("passphrase file exceeds 1024 bytes")
 	}
+	return b, nil
+}
+
+func parsePassphraseLine(b []byte) ([]byte, error) {
 	pass := bytes.TrimSuffix(b, []byte("\n"))
 	pass = bytes.TrimSuffix(pass, []byte("\r"))
 	if len(pass) == 0 || bytes.ContainsAny(pass, "\r\n\x00") {
-		clear(b)
 		return nil, errors.New("passphrase file must contain one nonempty line")
 	}
 	return pass, nil

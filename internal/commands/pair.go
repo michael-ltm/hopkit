@@ -660,6 +660,9 @@ func preparePairKey(cmd *cobra.Command, alias, expandedPath string, noEncrypt bo
 		if _, statErr := os.Stat(expandedPath); statErr != nil {
 			return "", false, fmt.Errorf("public key exists but private key is missing at %s", expandedPath)
 		}
+		if public, managed, err := managedPairKey(expandedPath); managed {
+			return public, false, err
+		}
 		checkedPublicKey, err := checkPairKeyUsable(expandedPath)
 		if err != nil {
 			return "", false, fmt.Errorf(
@@ -696,11 +699,22 @@ func preparePairKey(cmd *cobra.Command, alias, expandedPath string, noEncrypt bo
 	if err != nil {
 		return "", false, err
 	}
-	publicKey, err = keys.GenerateED25519Encrypted(expandedPath, alias+"@sshm-pair", passphrase)
+	publicKey, err = generateLocalKey(cmd, expandedPath, alias+"@sshm-pair", passphrase)
 	if err != nil {
 		return "", false, err
 	}
 	generated = true
+	if managed, err := rememberGeneratedKey(cmd, expandedPath, passphrase); managed || err != nil {
+		if err != nil {
+			return "", false, fmt.Errorf("save generated encrypted key: %w; original key retained at %q", err, expandedPath)
+		}
+		public, _, err := managedPairKey(expandedPath)
+		if err != nil {
+			return "", false, err
+		}
+		fmt.Fprintln(cmd.OutOrStdout(), "Encrypted key saved for this device; future connections do not require unlocking.")
+		return public, true, nil
+	}
 	store, err := storeAndLoadPairKey(expandedPath, passphrase)
 	if err != nil {
 		return "", false, fmt.Errorf(

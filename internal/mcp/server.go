@@ -6,6 +6,7 @@ import (
 
 	"github.com/mark3labs/mcp-go/server"
 	"github.com/michael-ltm/sshm/internal/config"
+	"github.com/michael-ltm/sshm/internal/localstore"
 	sshpkg "github.com/michael-ltm/sshm/internal/ssh"
 )
 
@@ -18,6 +19,7 @@ type Deps struct {
 	Version         string // build version (set by ldflags via commands.Version); falls back to "dev"
 	TransferManager *transferManager
 	CloudSession    *CloudSession
+	LocalStore      *localstore.Store
 }
 
 // NewServer builds the MCP server with every sshm tool registered, and
@@ -51,6 +53,7 @@ func NewServer(deps Deps) (*server.MCPServer, []string) {
 
 // sshOptions uses local authentication unless a browser session was explicitly supplied.
 func (deps Deps) sshOptions(ctx context.Context, opts sshpkg.BuildOpts) sshpkg.BuildOpts {
+	opts.LocalStore = deps.LocalStore
 	if deps.CloudSession != nil {
 		// A cloud-bound jump may require approval even when the final target
 		// has native auth. Never bypass a denied jump with direct fallback.

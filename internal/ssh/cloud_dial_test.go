@@ -16,7 +16,7 @@ import (
 
 func TestDialCloudRequiresResolutionBeforeAuth(t *testing.T) {
 	_, err := Dial(&config.Server{Host: "target.invalid", User: "user", Auth: config.AuthCloud}, BuildOpts{ConfigPath: filepath.Join(t.TempDir(), "config.toml")})
-	require.ErrorContains(t, err, "sshm cloud agent")
+	require.ErrorContains(t, err, "sshm service setup")
 }
 
 func TestDialExplicitCloudResolverFailureDoesNotFallBackToLocalIdentity(t *testing.T) {

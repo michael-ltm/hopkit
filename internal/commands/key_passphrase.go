@@ -1,6 +1,9 @@
 package commands
 
 import (
+	"context"
+	"crypto/rand"
+	"encoding/base64"
 	"fmt"
 
 	"github.com/michael-ltm/sshm/internal/keys"
@@ -9,7 +12,7 @@ import (
 )
 
 func addKeyPassphraseFlag(cmd *cobra.Command) {
-	cmd.Flags().String("passphrase-file", "", "read a private, user-managed key passphrase file; otherwise prompt without echo")
+	cmd.Flags().String("passphrase-file", "", "use a private, user-managed key passphrase file instead of automatic device protection")
 }
 
 func keyPassphrase(cmd *cobra.Command) (string, error) {
@@ -23,7 +26,19 @@ func keyPassphrase(cmd *cobra.Command) (string, error) {
 		}
 		b, err = keys.ReadPassphraseFile(path)
 	} else {
-		b, err = cloudSecret(cmd, "New SSH key passphrase (keep in your password manager)", true)
+		ctx := cmd.Context()
+		if ctx == nil {
+			ctx = context.Background()
+		}
+		if err := localCredentialStore(configPath()).Ensure(ctx); err != nil {
+			return "", err
+		}
+		b = make([]byte, 32)
+		if _, err := rand.Read(b); err != nil {
+			return "", err
+		}
+		defer clear(b)
+		return base64.RawStdEncoding.EncodeToString(b), nil
 	}
 	defer clear(b)
 	if err != nil {

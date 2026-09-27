@@ -4,7 +4,7 @@
 import assert from 'node:assert/strict';
 import { spawn } from 'node:child_process';
 import { once } from 'node:events';
-import { mkdtemp, readFile, rm } from 'node:fs/promises';
+import { mkdtemp, readFile, rm, readdir } from 'node:fs/promises';
 import { createServer } from 'node:http';
 import { tmpdir } from 'node:os';
 import { dirname, join, resolve } from 'node:path';
@@ -81,7 +81,7 @@ async function connectBrowser() {
 try {
   const fixture = join(scratch, 'vault.json');
   await run('go', ['test', './internal/cloudsync', '-run', '^TestWriteBrowserFixture$', '-count=1'], {
-    env: { ...process.env, SSHM_CLOUD_BROWSER_FIXTURE: fixture },
+    env: { ...process.env, SSHM_CLOUD_BROWSER_FIXTURE: fixture, SSHM_CLOUD_BROWSER_KEY_FIXTURE: join(scratch,'expected.key') },
   });
   const snapshot = JSON.parse(await readFile(fixture, 'utf8'));
   const [pageModule, accountScript] = await Promise.all([
@@ -242,6 +242,35 @@ try {
   assert.equal(await evaluate(`document.querySelector('#server-dialog').open`), false, 'cancelled Add Server does not leak into later unlock');
   console.log('PASS: Add Server, cancellation, wrong phrase, retry, relock, and main unlock');
   await checkTerminalCapability();
+
+  const downloads=join(scratch,'downloads');
+  await cdp('Browser.setDownloadBehavior',{behavior:'allow',downloadPath:downloads});
+  const openExport=async()=>{
+    await click('#server-rows .row-menu-button');
+    await evaluate(`([...document.querySelectorAll('.row-menu button')].find(b=>b.textContent==='导出私钥')).id='fixture-export'`);
+    await click('#fixture-export');
+    assert.ok(await visible('#key-export-dialog'));
+  };
+  await openExport();
+  assert.deepEqual(await evaluate(`[...document.querySelector('#key-export-form').elements.credential.options].map(o=>o.textContent)`),['SHA256:synthetic-export-key']);
+  await click('#key-export-form [data-close]');
+  assert.equal((await readdir(downloads).catch(()=>[])).length,0,'cancelling must not download');
+  await openExport();
+  await evaluate(`document.querySelector('#vault-lock').click()`);
+  await waitFor(`!document.querySelector('#key-export-dialog').open`,'locking closes export');
+  await waitFor(`document.querySelector('#key-export-form').elements.credential.options.length===0`,'close event clears export selection');
+  await openPrompt('#unlock-vault','/servers');await unlock();
+  await openExport();
+  await click('#key-export-form button.primary');
+  const downloaded=join(downloads,'synthetic-host.key');
+  let actual;
+  for(let attempt=0;attempt<100;attempt++){
+    actual=await readFile(downloaded).catch(()=>null);if(actual)break;await delay(50);
+  }
+  assert.deepEqual(actual,await readFile(join(scratch,'expected.key')),'browser download must exactly preserve the private key');
+  assert.ok(requestBodies.every(body=>!body.includes(actual.toString('base64'))&&!body.includes('BEGIN PRIVATE KEY')),'exported key never appears in HTTP request bodies');
+  assert.equal(await evaluate(`document.querySelector('#key-export-dialog').open`),false);
+  console.log('PASS: private key selection, cancellation, relock cleanup, and byte-exact browser download');
 
   await navigate('/devices');
   await click('#add-device');

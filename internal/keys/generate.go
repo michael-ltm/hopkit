@@ -24,6 +24,20 @@ func GenerateED25519(keyPath, comment string) (pubLine string, err error) {
 // OpenSSH public-key line. When passphrase != "" the private key is encrypted
 // with it. Refuses to overwrite either existing key file, including symlinks.
 func GenerateED25519Encrypted(keyPath, comment, passphrase string) (pubLine string, err error) {
+	return generateED25519(keyPath, comment, passphrase, nil)
+}
+
+// GenerateED25519Protected verifies durable recovery before publishing a key
+// encrypted with an automatically generated passphrase. If protection fails,
+// no unusable private/public files are left behind.
+func GenerateED25519Protected(keyPath, comment, passphrase string, protect func([]byte) error) (string, error) {
+	if protect == nil || passphrase == "" {
+		return "", errors.New("encrypted key protection callback is required")
+	}
+	return generateED25519(keyPath, comment, passphrase, protect)
+}
+
+func generateED25519(keyPath, comment, passphrase string, protect func([]byte) error) (pubLine string, err error) {
 	comment = strings.Map(func(r rune) rune {
 		if r == '\n' || r == '\r' {
 			return -1
@@ -45,6 +59,7 @@ func GenerateED25519Encrypted(keyPath, comment, passphrase string) (pubLine stri
 	if err != nil {
 		return "", fmt.Errorf("generate ed25519: %w", err)
 	}
+	defer clear(priv)
 
 	var pemBlock *pem.Block
 	var mErr error
@@ -56,7 +71,15 @@ func GenerateED25519Encrypted(keyPath, comment, passphrase string) (pubLine stri
 	if mErr != nil {
 		return "", fmt.Errorf("marshal private key: %w", mErr)
 	}
-	if err = writeNewKeyFile(keyPath, encodePEM(pemBlock), 0o600); err != nil {
+	defer clear(pemBlock.Bytes)
+	encoded := encodePEM(pemBlock)
+	defer clear(encoded)
+	if protect != nil {
+		if err = protect(encoded); err != nil {
+			return "", err
+		}
+	}
+	if err = writeNewKeyFile(keyPath, encoded, 0o600); err != nil {
 		return "", fmt.Errorf("write private key %s: %w", keyPath, err)
 	}
 	defer func() {

@@ -12,6 +12,7 @@ import (
 	"github.com/charmbracelet/lipgloss"
 	"github.com/michael-ltm/sshm/internal/cloudsync"
 	"github.com/michael-ltm/sshm/internal/config"
+	sshpkg "github.com/michael-ltm/sshm/internal/ssh"
 	"github.com/michael-ltm/sshm/internal/status"
 	"github.com/michael-ltm/sshm/internal/ui"
 	"github.com/michael-ltm/sshm/internal/wizard"
@@ -125,7 +126,7 @@ func chooseServer(cmd *cobra.Command, cfg *config.Config, initial string) (strin
 			if s == nil || config.DeviceConnectionID(s) != "" || s.ProxyJump != "" || s.ProxyCommand != "" || s.Proxy != "" {
 				return ui.LatencyResult{Alias: alias, Skipped: true}
 			}
-			result := status.Probe(probeContext, s, 3*time.Second)
+			result := status.ProbeWithOptions(probeContext, s, 3*time.Second, sshpkg.BuildOpts{ConfigPath: configPath()})
 			return ui.LatencyResult{Alias: alias, Duration: result.Latency, Failed: !result.Reachable}
 		}
 	}
@@ -263,7 +264,7 @@ func runServerActions(cmd *cobra.Command, alias string) (bool, error) {
 			}
 		case actionTest:
 			ctx, cancel := context.WithTimeout(cmd.Context(), 10*time.Second)
-			result := status.Probe(ctx, server, 10*time.Second)
+			result := status.ProbeWithOptions(ctx, server, 10*time.Second, sshpkg.BuildOpts{ConfigPath: configPath()})
 			cancel()
 			if err := config.RecordProbes(configPath(), map[string]config.ProbeObservation{
 				alias: config.NewProbeObservation(server, result.Reachable, result.ObservedAt),
@@ -271,7 +272,7 @@ func runServerActions(cmd *cobra.Command, alias string) (bool, error) {
 				return false, err
 			}
 			if result.Reachable {
-				fmt.Fprintf(cmd.OutOrStdout(), "%s reachable in %s\n", alias, result.Latency)
+				fmt.Fprintf(cmd.OutOrStdout(), "%s reachable via %s in %s\n", alias, result.Route, result.Latency)
 			} else {
 				fmt.Fprintf(cmd.OutOrStdout(), "%s unreachable: %s\n", alias, result.Error)
 			}

@@ -144,3 +144,20 @@ func TestHandleFindServersRejectsEmptyQuery(t *testing.T) {
 	js, _ := jsonResult(out)
 	require.Contains(t, js, "bad_request")
 }
+
+func TestCheckSSHReturnsSafeLocalCredentialCodesAndProbeRoute(t *testing.T) {
+	for _, variable := range []string{"ALL_PROXY", "all_proxy", "SOCKS5_PROXY", "socks5_proxy", "HTTPS_PROXY", "https_proxy"} {
+		t.Setenv(variable, "")
+	}
+	path := filepath.Join(t.TempDir(), "config.toml")
+	cfg := config.New()
+	cfg.Servers["target"] = &config.Server{Host: "127.0.0.1", Port: 1, User: "deploy", Auth: config.AuthCloud, CloudEntry: "entry", CloudVault: "owner"}
+	require.NoError(t, config.Save(path, cfg))
+	value, err := handleCheckSSH(context.Background(), Deps{ConfigPath: path}, map[string]any{"alias": "target", "mode": "auth"})
+	require.NoError(t, err)
+	result := value.(map[string]any)
+	require.False(t, result["ok"].(bool))
+	require.Equal(t, "direct", result["tcp"].(map[string]any)["route"])
+	require.Equal(t, "local_credential_missing", result["ssh"].(map[string]any)["code"])
+	require.Equal(t, "direct", result["ssh"].(map[string]any)["configured_route"])
+}

@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/michael-ltm/sshm/internal/config"
+	sshpkg "github.com/michael-ltm/sshm/internal/ssh"
 	"github.com/michael-ltm/sshm/internal/status"
 	"github.com/michael-ltm/sshm/internal/ui"
 	"github.com/spf13/cobra"
@@ -19,7 +20,7 @@ func newTestCmd() *cobra.Command {
 	)
 	c := &cobra.Command{
 		Use:   "test [<alias>]",
-		Short: "Test direct TCP reachability to one or all servers",
+		Short: "Test reachability through the configured SSH route",
 		Args:  cobra.MaximumNArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			cfg, _, err := loadConfig()
@@ -30,7 +31,7 @@ func newTestCmd() *cobra.Command {
 			ctx := context.Background()
 			icons := ui.ResolveIcons(cfg.UI.Icons)
 			if all || len(args) == 0 {
-				res := status.ProbeMany(ctx, cfg.Servers, to)
+				res := status.ProbeManyWithOptions(ctx, cfg.Servers, to, sshpkg.BuildOpts{ConfigPath: configPath()})
 				probes := make(map[string]config.ProbeObservation, len(res))
 				for alias, result := range res {
 					probes[alias] = config.NewProbeObservation(cfg.Servers[alias], result.Reachable, result.ObservedAt)
@@ -57,7 +58,7 @@ func newTestCmd() *cobra.Command {
 			if err != nil {
 				return err
 			}
-			r := status.Probe(ctx, s, to)
+			r := status.ProbeWithOptions(ctx, s, to, sshpkg.BuildOpts{ConfigPath: configPath()})
 			if err := config.RecordProbes(configPath(), map[string]config.ProbeObservation{
 				args[0]: config.NewProbeObservation(s, r.Reachable, r.ObservedAt),
 			}); err != nil {
@@ -69,8 +70,8 @@ func newTestCmd() *cobra.Command {
 			return printProbe(cmd, args[0], r, icons)
 		},
 	}
-	c.Flags().BoolVar(&all, "all", false, "test every configured server with a direct TCP probe")
-	c.Flags().IntVarP(&timeout, "timeout", "t", 3, "per-server direct TCP timeout (seconds)")
+	c.Flags().BoolVar(&all, "all", false, "test every configured server through their configured SSH routes")
+	c.Flags().IntVarP(&timeout, "timeout", "t", 3, "per-server route probe timeout (seconds)")
 	return c
 }
 
@@ -78,12 +79,12 @@ func printProbe(cmd *cobra.Command, alias string, r status.Result, ic ui.IconSet
 	icon := ic.Online
 	if !r.Reachable {
 		icon = ic.Offline
-		if _, err := fmt.Fprintf(cmd.OutOrStdout(), "%s %-20s offline — %s\n", icon, alias, r.Error); err != nil {
+		if _, err := fmt.Fprintf(cmd.OutOrStdout(), "%s %-20s offline via %s — %s\n", icon, alias, r.Route, r.Error); err != nil {
 			return err
 		}
 		return nil
 	}
-	if _, err := fmt.Fprintf(cmd.OutOrStdout(), "%s %-20s online  (%s)\n", icon, alias, r.Latency); err != nil {
+	if _, err := fmt.Fprintf(cmd.OutOrStdout(), "%s %-20s online via %s (%s)\n", icon, alias, r.Route, r.Latency); err != nil {
 		return err
 	}
 	return nil

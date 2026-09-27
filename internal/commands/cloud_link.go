@@ -94,6 +94,9 @@ func addCloudLinkCommands(root *cobra.Command, endpoint, username, label *string
 		if old != nil && s.Base.Revision < old.Base.Revision {
 			return errors.New("cloud history rollback detected")
 		}
+		if _, e = rememberCloudCredentials(ctx, s, v, configPath()); e != nil {
+			return e
+		}
 		if e = s.Save(path); e != nil {
 			return e
 		}
@@ -103,7 +106,7 @@ func addCloudLinkCommands(root *cobra.Command, endpoint, username, label *string
 			return e
 		}
 		if importLocal {
-			report, e := v.Data.Import(cfg, s.DeviceID, true)
+			report, e := v.Data.ImportProtected(ctx, cfg, s.DeviceID, true, localCredentialStore(configPath()), cloudsync.InventoryIdentity(s))
 			if e != nil {
 				return e
 			}
@@ -181,6 +184,19 @@ func runCloudAgent(ctx context.Context, cmd *cobra.Command, state *cloudsync.Sta
 			fmt.Fprintln(cmd.ErrOrStderr(), "Local SSH identities not loaded: configuration could not be read.")
 			return
 		}
+		if store := localCredentialStore(configPath()); store.Enabled() {
+			report, err := cloudsync.RememberVault(ctx, s, unlocked, cfg, store)
+			if err != nil {
+				fmt.Fprintln(cmd.ErrOrStderr(), "Local credential refresh unavailable; existing encrypted credentials retained.")
+				return
+			}
+			status := fmt.Sprintf("Local credentials: %d connections ready; %d keys need one-time migration.\n", report.Loaded, len(report.Skipped))
+			if status != lastLoadStatus {
+				fmt.Fprint(cmd.OutOrStdout(), status)
+				lastLoadStatus = status
+			}
+			return
+		}
 		report, err := cloudsync.LoadMatchingKeysIntoAgent(s, unlocked, cfg, configPath())
 		if err != nil {
 			fmt.Fprintln(cmd.ErrOrStderr(), "Local SSH identities not fully loaded; check the local Agent and vault ownership.")
@@ -204,7 +220,7 @@ func runCloudAgent(ctx context.Context, cmd *cobra.Command, state *cloudsync.Sta
 		fmt.Fprintln(cmd.ErrOrStderr(), "Local SSH Agent could not be started; check the local Agent configuration.")
 	}
 	preload(state, v)
-	fmt.Fprintf(cmd.OutOrStdout(), "Cloud agent running; web shell enabled: %t. Master stays in process memory; restart requires unlock or browser approval.\n", allowShell)
+	fmt.Fprintf(cmd.OutOrStdout(), "Cloud synchronization running; web shell enabled: %t. Saved local SSH credentials remain available independently.\n", allowShell)
 	if allowShell {
 		state.RuntimeVersion = Version
 		go func() { errorsCh <- cloudagent.ServeTargets(ctx, state, v, configPath()) }()

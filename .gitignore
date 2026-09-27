@@ -28,3 +28,9 @@ coverage.html
 /cloud/src/account-bundle.ts
 
 /cloud/src/terminal-style.ts
+
+# Private recovery evidence and local diagnostic helpers
+/.recovery-*
+/.superpowers/
+/2026-09-09-prod-go-prod-dev-key-recovery.md
+/docs/2026-09-10-prod-key-recovery-progress.md

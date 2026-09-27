@@ -125,7 +125,12 @@ func matchingAgentEntry(data Data, server *config.Server, owner string) (Entry, 
 		// The route is independent of whether the local client describes its
 		// signer as a file, an Agent identity, or a cloud inventory marker.
 		local.Auth = entry.Server.Auth
-		return EntryID(local) == EntryID(cleanServer(entry.Server))
+		remote := cleanServer(entry.Server)
+		if server.CloudEntry != "" && server.CloudVault == owner {
+			local.Proxy, local.ProxyJump, local.ProxyCommand, local.Forwards = "", "", "", nil
+			remote.Proxy, remote.ProxyJump, remote.ProxyCommand, remote.Forwards = "", "", "", nil
+		}
+		return EntryID(local) == EntryID(remote)
 	}
 	if server.CloudEntry != "" {
 		entry, exists := data.Entries[server.CloudEntry]

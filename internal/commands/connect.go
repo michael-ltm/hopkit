@@ -41,7 +41,7 @@ func newConnectCmd() *cobra.Command {
 }
 
 func connect(alias string, s *config.Server, insecure bool, activeConfigPath string) error {
-	if (s.Auth == config.AuthCloud || s.CloudEntry != "") && !sshpkg.HasLocalAuth(s, sshpkg.BuildOpts{ConfigPath: activeConfigPath, Alias: alias}) {
+	if !localCredentialStore(activeConfigPath).Enabled() && (s.Auth == config.AuthCloud || s.CloudEntry != "") && !sshpkg.HasLocalAuth(s, sshpkg.BuildOpts{ConfigPath: activeConfigPath, Alias: alias}) {
 		arg := s.CloudEntry
 		if arg == "" {
 			arg = alias
@@ -50,7 +50,7 @@ func connect(alias string, s *config.Server, insecure bool, activeConfigPath str
 			return fmt.Errorf("cloud connection index needs rebuilding; run sshm cloud sync to unlock and restore it")
 		}
 		if !term.IsTerminal(int(os.Stdin.Fd())) {
-			return fmt.Errorf("no local SSH identity is available; run 'sshm cloud agent' locally to unlock and load it")
+			return fmt.Errorf("no local SSH credential is registered; run 'sshm service setup' once in a local terminal")
 		}
 		return runCloudReference(&cobra.Command{}, s, []string{arg}, false, 0)
 	}
@@ -64,8 +64,11 @@ func connect(alias string, s *config.Server, insecure bool, activeConfigPath str
 
 func dialInteractive(alias string, s *config.Server, insecure bool, activeConfigPath string) (*sshpkg.Client, error) {
 	opts := sshpkg.BuildOpts{Insecure: insecure, ConfigPath: activeConfigPath, Alias: alias}
+	if err := sshpkg.CheckLocalCredentials(s, opts); err != nil {
+		return nil, err
+	}
 	var password []byte
-	if s.Auth == config.AuthPassword {
+	if s.Auth == config.AuthPassword && !sshpkg.HasLocalAuth(s, opts) {
 		if !term.IsTerminal(int(os.Stdin.Fd())) {
 			return nil, fmt.Errorf("auth=password requires an interactive terminal; use key or agent auth for automation")
 		}

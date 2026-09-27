@@ -67,6 +67,7 @@ func NewRoot() *cobra.Command {
 		newStatusCmd(),
 		newInitCmd(),
 		newMcpCmd(),
+		newServiceCmd(),
 	)
 
 	// Convenient account entry points retain the cloud subcommands and their flags.

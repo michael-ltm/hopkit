@@ -1,3 +1,4 @@
+import {exportableKeys,exportKey,downloadKey} from './key-export.js';
 import { deviceVersion } from './device-version.js';
 import { installControls, refreshControls, closeControls, confirmAction } from './controls.js';
 import { hardwareCells, closeHardware } from './hardware.js';
@@ -47,7 +48,7 @@ function navigate(name,{replace=false,writeHistory=true}={}){
  if(writeHistory&&(session||home)&&location.pathname!==path)history[replace?'replaceState':'pushState']({},'',path);
 }
 window.addEventListener('popstate',()=>{navigate(routeFromPath(),{writeHistory:false});if(!session&&page!=='landing'&&!$('#login-dialog').open)showLogin();});
-function lock(){approvalEpoch++;cancelUnlock();closeControls();closeHardware();if($('#server-terminal-dialog').open)$('#server-terminal-dialog').close();serverTarget=null;clearTimeout(backgroundTimer);pendingLink=null;if($('#link-dialog').open)$('#link-dialog').close();document.querySelector('.row-menu')?.remove();stopTerminal();unlockEpoch++;selectedServers.clear();serverPage=0;$('#server-bulkbar').hidden=true;for(const id of ['delete-dialog','job-dialog'])if($('#'+id).open)$('#'+id).close();deleteIDs=[];if($('#bulk-dialog').open)$('#bulk-dialog').close();clearTimeout(lockTimer);$('#server-form').reset();$('#server-group').replaceChildren(new Option('所有分组',''));$('#server-search').value='';vault?.close();vault=null;$$('#pending-links button.primary').forEach(b=>{b.disabled=false;b.textContent='解锁并批准';});$('#vault-unlock').hidden=false;$('#vault-content').hidden=true;$('#vault-lock').hidden=true;$('#server-rows').replaceChildren();if($('#server-dialog').open)$('#server-dialog').close();renderDevices();install();if(session)refreshJobs().catch(e=>flash(e.message));}
+function lock(){approvalEpoch++;cancelUnlock();closeControls();closeHardware();if($('#server-terminal-dialog').open)$('#server-terminal-dialog').close();serverTarget=null;clearTimeout(backgroundTimer);pendingLink=null;if($('#link-dialog').open)$('#link-dialog').close();document.querySelector('.row-menu')?.remove();stopTerminal();unlockEpoch++;selectedServers.clear();serverPage=0;$('#server-bulkbar').hidden=true;for(const id of ['delete-dialog','job-dialog','key-export-dialog'])if($('#'+id).open)$('#'+id).close();deleteIDs=[];if($('#bulk-dialog').open)$('#bulk-dialog').close();clearTimeout(lockTimer);$('#server-form').reset();$('#server-group').replaceChildren(new Option('所有分组',''));$('#server-search').value='';vault?.close();vault=null;$$('#pending-links button.primary').forEach(b=>{b.disabled=false;b.textContent='解锁并批准';});$('#vault-unlock').hidden=false;$('#vault-content').hidden=true;$('#vault-lock').hidden=true;$('#server-rows').replaceChildren();if($('#server-dialog').open)$('#server-dialog').close();renderDevices();install();if(session)refreshJobs().catch(e=>flash(e.message));}
 function active(){if(vault){clearTimeout(lockTimer);lockTimer=setTimeout(()=>{lock();flash('保险库因闲置已自动锁定。');},300_000);}}
 for(const event of ['pointerdown','keydown'])document.addEventListener(event,active);document.addEventListener('visibilitychange',()=>{clearTimeout(backgroundTimer);if(document.hidden){stopTerminal();backgroundTimer=setTimeout(lock,60_000);}});window.addEventListener('pagehide',lock);
 async function refresh(forceRelease=false){if(forceRelease||Date.now()-releaseChecked>300_000){releaseChecked=Date.now();latestRelease().then(v=>{releaseVersion=v;renderDevices();renderServers();}).catch(()=>{});}const [d,a]=await Promise.all([api('devices'),api('agents')]);devices=d.devices;agents=a.agents;renderDevices();renderSessions();await renderLinks();await refreshUnlockedVault();await refreshJobs();}
@@ -131,7 +132,7 @@ function renderServers(){
   const deviceTarget=deviceConnectionId(s);const host=node('td'),address=node('div','mono',deviceTarget?'SSHM 客户端':s.Host+':'+s.Port);address.title=address.textContent;host.append(address,node('div','sub',deviceTarget?'密钥签名 · 端到端加密':s.User+' · '+({key:'私钥',password:'密码',agent:'Agent'}[s.Auth]||s.Auth)));
   const grouping=node('td'),groupLabel=node('div','sub',s.Group||'未分组');groupLabel.title=s.Group||'';grouping.append(groupLabel,compactTags(s.Tags));
   const activity=vault.data.activity?.[e.id]||{},authentication=node('td');const observation=activityStatus(activity);authentication.append(node('div','connection-state '+observation.kind,observation.label),timestamp(activity.last_connected,'成功连接'));authentication.title=(names[activity.platform]||'系统待识别')+' · '+observation.detail+(activity.last_seen?'；最近可达：'+new Date(activity.last_seen).toLocaleString():'');
-  const action=node('td','table-actions');if(vault.data.conflicts[e.id])action.append(node('span','tag','冲突'));action.append(rowMenu(e.aliases[0],[...(vault.data.conflicts[e.id]?[]:[['编辑连接',()=>editServer(e)]]),['连接终端',()=>openServerTerminal(e)],['删除连接',()=>openDelete([e.id]),'danger'],[deviceTarget?'复制设备名称':'复制连接地址',()=>navigator.clipboard.writeText(deviceTarget?e.aliases[0]:s.User+'@'+s.Host+':'+s.Port).then(()=>flash('连接地址已复制。'),()=>flash('复制失败。'))]]));const installation=node('td');installation.append(clientBadge(activity));tr.append(check,name,host,grouping,...hardwareCells(activity.hardware,activity.platform,e.aliases[0]),authentication,installation,action);rows.append(tr);
+  const action=node('td','table-actions');if(vault.data.conflicts[e.id])action.append(node('span','tag','冲突'));action.append(rowMenu(e.aliases[0],[...(vault.data.conflicts[e.id]?[]:[['编辑连接',()=>editServer(e)]]),['连接终端',()=>openServerTerminal(e)],...(!vault.data.conflicts[e.id]&&exportableKeys(vault.data,e.id).length?[['导出私钥',()=>openKeyExport(e.id)]]:[]),['删除连接',()=>openDelete([e.id]),'danger'],[deviceTarget?'复制设备名称':'复制连接地址',()=>navigator.clipboard.writeText(deviceTarget?e.aliases[0]:s.User+'@'+s.Host+':'+s.Port).then(()=>flash('连接地址已复制。'),()=>flash('复制失败。'))]]));const installation=node('td');installation.append(clientBadge(activity));tr.append(check,name,host,grouping,...hardwareCells(activity.hardware,activity.platform,e.aliases[0]),authentication,installation,action);rows.append(tr);
  }
  $('#server-empty').hidden=shown.length>0;$('#server-summary').textContent=visible.length+' / '+entries.length+' 个连接 · 云版本 '+vault.snapshot.revision+(Object.keys(vault.data.conflicts).length?' · '+Object.keys(vault.data.conflicts).length+' 个冲突':'');
  $('#server-table').closest('.table-wrap').classList.toggle('comfortable',$('#server-density').value==='comfortable');
@@ -140,6 +141,23 @@ function renderServers(){
  pagination('server-pagination',visible.length,serverPage,p=>{serverPage=p;renderServers();});
 }
 for(const id of ['server-search','server-group','server-auth'])$('#'+id).oninput=()=>{serverPage=0;renderServers();};$('#server-density').onchange=renderServers;
+let keyExportTarget=null;
+function openKeyExport(id){
+ if(!vault)return ensureVault('导出私钥',()=>openKeyExport(id));
+ try{
+  const keys=exportableKeys(vault.data,id);if(!keys.length)throw Error('该连接没有可导出的私钥。');
+  keyExportTarget=id;const form=$('#key-export-form');form.reset();
+  form.elements.credential.replaceChildren(...keys.map(c=>new Option(c.fingerprint,c.id)));
+  $('#key-export-target').textContent=vault.data.entries[id].aliases[0];
+  $('#key-export-error').textContent='';$('#key-export-dialog').showModal();
+ }catch(e){flash(e.message);}
+}
+$('#key-export-dialog').addEventListener('close',()=>{keyExportTarget=null;$('#key-export-form').reset();$('#key-export-form').elements.credential.replaceChildren();$('#key-export-target').textContent='';$('#key-export-error').textContent='';});
+$('#key-export-form').onsubmit=event=>{
+ event.preventDefault();
+ try{const result=exportKey(vault?.data,keyExportTarget,event.currentTarget.elements.credential.value);downloadKey(result);$('#key-export-dialog').close();flash('已发起私钥下载，请在浏览器下载列表中查看。');}
+ catch(e){$('#key-export-error').textContent=e.message;}
+};
 function editServer(e){if(!vault)return ensureVault(e?'编辑服务器':'添加服务器',()=>{const latest=e?vault.data.entries[e.id]:undefined;if(e&&(!latest||vault.data.deleted[e.id]||vault.data.conflicts[e.id]))throw Error('连接已改变，请刷新后重新选择。');editServer(latest);});const f=$('#server-form'),s=e?.server||{};f.reset();f.elements.id.value=e?.id||'';f.elements.alias.value=e?.aliases[0]||'';for(const [field,key] of [['host','Host'],['user','User'],['group','Group'],['description','Description']])f.elements[field].value=s[key]||'';f.elements.port.value=s.Port||22;f.elements.auth.value=s.Auth||'agent';f.elements.auth.disabled=!!e;for(const key of ['host','port','user'])f.elements[key].disabled=!!deviceConnectionId(s);for(const key of ['host','port','user','auth'])f.elements[key].closest('label').hidden=!!deviceConnectionId(s);f.elements.tags.value=(s.Tags||[]).join(', ');$('#server-dialog-title').textContent=e?'编辑服务器':'添加服务器';$('#delete-server').hidden=!e;$('#server-error').textContent='';$('#server-dialog').showModal();}
 $('#add-server').onclick=()=>editServer();
 async function saveVault(next){savingVault=true;try{await commitVault(next);}finally{savingVault=false;}}

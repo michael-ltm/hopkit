@@ -13,6 +13,7 @@ import (
 
 // Client is one connected SSH session owner. NOT safe for concurrent use.
 type Client struct {
+	route   transportKind
 	server  *config.Server
 	conn    *gssh.Client
 	closers []io.Closer // auxiliary resources (e.g. ssh-agent socket) to close
@@ -126,10 +127,13 @@ func Dial(s *config.Server, opts BuildOpts) (_ *Client, dialErr error) {
 			reportActivityError(opts, err)
 		}
 	}
-	result := &Client{server: s, conn: client, closers: closers}
+	result := &Client{server: s, conn: client, closers: closers, route: kind}
 	result.detectManagedPlatform(s, opts, activityPath)
 	return result, nil
 }
+
+// Route reports the transport that completed this SSH handshake, including fallback.
+func (c *Client) Route() string { return c.route.String() }
 
 // Close terminates the underlying TCP connection AND all auxiliary closers.
 func (c *Client) Close() error {

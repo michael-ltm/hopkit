@@ -203,16 +203,16 @@ func addWizard(cmd *cobra.Command, cfg *config.Config) error {
 	}
 
 	if in.TestAfter {
-		r := status.Probe(context.Background(), srv, 0)
+		r := status.ProbeWithOptions(context.Background(), srv, 0, sshpkg.BuildOpts{ConfigPath: configPath()})
 		if err := config.RecordProbes(configPath(), map[string]config.ProbeObservation{
 			in.Alias: config.NewProbeObservation(srv, r.Reachable, r.ObservedAt),
 		}); err != nil {
 			return err
 		}
 		if r.Reachable {
-			fmt.Fprintf(cmd.OutOrStdout(), "test: reachable in %s\n", r.Latency)
+			fmt.Fprintf(cmd.OutOrStdout(), "test: reachable via %s in %s\n", r.Route, r.Latency)
 		} else {
-			fmt.Fprintf(cmd.OutOrStdout(), "test: unreachable — %s\n", r.Error)
+			fmt.Fprintf(cmd.OutOrStdout(), "test: unreachable via %s — %s\n", r.Route, r.Error)
 		}
 	}
 

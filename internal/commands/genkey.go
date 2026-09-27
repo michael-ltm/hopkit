@@ -44,18 +44,22 @@ func newGenKeyCmd() *cobra.Command {
 					return err
 				}
 			}
-			pub, err := keys.GenerateED25519Encrypted(expanded, args[0]+"@sshm", passphrase)
+			pub, err := generateLocalKey(cmd, expanded, args[0]+"@sshm", passphrase)
 			if err != nil {
 				return err
 			}
 
 			var store keystore.Result
 			if passphrase != "" {
-				// Best-effort: the encrypted key on disk is the primary
-				// deliverable and is valid regardless of agent/keychain
-				// availability (e.g. a headless host with no ssh-agent), so
-				// a keystore failure must not fail gen-key or orphan the key.
-				store = keystore.BestEffort(keystore.StoreAndLoad(expanded, passphrase))
+				managed, err := rememberGeneratedKey(cmd, expanded, passphrase)
+				if err != nil {
+					return fmt.Errorf("save generated encrypted key: %w; original key retained at %q", err, expanded)
+				}
+				if managed {
+					store.Persisted = true
+				} else {
+					store = keystore.BestEffort(keystore.StoreAndLoad(expanded, passphrase))
+				}
 			}
 
 			if err := config.Update(configPath(), func(latest *config.Config) error {
@@ -84,10 +88,10 @@ func newGenKeyCmd() *cobra.Command {
 			fmt.Fprintln(out, expanded)
 			fmt.Fprintln(out, pub)
 			if passphrase != "" {
-				fmt.Fprintln(out, "Keep your key passphrase in your password manager; no recovery file was written.")
 				if store.Persisted {
-					fmt.Fprintln(out, "Stored in keychain — you won't be prompted again.")
+					fmt.Fprintln(out, "Encrypted key saved for this device; future connections do not require unlocking.")
 				} else if store.Note != "" {
+					fmt.Fprintln(out, "Keep your supplied key passphrase in your password manager.")
 					fmt.Fprintf(out, "Note: %s\n", store.Note)
 				}
 			}

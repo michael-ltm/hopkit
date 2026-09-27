@@ -2,6 +2,7 @@ package commands
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	gssh "golang.org/x/crypto/ssh"
 	"os"
@@ -10,6 +11,8 @@ import (
 	"testing"
 
 	"github.com/michael-ltm/sshm/internal/config"
+	"github.com/michael-ltm/sshm/internal/devicekey"
+	"github.com/michael-ltm/sshm/internal/localstore"
 	"github.com/stretchr/testify/require"
 )
 
@@ -123,7 +126,16 @@ func TestGenKeyRejectsConflictingPassphraseFlagsBeforeWriting(t *testing.T) {
 	require.NoFileExists(t, path)
 }
 
-func TestGenKeyWithoutTerminalDoesNotCreateAnUnrecoverableKey(t *testing.T) {
+type unavailableDeviceProtector struct{}
+
+func (unavailableDeviceProtector) Seal(context.Context, string, []byte) (string, []byte, error) {
+	return "", nil, devicekey.ErrUnavailable
+}
+func (unavailableDeviceProtector) Open(context.Context, string, string, []byte) ([]byte, error) {
+	return nil, devicekey.ErrUnavailable
+}
+
+func TestGenKeyWithoutDeviceProtectionDoesNotCreateAnUnrecoverableKey(t *testing.T) {
 	dir := t.TempDir()
 	cfgPath := filepath.Join(dir, "config.toml")
 	cfg := config.New()
@@ -131,6 +143,13 @@ func TestGenKeyWithoutTerminalDoesNotCreateAnUnrecoverableKey(t *testing.T) {
 	require.NoError(t, config.Save(cfgPath, cfg))
 	oldPath, oldJSON, oldStdin := flagConfigPath, flagJSON, os.Stdin
 	flagConfigPath, flagJSON = cfgPath, false
+	oldStore := localCredentialStore
+	localCredentialStore = func(path string) *localstore.Store {
+		s := localstore.New(path)
+		s.Protector = unavailableDeviceProtector{}
+		return s
+	}
+	t.Cleanup(func() { localCredentialStore = oldStore })
 	input, err := os.CreateTemp(dir, "input")
 	require.NoError(t, err)
 	os.Stdin = input
@@ -142,7 +161,7 @@ func TestGenKeyWithoutTerminalDoesNotCreateAnUnrecoverableKey(t *testing.T) {
 	cmd.SetErr(&bytes.Buffer{})
 	err = cmd.Execute()
 	require.Error(t, err)
-	require.Contains(t, err.Error(), "interactive terminal")
+	require.ErrorIs(t, err, devicekey.ErrUnavailable)
 	require.NoFileExists(t, path)
 	require.NoFileExists(t, path+".passphrase")
 }

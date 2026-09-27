@@ -14,6 +14,7 @@ import (
 	"time"
 
 	"github.com/michael-ltm/sshm/internal/config"
+	"github.com/michael-ltm/sshm/internal/localstore"
 	gssh "golang.org/x/crypto/ssh"
 )
 
@@ -25,6 +26,8 @@ func (nopCloser) Close() error { return nil }
 // BuildOpts is non-persistent input gathered at connect time (e.g. password
 // prompted from TTY). Never write the contents of BuildOpts to disk.
 type BuildOpts struct {
+	// LocalStore overrides the device credential store (normally derived from ConfigPath).
+	LocalStore *localstore.Store
 	// StrictRoute restricts transport to the configured route: environment
 	// proxies and direct fallback after proxy or jump failure are disabled.
 	StrictRoute bool
@@ -130,6 +133,9 @@ func Address(s *config.Server) string {
 }
 
 func buildAuth(s *config.Server, opts BuildOpts) ([]gssh.AuthMethod, io.Closer, error) {
+	if methods, handled, err := managedAuth(s, opts); handled {
+		return methods, nil, err
+	}
 	switch s.Auth {
 	case config.AuthKey, config.AuthCloud:
 		if len(opts.Signers) > 0 {
@@ -144,7 +150,7 @@ func buildAuth(s *config.Server, opts BuildOpts) ([]gssh.AuthMethod, io.Closer, 
 			keyErr = err
 		}
 		// An unlocked vault identity is usable only when its public key was
-		// cached for this exact route and cloud binding, never by alias alone.
+		// cached for this exact target and cloud binding, never by alias alone.
 		signers, closer, err := loadLocalAgentSigners(opts.ConfigPath, s)
 		if err == nil {
 			return []gssh.AuthMethod{gssh.PublicKeys(signers...)}, closer, nil
@@ -152,7 +158,15 @@ func buildAuth(s *config.Server, opts BuildOpts) ([]gssh.AuthMethod, io.Closer, 
 		if s.Auth == config.AuthKey {
 			return nil, nil, keyErr
 		}
-		return nil, nil, errors.New("no local SSH identity is available; run 'sshm cloud agent' locally to unlock and load it")
+		code, message := "local_binding_invalid", "local SSH identity binding is invalid; repair the target credential mapping"
+		if errors.Is(err, os.ErrNotExist) {
+			code, message = "local_credential_missing", "no local SSH credential is registered for this target; run 'sshm service setup' once in a local terminal"
+		} else if errors.Is(err, errLocalAgentUnavailable) {
+			code, message = "local_agent_unavailable", "local SSH Agent is unavailable; start the local Agent service"
+		} else if errors.Is(err, errLocalIdentityUnavailable) {
+			code, message = "local_identity_unavailable", "the local SSH Agent does not hold this target identity; restore the local credential into the Agent"
+		}
+		return nil, nil, &LocalAuthError{Code: code, Message: message}
 	case config.AuthPassword:
 		if opts.Password == "" {
 			return nil, nil, errors.New("password not provided for auth=password")

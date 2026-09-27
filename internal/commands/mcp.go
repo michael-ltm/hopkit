@@ -1,17 +1,20 @@
 package commands
 
 import (
+	"context"
 	"fmt"
 	"time"
 
 	"github.com/mark3labs/mcp-go/server"
 	"github.com/michael-ltm/sshm/internal/config"
+	"github.com/michael-ltm/sshm/internal/localservice"
 	mcppkg "github.com/michael-ltm/sshm/internal/mcp"
 	"github.com/spf13/cobra"
 )
 
 func newMcpCmd() *cobra.Command {
 	return newMcpCmdWithRunner(func(readOnly bool, cloudAuth string, policy mcppkg.CloudSessionPolicy) error {
+		_ = localservice.Ensure(context.Background(), configPath())
 		var session *mcppkg.CloudSession
 		if cloudAuth == "browser" {
 			var err error

@@ -14,13 +14,15 @@ import (
 	"unicode/utf16"
 
 	"github.com/michael-ltm/sshm/internal/config"
+	"github.com/michael-ltm/sshm/internal/localstore"
 	sshpkg "github.com/michael-ltm/sshm/internal/ssh"
+	"github.com/michael-ltm/sshm/internal/testutil"
 	"github.com/stretchr/testify/require"
 	gssh "golang.org/x/crypto/ssh"
 )
 
-func TestHandleGenKeyRequiresProtectedPassphraseFile(t *testing.T) {
-	for _, kind := range []string{"missing", "insecure", "symlink", "inline"} {
+func TestHandleGenKeyRejectsUnsafePassphraseInput(t *testing.T) {
+	for _, kind := range []string{"insecure", "symlink", "inline"} {
 		t.Run(kind, func(t *testing.T) {
 			if runtime.GOOS == "windows" && (kind == "insecure" || kind == "symlink") {
 				t.Skip("Unix file protections")
@@ -100,13 +102,41 @@ func TestHandleGenKeyUsesSuppliedPassphraseWithoutSidecar(t *testing.T) {
 	require.Equal(t, config.AuthKey, updated.Servers["srv"].Auth)
 }
 
-func TestGenKeySchemaRequiresFileAndRejectsSecretInputs(t *testing.T) {
+func TestGenKeySchemaDefaultsToDeviceProtectionAndRejectsSecretInputs(t *testing.T) {
 	s, _ := NewServer(Deps{AllowWrite: true})
 	tool := s.GetTool("gen_key")
 	require.NotNil(t, tool)
-	require.Contains(t, tool.Tool.InputSchema.Required, "passphrase_file")
+	require.NotContains(t, tool.Tool.InputSchema.Required, "passphrase_file")
 	require.NotContains(t, tool.Tool.InputSchema.Properties, "passphrase")
 	require.Equal(t, false, tool.Tool.InputSchema.AdditionalProperties)
+}
+
+func TestMCPGenKeyPersistsOnDeviceWithoutSecretInputs(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "config.toml")
+	keyPath := filepath.Join(dir, "key")
+	cfg := config.New()
+	cfg.Servers["fixture"] = &config.Server{Host: "fixture.invalid", User: "fixture", Auth: config.AuthKey}
+	require.NoError(t, config.Save(path, cfg))
+	store := localstore.New(path)
+	store.Protector = testutil.NewDeviceProtector()
+	deps := Deps{ConfigPath: path, LocalStore: store, AuditPath: filepath.Join(dir, "audit")}
+	out, err := handleGenKey(context.Background(), deps, map[string]any{"alias": "fixture", "path": keyPath, "reason": "pair fixture"})
+	require.NoError(t, err)
+	js, err := jsonResult(out)
+	require.NoError(t, err)
+	require.NotContains(t, js, "error")
+	require.Contains(t, js, `"persisted": true`)
+	data, err := os.ReadFile(keyPath)
+	require.NoError(t, err)
+	_, err = gssh.ParsePrivateKey(data)
+	require.Error(t, err)
+	fresh := localstore.New(path)
+	fresh.Protector = store.Protector
+	cfg, err = config.Load(path)
+	require.NoError(t, err)
+	require.True(t, sshpkg.HasLocalAuth(cfg.Servers["fixture"], sshpkg.BuildOpts{LocalStore: fresh}))
+	require.NoFileExists(t, keyPath+".passphrase")
 }
 
 func TestHandleTailLogs_RequiresReason(t *testing.T) {

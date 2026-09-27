@@ -146,8 +146,8 @@ func TestLocalCloudCLIWithoutIdentityExplainsLocalUnlock(t *testing.T) {
 	t.Cleanup(func() { flagConfigPath = previous })
 	cmd := newExecCmd()
 	cmd.SetArgs([]string{"local-test", "hostname"})
-	require.ErrorContains(t, cmd.Execute(), "sshm cloud agent")
-	require.ErrorContains(t, connect("local-test", target, false, path), "sshm cloud agent")
+	require.ErrorContains(t, cmd.Execute(), "sshm service setup")
+	require.ErrorContains(t, connect("local-test", target, false, path), "sshm service setup")
 	require.Zero(t, accepted.Load())
 }
 
@@ -179,8 +179,8 @@ func TestCloudLinkedAgentCLIWithoutSignersExplainsLocalUnlock(t *testing.T) {
 	t.Cleanup(func() { flagConfigPath = previous })
 	cmd := newExecCmd()
 	cmd.SetArgs([]string{"local-test", "hostname"})
-	require.ErrorContains(t, cmd.Execute(), "sshm cloud agent")
-	require.ErrorContains(t, connect("local-test", target, false, path), "sshm cloud agent")
+	require.ErrorContains(t, cmd.Execute(), "sshm service setup")
+	require.ErrorContains(t, connect("local-test", target, false, path), "sshm service setup")
 	require.Zero(t, accepted.Load())
 }
 
@@ -252,5 +252,6 @@ func TestLocalDefaultMCPExecAndBrowserFailClosedWithExistingAgent(t *testing.T) 
 	require.NoError(t, err)
 	encoded, err := json.Marshal(result)
 	require.NoError(t, err)
-	require.Contains(t, string(encoded), "sshm cloud agent")
+	require.Contains(t, string(encoded), "restore the local credential into the Agent")
+	require.NotContains(t, string(encoded), "sshm service setup")
 }

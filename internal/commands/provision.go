@@ -88,7 +88,7 @@ func newProvisionCmd() *cobra.Command {
 					if gerr != nil {
 						return "", gerr
 					}
-					pub, gerr := keys.GenerateED25519Encrypted(expanded, args[0]+"@sshm", passphrase)
+					pub, gerr := generateLocalKey(cmd, expanded, args[0]+"@sshm", passphrase)
 					if gerr != nil {
 						return "", gerr
 					}
@@ -98,13 +98,17 @@ func newProvisionCmd() *cobra.Command {
 					// confirmed the key works (see keyConfirmed in runProvision).
 					s.KeyPath = actualPath
 					s.Auth = config.AuthKey
-					store, serr := keystore.StoreAndLoad(expanded, passphrase)
+					managed, serr := rememberGeneratedKey(cmd, expanded, passphrase)
 					if serr != nil {
 						return "", serr
 					}
-					fmt.Fprintln(cmd.OutOrStdout(), "Keep your key passphrase in your password manager; no recovery file was written.")
-					if !store.Persisted && store.Note != "" {
-						fmt.Fprintf(cmd.OutOrStdout(), "Note: %s\n", store.Note)
+					if !managed {
+						if _, serr = keystore.StoreAndLoad(expanded, passphrase); serr != nil {
+							return "", serr
+						}
+						fmt.Fprintln(cmd.OutOrStdout(), "Keep your supplied key passphrase in your password manager.")
+					} else {
+						fmt.Fprintln(cmd.OutOrStdout(), "Encrypted key saved for this device.")
 					}
 					return pub, nil
 				},

@@ -7,10 +7,19 @@ import (
 	"strings"
 )
 
+// LocalAuthError carries a safe actionable code without disclosing cache data.
+type LocalAuthError struct{ Code, Message string }
+
+func (e *LocalAuthError) Error() string { return e.Message }
+
 // FailureCategory is safe to persist/sync: no hosts, credentials or stderr.
 func FailureCategory(err error) string {
 	if err == nil {
 		return ""
+	}
+	var local *LocalAuthError
+	if errors.As(err, &local) {
+		return local.Code
 	}
 	var n net.Error
 	if errors.Is(err, context.DeadlineExceeded) || (errors.As(err, &n) && n.Timeout()) {

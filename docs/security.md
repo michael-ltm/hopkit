@@ -8,18 +8,33 @@
 - Private keys are never read except when about to be used, never logged,
   and never returned through the MCP server. Generated private keys use `0600` on POSIX and a protected DACL granting
   access only to the current user and LocalSystem on Windows.
-- New encrypted keys from `gen-key`, `provision`, and `pair` prompt for a
-  user-managed passphrase without echo and confirm it twice. They do not print
-  the passphrase or write a `.passphrase` recovery sidecar. Keep a strong,
-  unique passphrase in your password manager; the SSH agent may lose keys at
-  logout or reboot. Use `ssh-add <key-path>` to unlock a saved key again.
-- For automation, explicitly provide `--passphrase-file <private-file>` (MCP:
-  `passphrase_file`). SSHM only reads this file; it does not create or delete it.
-  It must be a regular non-symlink file, at most 1024 bytes with one nonempty
-  line, and private on POSIX (`0600`). Windows currently refuses passphrase
-  files because ACL validation is not implemented; use the interactive prompt. Keep the input file separate from key backups and never put its contents
-  in command arguments, chat, or logs. `--no-encrypt` remains an explicit CLI
-  opt-out and cannot be combined with `--passphrase-file`.
+- New encrypted keys from `gen-key`, `provision`, `pair` and MCP `gen_key`
+  automatically generate strong protection material. The device-protected local
+  store saves and verifies recovery before key files are written. No passphrase
+  is printed or written to a plaintext sidecar. Legacy import is explicit via
+  `sshm service setup`; source files are retained. Setup tries each configured
+  key's existing private `.passphrase` sidecar, including legacy comment headers,
+  and verifies the key before saving it. Unsafe or unusable sidecars and missing
+  secrets are reported and skipped. `sshm service setup --ask-passphrases` opts
+  into local prompts for known SSH secrets; empty or wrong key passphrases skip
+  that identity. A locked, corrupt or unavailable protected store remains an error.
+- Local credentials use a versioned AES-256-GCM envelope. Its data key is protected
+  outside the SSHM data directory by Linux user-scoped systemd credentials
+  (Secret Service fallback on creation), macOS Keychain (native CGO build), or
+  Windows user DPAPI. Failed decryption never overwrites the original or falls
+  back to plaintext. The same user's authorized applications can use these
+  credentials; device protection is not isolation from a compromised login.
+- Cloud account passwords are not persisted locally. The server stores salted
+  password hashes. CLI bearer tokens and remembered vault masters are encrypted
+  in the local store; cloud snapshots remain end-to-end encrypted. Migrating a
+  legacy plaintext-token state creates an encrypted recovery snapshot before
+  replacement. `cloud logout` clears account secrets and retains independent SSH
+  credentials; `service lock` blocks local authentication across restarts.
+- Optionally provide `--passphrase-file <private-file>` (MCP: `passphrase_file`)
+  for user-managed keys. SSHM reads but does not create/delete it. It must be a
+  regular non-symlink file, at most 1024 bytes with one nonempty line, private on
+  POSIX. Windows passphrase-file ACL validation is unavailable; omit this option
+  to use device protection. `--no-encrypt` remains an explicit CLI opt-out.
 - Existing `.passphrase` files are preserved. Copying an encrypted private key
   together with its plaintext sidecar defeats the file encryption. Migrate old
   sidecars only after verifying durable encrypted recovery and key usability;

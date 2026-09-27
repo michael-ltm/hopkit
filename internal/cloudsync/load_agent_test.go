@@ -132,7 +132,7 @@ func TestLoadMatchingKeysIntoAgentReusableSigningAndPublicOnlyCache(t *testing.T
 
 func TestLoadMatchingKeysIntoAgentRejectsUnsafeSelection(t *testing.T) {
 	credential, _, _ := loadTestCredential(t, "")
-	for _, test := range []string{"deleted", "conflicted", "wrong-owner", "wrong-account", "wrong-root", "route-host", "route-user", "route-port", "route-jump", "route-command", "route-proxy", "route-forwards", "fingerprint", "alias-only", "ambiguous-route"} {
+	for _, test := range []string{"deleted", "conflicted", "wrong-owner", "wrong-account", "wrong-root", "route-host", "route-user", "route-port", "fingerprint", "alias-only", "ambiguous-route"} {
 		t.Run(test, func(t *testing.T) {
 			a := startLoadTestAgent(t)
 			s, v, cfg, path := loadTestVault(t, credential)
@@ -249,4 +249,19 @@ func TestLoadMatchingKeysIntoAgentNativeAgentUsesUniqueFullRoute(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, 1, report.Loaded)
 	require.Equal(t, config.AuthAgent, target.Auth)
+}
+
+func TestLoadMatchingKeysIntoAgentExplicitBindingSurvivesRouteChange(t *testing.T) {
+	startLoadTestAgent(t)
+	c, _, _ := loadTestCredential(t, "")
+	state, vault, cfg, path := loadTestVault(t, c)
+	target := cfg.Servers["local-alias"]
+	target.Proxy = "socks5://127.0.0.1:9999"
+	target.ProxyJump = "other-jump"
+	target.ProxyCommand = "other-command"
+	target.Forwards = []string{"8080:localhost:80"}
+	report, err := LoadMatchingKeysIntoAgent(state, vault, cfg, path)
+	require.NoError(t, err)
+	require.Equal(t, 1, report.Loaded)
+	require.True(t, sshpkg.HasLocalAuth(target, sshpkg.BuildOpts{ConfigPath: path}))
 }

@@ -2,6 +2,7 @@ package ssh
 
 import (
 	"bytes"
+	"crypto/rand"
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
@@ -20,11 +21,15 @@ import (
 
 const maxLocalIdentityCacheSize = 64 << 10
 
+var errLocalAgentUnavailable = errors.New("local SSH Agent is unavailable")
+var errLocalIdentityUnavailable = errors.New("ssh-agent holds no cached identity")
+
 type localIdentityCache struct {
+	Version    int      `json:"version,omitempty"`
 	PublicKeys []string `json:"public_keys"`
 }
 
-// StoreLocalAgentIdentities records only public keys for one exact SSH route
+// StoreLocalAgentIdentities records only public keys for one exact SSH target
 // and cloud binding. The cache lets another local process select an already
 // unlocked agent identity without persisting private key material.
 func StoreLocalAgentIdentities(configPath string, server *config.Server, pubs []gssh.PublicKey) error {
@@ -40,7 +45,7 @@ func StoreLocalAgentIdentities(configPath string, server *config.Server, pubs []
 		}
 		keys = append(keys, strings.TrimSpace(string(gssh.MarshalAuthorizedKey(parsed))))
 	}
-	data, err := json.Marshal(localIdentityCache{PublicKeys: keys})
+	data, err := json.Marshal(localIdentityCache{Version: 2, PublicKeys: keys})
 	if err != nil {
 		return fmt.Errorf("encode local identity cache: %w", err)
 	}
@@ -98,6 +103,9 @@ func HasLocalAuth(server *config.Server, opts BuildOpts) bool {
 	if server == nil {
 		return false
 	}
+	if _, handled, err := managedAuth(server, opts); handled {
+		return err == nil
+	}
 	if server.Auth == config.AuthAgent {
 		// agentAuth defers listing until handshake; a reachable empty agent
 		// must not suppress the CLI's interactive vault fallback.
@@ -120,6 +128,31 @@ func HasLocalAuth(server *config.Server, opts BuildOpts) bool {
 }
 
 func localIdentityCachePath(configPath string, server *config.Server) (string, error) {
+	if server == nil {
+		return "", errors.New("SSH target is required")
+	}
+	if configPath == "" {
+		configPath = config.ConfigPath()
+	}
+	port := server.Port
+	if port == 0 {
+		port = 22
+	}
+	target, err := json.Marshal(struct {
+		Version                  int
+		Host, User, Entry, Vault string
+		Port                     int
+	}{2, server.Host, server.User, server.CloudEntry, server.CloudVault, port})
+	if err != nil {
+		return "", err
+	}
+	sum := sha256.Sum256(target)
+	return filepath.Join(filepath.Dir(configPath), "local-identities", hex.EncodeToString(sum[:])+".json"), nil
+}
+
+// legacyLocalIdentityCachePath reconstructs precisely one old route; callers
+// must never discover bindings by scanning cache files.
+func legacyLocalIdentityCachePath(configPath string, server *config.Server) (string, error) {
 	if server == nil {
 		return "", errors.New("SSH target is required")
 	}
@@ -193,6 +226,23 @@ func loadLocalAgentSigners(configPath string, server *config.Server) ([]gssh.Sig
 	if err != nil {
 		return nil, nil, err
 	}
+	legacy := false
+	if _, statErr := os.Lstat(path); os.IsNotExist(statErr) {
+		candidates := []*config.Server{server}
+		direct := *server
+		direct.Proxy, direct.ProxyJump, direct.ProxyCommand, direct.Forwards = "", "", "", nil
+		candidates = append(candidates, &direct)
+		for _, candidate := range candidates {
+			oldPath, pathErr := legacyLocalIdentityCachePath(configPath, candidate)
+			if pathErr != nil {
+				return nil, nil, pathErr
+			}
+			if _, statErr := os.Lstat(oldPath); !os.IsNotExist(statErr) {
+				path, legacy = oldPath, true
+				break
+			}
+		}
+	}
 	dirInfo, err := os.Lstat(filepath.Dir(path))
 	if err != nil {
 		return nil, nil, err
@@ -238,12 +288,28 @@ func loadLocalAgentSigners(configPath string, server *config.Server) ([]gssh.Sig
 	if err := ensureJSONEOF(decoder); err != nil {
 		return nil, nil, errors.New("invalid local identity cache")
 	}
+	if (!legacy && cached.Version != 2) || (legacy && cached.Version != 0) {
+		return nil, nil, errors.New("invalid local identity cache version")
+	}
 	if len(cached.PublicKeys) == 0 {
 		return nil, nil, errors.New("local identity cache contains no public keys")
 	}
 
+	// Validate all records before contacting the Agent or migrating a legacy file.
+	for _, encoded := range cached.PublicKeys {
+		_, _, options, rest, err := gssh.ParseAuthorizedKey([]byte(encoded))
+		if err != nil || len(options) != 0 || len(bytes.TrimSpace(rest)) != 0 {
+			return nil, nil, errors.New("invalid public key in local identity cache")
+		}
+	}
+	agentConn, agentErr := dialAgent()
+	if agentErr != nil {
+		return nil, nil, errLocalAgentUnavailable
+	}
+	_ = agentConn.Close()
 	var signers []gssh.Signer
 	var closers []io.Closer
+	var publics []gssh.PublicKey
 	for _, encoded := range cached.PublicKeys {
 		pub, _, options, rest, err := gssh.ParseAuthorizedKey([]byte(encoded))
 		if err != nil || len(options) != 0 || len(bytes.TrimSpace(rest)) != 0 {
@@ -256,11 +322,32 @@ func loadLocalAgentSigners(configPath string, server *config.Server) ([]gssh.Sig
 		if err != nil {
 			continue
 		}
+		if legacy {
+			challenge := make([]byte, 32)
+			_, randomErr := rand.Read(challenge)
+			if conn, ok := closer.(interface{ SetDeadline(time.Time) error }); ok {
+				_ = conn.SetDeadline(time.Now().Add(5 * time.Second))
+			}
+			signature, signErr := signer.Sign(rand.Reader, challenge)
+			if conn, ok := closer.(interface{ SetDeadline(time.Time) error }); ok {
+				_ = conn.SetDeadline(time.Time{})
+			}
+			if randomErr != nil || signErr != nil || pub.Verify(challenge, signature) != nil {
+				_ = closer.Close()
+				continue
+			}
+		}
 		signers = append(signers, signer)
 		closers = append(closers, closer)
+		publics = append(publics, pub)
 	}
 	if len(signers) == 0 {
-		return nil, nil, errors.New("ssh-agent holds no cached identity")
+		return nil, nil, errLocalIdentityUnavailable
+	}
+	if legacy {
+		// Only migrate identities actually present in the Agent. Failure to persist
+		// a migration must not invalidate an otherwise usable local identity.
+		_ = StoreLocalAgentIdentities(configPath, server, publics)
 	}
 	return signers, closeAll(closers), nil
 }

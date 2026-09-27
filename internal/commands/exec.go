@@ -47,9 +47,9 @@ shell or wrap in 'sh -c "..."', e.g.:
 			if err != nil {
 				return err
 			}
-			if s.CloudEntry != "" && !sshpkg.HasLocalAuth(s, sshpkg.BuildOpts{ConfigPath: configPath(), Alias: args[0]}) {
+			if !localCredentialStore(configPath()).Enabled() && s.CloudEntry != "" && !sshpkg.HasLocalAuth(s, sshpkg.BuildOpts{ConfigPath: configPath(), Alias: args[0]}) {
 				if !term.IsTerminal(int(os.Stdin.Fd())) {
-					return fmt.Errorf("no local SSH identity is available; run 'sshm cloud agent' locally to unlock and load it")
+					return fmt.Errorf("no local SSH credential is registered; run 'sshm service setup' once in a local terminal")
 				}
 				if rawEnvironment {
 					return fmt.Errorf("--raw-environment is only supported for direct SSH connections")
@@ -64,7 +64,10 @@ shell or wrap in 'sh -c "..."', e.g.:
 				defer cancel()
 			}
 			var password []byte
-			if s.Auth == config.AuthPassword {
+			if err := sshpkg.CheckLocalCredentials(s, sshpkg.BuildOpts{ConfigPath: configPath(), LocalStore: localCredentialStore(configPath())}); err != nil {
+				return err
+			}
+			if s.Auth == config.AuthPassword && (askPassword || !sshpkg.HasLocalAuth(s, sshpkg.BuildOpts{ConfigPath: configPath()})) {
 				if !askPassword {
 					return fmt.Errorf("auth=password requires --ask-password")
 				}

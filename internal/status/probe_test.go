@@ -2,13 +2,19 @@ package status
 
 import (
 	"context"
+	"crypto/ed25519"
+	"crypto/rand"
 	"fmt"
+	"io"
 	"net"
+	"path/filepath"
 	"testing"
 	"time"
 
 	"github.com/michael-ltm/sshm/internal/config"
+	sshpkg "github.com/michael-ltm/sshm/internal/ssh"
 	"github.com/stretchr/testify/require"
+	gssh "golang.org/x/crypto/ssh"
 )
 
 func TestProbe_UnreachableHostReturnsOffline(t *testing.T) {
@@ -97,4 +103,111 @@ func TestProbeMany_CancelledContext(t *testing.T) {
 	require.Less(t, elapsed, 3*time.Second, "ProbeMany took too long with cancelled ctx")
 
 	require.Empty(t, results, "a pre-cancelled context must not launch any probes")
+}
+
+func TestProbeUsesSOCKSRouteWhenDirectTargetIsUnreachable(t *testing.T) {
+	for _, name := range []string{"ALL_PROXY", "all_proxy", "SOCKS5_PROXY", "socks5_proxy", "HTTPS_PROXY", "https_proxy"} {
+		t.Setenv(name, "")
+	}
+	// A real local SSH server emits its identification banner; the SOCKS
+	// server routes a deliberately unresolvable nominal target to that fixture.
+	fixture, err := net.Listen("tcp", "127.0.0.1:0")
+	require.NoError(t, err)
+	defer fixture.Close()
+	_, raw, err := ed25519.GenerateKey(rand.Reader)
+	require.NoError(t, err)
+	hostSigner, err := gssh.NewSignerFromKey(raw)
+	require.NoError(t, err)
+	fixtureConfig := &gssh.ServerConfig{NoClientAuth: true}
+	fixtureConfig.AddHostKey(hostSigner)
+	go func() {
+		c, e := fixture.Accept()
+		if e == nil {
+			defer c.Close()
+			server, channels, requests, handshakeErr := gssh.NewServerConn(c, fixtureConfig)
+			if handshakeErr != nil {
+				return
+			}
+			defer server.Close()
+			go gssh.DiscardRequests(requests)
+			for channel := range channels {
+				_ = channel.Reject(gssh.Prohibited, "fixture")
+			}
+		}
+	}()
+	proxy, err := net.Listen("tcp", "127.0.0.1:0")
+	require.NoError(t, err)
+	defer proxy.Close()
+	done := make(chan error, 1)
+	go func() {
+		c, e := proxy.Accept()
+		if e != nil {
+			done <- e
+			return
+		}
+		defer c.Close()
+		_ = c.SetDeadline(time.Now().Add(2 * time.Second))
+		greeting := make([]byte, 2)
+		if _, e = io.ReadFull(c, greeting); e != nil {
+			done <- e
+			return
+		}
+		methods := make([]byte, int(greeting[1]))
+		if _, e = io.ReadFull(c, methods); e != nil {
+			done <- e
+			return
+		}
+		_, _ = c.Write([]byte{5, 0})
+		header := make([]byte, 4)
+		if _, e = io.ReadFull(c, header); e != nil {
+			done <- e
+			return
+		}
+		if header[3] != 3 {
+			done <- fmt.Errorf("expected domain target")
+			return
+		}
+		length := make([]byte, 1)
+		_, e = io.ReadFull(c, length)
+		if e != nil {
+			done <- e
+			return
+		}
+		address := make([]byte, int(length[0])+2)
+		_, e = io.ReadFull(c, address)
+		if e != nil {
+			done <- e
+			return
+		}
+		if string(address[:len(address)-2]) != "nominal-target.invalid" {
+			done <- fmt.Errorf("wrong target")
+			return
+		}
+		upstream, e := net.Dial("tcp", fixture.Addr().String())
+		if e != nil {
+			done <- e
+			return
+		}
+		defer upstream.Close()
+		_, _ = c.Write([]byte{5, 0, 0, 1, 127, 0, 0, 1, 0, 22})
+		done <- nil
+		go io.Copy(upstream, c)
+		_, _ = io.Copy(c, upstream)
+	}()
+	result := Probe(context.Background(), &config.Server{Host: "nominal-target.invalid", Port: 22, Proxy: "socks5://" + proxy.Addr().String()}, time.Second)
+	require.True(t, result.Reachable, result.Error)
+	require.Equal(t, "socks5", result.Route)
+	require.NoError(t, <-done)
+}
+
+func TestProbeManyWithOptionsUsesCustomConfigForJumpAlias(t *testing.T) {
+	t.Setenv("SSH_AUTH_SOCK", filepath.Join(t.TempDir(), "missing-agent"))
+	path := filepath.Join(t.TempDir(), "custom.toml")
+	cfg := config.New()
+	cfg.Servers["bastion"] = &config.Server{Host: "127.0.0.1", User: "jump", Auth: config.AuthKey, KeyPath: "/fixture/custom-jump-key"}
+	require.NoError(t, config.Save(path, cfg))
+	result := ProbeManyWithOptions(context.Background(), map[string]*config.Server{"target": {Host: "nominal-target.invalid", ProxyJump: "bastion"}}, time.Second, sshpkg.BuildOpts{ConfigPath: path})
+	require.Equal(t, "proxy-jump", result["target"].Route)
+	require.False(t, result["target"].Reachable)
+	require.Contains(t, result["target"].Error, "/fixture/custom-jump-key")
 }

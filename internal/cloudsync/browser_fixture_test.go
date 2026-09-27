@@ -1,7 +1,11 @@
 package cloudsync
 
 import (
+	"crypto/ed25519"
+	"crypto/rand"
+	"crypto/x509"
 	"encoding/json"
+	"encoding/pem"
 	"github.com/michael-ltm/sshm/internal/config"
 	"github.com/stretchr/testify/require"
 	"os"
@@ -25,6 +29,18 @@ func TestWriteBrowserFixture(t *testing.T) {
 	entry, err := v.Data.Find("synthetic-host")
 	require.NoError(t, err)
 	require.NoError(t, v.Data.SetPassword(entry.ID, "synthetic-password-preserved"))
+	if keyPath := os.Getenv("SSHM_CLOUD_BROWSER_KEY_FIXTURE"); keyPath != "" {
+		entry = v.Data.Entries[entry.ID]
+		_, private, err := ed25519.GenerateKey(rand.Reader)
+		require.NoError(t, err)
+		der, err := x509.MarshalPKCS8PrivateKey(private)
+		require.NoError(t, err)
+		key := pem.EncodeToMemory(&pem.Block{Type: "PRIVATE KEY", Bytes: der})
+		v.Data.Credentials["synthetic-export-key"] = Credential{Kind: "key", Key: key, Fingerprint: "SHA256:synthetic-export-key"}
+		entry.CredentialIDs = append(entry.CredentialIDs, "synthetic-export-key")
+		v.Data.Entries[entry.ID] = entry
+		require.NoError(t, WritePrivate(keyPath, key))
+	}
 	snap, err := v.Snapshot(0, RandomID())
 	require.NoError(t, err)
 	snap.Revision = 1

@@ -34,7 +34,7 @@ sshm cloud exec my-host 'uptime'
 
 ```sh
 sshm cloud presence     # 每 30 秒发送心跳，不解锁保险库、不开放远程 Shell
-sshm cloud watch        # 终端解锁一次；在当前进程中每 30 秒同步并发送心跳
+sshm service install    # 登录后运行本地服务与可选云同步（先 setup 迁移旧凭据）
 ```
 
 保持进程运行；Ctrl-C 停止。控制台在 90 秒内收到心跳时显示在线，否则显示离线。系统、版本、最后心跳由客户端报告；这是 SSHM 客户端的在线状态，不代表它保存的每个 SSH 目标都可访问。当前不自动安装开机服务。
@@ -76,7 +76,7 @@ sshm cloud logout
 
 网页 Shell 从 preview.9 起通过 `sshm cloud agent --allow-shell` 显式开启。设备主动连出 WSS，以当前系统用户运行原生 PTY（Windows 使用 ConPTY）。每次会话需要解锁网页保险库并签名，命令和输出使用独立的双向 AES-GCM 密钥与递增序号。关闭页面、锁定保险库、设备断开或撤销会终止会话；preview.26 的新代理不再按总时长强制断开，旧代理需升级并重启。`presence` 仍然只发送心跳。
 
-保险库密文上限 2 MiB，单账号最多 32 个未过期会话，CLI 会话有效期 30 天，网页 Cookie 为 1 天；历史保留最近 20 次提交用于运维保护，尚无用户版本恢复 UI。未提供邮箱验证、邮件找回、MFA、操作系统钥匙串免口令解锁、通用跨进程凭据共享接口。旧本地私钥不因启用云同步而自动加密。
+保险库密文上限 2 MiB，单账号最多 32 个未过期会话，CLI 会话有效期 30 天，网页 Cookie 为 1 天；历史保留最近 20 次提交用于运维保护，尚无用户版本恢复 UI。未提供邮箱验证、邮件找回或 MFA；受信设备的本地加密恢复和共享凭据见下文。旧本地私钥不因启用云同步而自动加密。
 
 ## 程序与 AI 集成更新
 
@@ -138,9 +138,9 @@ sshm cloud link --username your-name --root-public VERIFIED_PUBLIC_KEY --import-
 sshm cloud link --username your-name --root-public VERIFIED_PUBLIC_KEY --import-local --serve --allow-shell
 ```
 
-只有账号会话与加密快照持久化；保险库主密钥仅在进程内存中。进程退出或机器重启后需要再次本机解锁或网页批准。连接撤销不能收回已下载的资料。拥有完整系统权限的进程仍能访问该系统上的已解锁凭据。
+CLI 设备批准后，账号令牌和保险库主密钥保存在本机加密库中，供后续进程恢复；显式 MCP browser 模式的临时批准仍只在内存中。连接撤销不能收回已下载的资料。拥有完整系统权限的进程仍能访问该系统上的已解锁凭据。
 
-`--harden-keys` 显式启用本地密钥迁移：先把原文件、恢复旁文件和替换密钥加密备份并确认云端提交，再向 SSH Agent 加载并验证签名，保持公钥身份不变，最后移除已有 `.passphrase` 旁文件。不可解锁或无法签名的密钥保留并报告。无明文密钥备份写入磁盘；私有迁移收据只包含路径、状态和保险库凭据 ID。AI 的 SSHM/MCP 使用本机 SSH Agent；代理重启后，尚未解锁的密钥仍需恢复到 Agent。
+`--harden-keys` 显式启用本地密钥迁移：先把原文件、恢复旁文件和替换密钥加密备份并确认云端提交，再向 SSH Agent 加载并验证签名，保持公钥身份不变，最后移除已有 `.passphrase` 旁文件。不可解锁或无法签名的密钥保留并报告。无明文密钥备份写入磁盘；私有迁移收据只包含路径、状态和保险库凭据 ID。已迁移的 AI/CLI 凭据从本地加密库恢复；未迁移的外部 Agent 身份继续遵循原 Agent 生命周期。
 
 控制台采用白色工作区和暖灰导航，表格默认紧凑模式，支持 25/50/100 条分页、搜索和认证筛选、批量设置分组与追加标签。已有凭据保持不变；并发版本冲突拒绝覆盖。行操作位于“···”菜单，设备和服务器名称均可直接打开详情。
 
@@ -161,7 +161,7 @@ The device page and vault toolbar offer signed tasks for selected cloud clients:
 
 - Sync merges local connections and credentials into the encrypted vault and fetches cloud changes, preserving existing local config files.
 - Inspect checks the receiving client's local inventory with at most four concurrent SSH connections and synchronizes observations. It does not prompt for passwords or mark probes as successful usage.
-- Update pins the version reviewed in the browser, verifies the official release signature and asset hash, and uses the existing updater. It reports `restart_required` after replacement: the running agent retains its old version and must be restarted and unlocked/approved again. The master is never persisted for unattended restart.
+- Update pins the version reviewed in the browser, verifies the official release signature and asset hash, and uses the existing updater. It reports `restart_required` after replacement: the running agent retains its old version and must be restarted. Migrated local credentials and the CLI sync master are device-protected; explicit browser authorization remains session-scoped.
 
 A preview.15+ unlocked `cloud agent` or `cloud link --serve` process receives jobs even with web shell disabled. Merely installing SSHM or running presence is not sufficient. A plain SSH target must be enrolled as a cloud client to receive these commands.
 
@@ -225,7 +225,7 @@ Windows（PowerShell 5.1+）：
 - 官网 POSIX 命令末尾在调用者 shell 执行 `export PATH="$HOME/.local/bin:$PATH"`，安装完成后当前终端即可使用 `sshm`。单独的 `curl ... | sh` 子进程不能修改父 shell；使用旧命令安装的用户执行一次上述 export 即可。
 - `cloud login` / `register` 成功后询问是否同步云端连接到本地列表，回车为是；`--sync` 直接同步，`--no-sync` 跳过。`--import-local` 继续合并本地记录及密钥，同时下载连接索引。
 - `cloud sync` 将加密保险库交换完成后，原子更新本地连接索引。`sshm list` 可以直接显示；默认按最近成功 SSH 连接时间倒序，同时间按别名，未连接的排最后。TCP 探测不会增加使用时间。终端交互列表的 `s` 仍可切换名称排序。
-- 本地索引包含服务器元数据、账号/保险库绑定和连接 ID，不包含私钥、密码或解锁口令。凭据继续保存在加密保险库，`sshm connect` / `sshm exec` 优先使用本地身份，缺少身份时交互终端可解锁后从内存使用。云端引用使用 `auth=cloud`，通过精确公钥缓存选择已解锁 Agent 身份；原本地 key/agent 连接保持认证方式与密钥路径；匹配当前保险库后登记关联，后续云端删除会先备份再移出列表。默认非交互 MCP 缺少本地身份时提示在本机运行 `sshm cloud agent`。
+- 本地索引包含服务器元数据、账号/保险库绑定和连接 ID，不包含私钥、密码或解锁口令。同步凭据保存在端到端加密保险库中；已迁移本机另有系统保护的独立凭据，`sshm connect` / `sshm exec` 优先直接使用。云端引用仍使用 `auth=cloud`；原本地 key/agent 连接保持认证方式与密钥路径；匹配当前保险库后登记关联，后续云端删除会先备份再移出列表。默认 MCP 使用本地加密凭据；旧版本仅有 Agent 缓存时通过 `sshm service setup` 迁移一次，详见下文。
 - 按连接身份与路由匹配已有本地记录并保留原密钥路径。同名异连接使用稳定 ID 后缀，重复同步不追加重复行；冲突不自动选边。远端删除移除普通云引用与已关联本地记录；本地记录会先备份。默认连接、项目依赖等受保护记录保留，并在同步输出中提示处理。
 - `cloud list` 仍用于查看所有云端连接变体和凭据数量，不承担导入本地列表的作用。
 
@@ -270,7 +270,7 @@ explicit upgrade/restart instruction for older agents; legacy callers retain
 their signed legacy expiry. Update **both sides** and restart the target's old
 `cloud enable` / `cloud agent` process to activate the new behavior. A running
 process cannot adopt a replaced executable until restarted. This does not add
-session resumption after network loss, persistent unlock storage, or detached
+session resumption after network loss or detached
 background command execution.
 
 
@@ -290,31 +290,50 @@ local-only server. Existing affected installations need one unlocked sync to
 rebuild this index. Restart old MCP/agent processes after updating their binaries.
 
 
-### 默认本地 SSH 与保险库解锁一次
+### 默认本地 SSH 与本机信任
 
-`sshm mcp`（等同 `sshm mcp --cloud-auth local`）、`sshm connect` 和
-`sshm exec` 默认使用本机私钥或同用户 SSH Agent。云端索引和关联不会阻断已有的
-本地身份；仅含云端引用的连接通过公钥缓存选择与完整路线、保险库和条目匹配的 Agent 身份。
-默认 MCP 不创建浏览器批准会话，也不提供 `cloud_unlock` 等工具。
+`sshm mcp`（默认 `--cloud-auth local`）、CLI 和传输共用本地加密凭据。
+新配对和 `gen-key` 自动生成加密口令，先验证凭据可持久恢复，再写加密私钥；不再逐个询问新口令。
+云端只负责可选同步。已经保存的本地凭据不因云端离线、账号令牌过期、MCP 重启或 Agent 的 12 小时期限失效。
+同一用户的多个 Codex/MCP 会话共用同一份受系统保护的存储。
 
-本机缺少身份时，在自己的可信终端运行：
+旧版本迁移，在自己的终端执行一次：
 
 ```sh
-sshm cloud agent
+sshm service setup
+sshm service install
+sshm service status
 ```
 
-交互解锁一次后，能解密且对应当前有效连接的私钥在内存中载入本机 SSH Agent，
-后续 CLI 和 AI 共用其签名能力。已有 Agent 身份保留。交互 CLI 没有本地身份时
-仍可进入终端保险库解锁流程；非交互 CLI/MCP 只提示上述命令，不索取密码。
-加密 SSH 私钥仍需其原口令；保险库解锁不等于恢复丢失的私钥口令，无法加载的项会明确报告。
+使用自定义配置时，每条命令加 `--config /absolute/path/config.toml`。
+旧保险库可能需要原解锁口令一次；已记住的保险库可离线重新导入已接受的凭据。
+设置会尝试原私钥旁已有且权限安全的 `.passphrase` 恢复文件（支持旧注释头），验证密钥后保存到本地加密库。
+缺少或错误的 SSH 口令、无效密钥及不安全的恢复文件会按别名报告并跳过，继续迁移其余连接。
+只有确实知道旧 SSH 口令或密码时才使用 `sshm service setup --ask-passphrases`；空输入或错误的密钥口令会跳过该项。
+显式锁定、本地加密库损坏或设备保护失败仍会停止设置。
+只有 Agent 内存里的密钥无法导出成持久凭据。迁移保留源私钥和恢复文件；不可用项会报告。
+之后普通 SSH 无需重复解锁。CLI/MCP 能直接读取受保护凭据，不必等待后台服务或云端同步。
 
-保险库磁盘和云端副本仍加密，不生成明文私钥、口令旁文件或主密钥缓存。
-本机身份缓存仅含公钥，路径由连接身份摘要生成。此缓存只用于选择 Agent 签名身份。
-本地可用性由 SSH Agent 生命周期、密钥期限及移除操作控制；退出 `cloud agent`、
-重启 MCP 或云端撤销不会立即收回已载入本机 Agent 的签名能力。
-同用户恶意程序也可使用已解锁 Agent，磁盘加密不能防御已经受控的登录会话。
-主机密钥检查、审计、结果脱敏和破坏性命令保护仍有效。需要每次新连接在线验证云端授权时，
-显式使用下面的 browser 模式。
+凭据绑定目标主机、用户、端口和明确的私钥/保险库关联；本地代理、跳板和转发设置独立。
+修改代理不会使凭据失效，后台同步也不会覆盖同一目标已有的本地路线。
+网络失败请看 `check_ssh` 的实际路线和错误类别，不要通过重新解锁来修复超时。
+
+`service status` 的 `sync.state` 分别报告 `ready`、`offline`、`sign_in_required` 等同步状态；失败会退避重试，不影响本地 SSH。
+
+`service lock` 是主动锁定，重启后仍有效；只有用户在本地终端执行 `service unlock` 才解除。
+`cloud logout` 清理云端令牌和自动同步主密钥，独立 SSH 凭据继续可用。
+接受的云端删除会停用对应身份；冲突保留上一次验证的本地凭据，不能按同名别名猜选密钥。
+
+本地库位于 `<config>.local/credentials.json`，使用 AES-256-GCM 和独立系统保护密钥。
+Linux 使用用户级 systemd 加密凭据，首次创建可回退 Secret Service；Windows 使用用户 DPAPI；
+macOS 原生 CGO 构建使用无交互 Keychain API。无可用后端时明确失败，不退回明文。
+账号登录密码不落盘，服务端继续保存加盐密码哈希；本地云端令牌和保险库主密钥进入加密库。
+复制 SSHM 配置/库文件不等于获得可直接使用的 SSH 私钥；已控制的同用户会话仍可使用该用户的凭据。
+
+`service install` 提供 Linux systemd 用户服务、macOS LaunchAgent 和 Windows 用户登录任务。
+本版本已在 Linux 验证系统加密及进程重启；macOS/Windows 原生登录、系统重启恢复尚未验证。
+macOS 禁用 CGO 的构建不能使用此 Keychain 后端。`--system` 暂不支持；无用户登录的开机启动
+与登录后恢复是不同场景，本版本没有宣称完成真实系统重启测试。
 
 ### 可选 MCP 浏览器批准访问云端凭据
 

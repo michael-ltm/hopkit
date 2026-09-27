@@ -229,8 +229,8 @@ func (a stubAddr) Network() string { return "proxycommand" }
 func (a stubAddr) String() string  { return a.s }
 
 // cmdConn adapts an external process (a ProxyCommand) to net.Conn: it reads
-// from the process stdout and writes to its stdin. Close kills the process and
-// waits for it to exit. Deadlines are unsupported (the process pipes do not
+// from the process stdout and writes to its stdin. Close terminates the process
+// tree and waits for the shell to exit. Deadlines are unsupported (the pipes do not
 // honor them); the deadline setters return nil so the ssh transport, which
 // sets deadlines defensively, keeps working.
 type cmdConn struct {
@@ -254,7 +254,7 @@ func (c *cmdConn) Close() error {
 		_ = c.stdin.Close()
 		_ = c.stdout.Close()
 		if c.cmd.Process != nil {
-			_ = c.cmd.Process.Kill()
+			terminateProxyProcess(c.cmd)
 		}
 		_ = c.cmd.Wait()
 		_ = c.stdout.Close()
@@ -320,6 +320,7 @@ func dialProxyCommand(s *config.Server, command string) (net.Conn, error) {
 	// Run via the shell so user-provided commands with flags/quoting work as
 	// they would under OpenSSH's ProxyCommand.
 	cmd := exec.Command("sh", "-c", cmdline)
+	prepareProxyProcess(cmd)
 	cmd.WaitDelay = 250 * time.Millisecond
 	stderr := &syncBuffer{}
 	cmd.Stderr = stderr

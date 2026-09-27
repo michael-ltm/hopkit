@@ -5,7 +5,9 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"github.com/michael-ltm/sshm/internal/inventory"
+	"github.com/michael-ltm/sshm/internal/localstore"
 	"io"
 	"net/http"
 	"net/url"
@@ -18,6 +20,8 @@ import (
 
 const DefaultURL = "https://sshm.yunmini.net"
 
+var ErrNetwork = errors.New("cloud network unavailable; local data retained")
+
 type State struct {
 	// Process-only metadata; never persist a runtime version in the account file.
 	RuntimeVersion string    `json:"-"`
@@ -25,6 +29,7 @@ type State struct {
 	Username       string    `json:"username"`
 	DeviceID       string    `json:"device_id"`
 	Token          string    `json:"token,omitempty"`
+	TokenRef       string    `json:"token_ref,omitempty"`
 	Expires        int64     `json:"expires"`
 	Base           Snapshot  `json:"base"`
 	Draft          Snapshot  `json:"draft"`
@@ -62,6 +67,9 @@ func (e *APIError) Error() string {
 }
 func StatePath(configPath string) string { return configPath + ".cloud/state.json" }
 func LoadState(path string) (*State, error) {
+	return loadStateWithStore(path, localstore.New(strings.TrimSuffix(path, ".cloud/state.json")))
+}
+func loadStateWithStore(path string, store *localstore.Store) (*State, error) {
 	b, err := os.ReadFile(path)
 	if err != nil {
 		return nil, err
@@ -70,6 +78,17 @@ func LoadState(path string) (*State, error) {
 	var s State
 	if len(b) > 10*MaxBlob || json.Unmarshal(b, &s) != nil || !ValidAccount(s.Username) {
 		return nil, errors.New("invalid cloud state")
+	}
+	if s.TokenRef != "" {
+		if s.Token != "" || !strings.HasPrefix(s.TokenRef, AccountSecretPrefix(&s)+"token/") {
+			return nil, errors.New("invalid protected cloud token reference")
+		}
+		token, err := store.Secret(context.Background(), s.TokenRef)
+		if err != nil {
+			return nil, fmt.Errorf("cloud session credential unavailable: %w", err)
+		}
+		s.Token = string(token)
+		Wipe(token)
 	}
 	return &s, nil
 }
@@ -100,12 +119,48 @@ func WritePrivate(path string, b []byte) error {
 	return os.Rename(f.Name(), path)
 }
 func (s *State) Save(path string) error {
-	b, err := json.Marshal(s)
+	return s.saveWithStore(path, localstore.New(strings.TrimSuffix(path, ".cloud/state.json")))
+}
+func (s *State) saveWithStore(path string, store *localstore.Store) error {
+	persisted := *s
+	if s.Token == "" {
+		persisted.TokenRef = ""
+	}
+	if store.Enabled() {
+		if s.Token != "" {
+			persisted.TokenRef = AccountSecretPrefix(s) + "token/" + secretDigest(s.Token)
+			if err := store.SetSecret(context.Background(), persisted.TokenRef, []byte(s.Token)); err != nil {
+				return err
+			}
+		}
+		// Preserve an encrypted migration snapshot before replacing an old
+		// plaintext account file. Original private key files remain untouched.
+		if old, err := os.ReadFile(path); err == nil {
+			var previous State
+			if json.Unmarshal(old, &previous) == nil && previous.Token != "" {
+				err = store.SetSecret(context.Background(), AccountSecretPrefix(&previous)+"migration/"+secretDigest(string(old)), old)
+			}
+			Wipe(old)
+			if err != nil {
+				return err
+			}
+		} else if !os.IsNotExist(err) {
+			return err
+		}
+		persisted.Token = ""
+	} else if s.TokenRef != "" {
+		return errors.New("protected cloud credential store is missing; refusing plaintext fallback")
+	}
+	b, err := json.Marshal(&persisted)
 	if err != nil {
 		return err
 	}
 	defer Wipe(b)
-	return WritePrivate(path, b)
+	if err := WritePrivate(path, b); err != nil {
+		return err
+	}
+	s.TokenRef = persisted.TokenRef
+	return nil
 }
 func (s *State) SaveDraft(v *Vault, path string) error {
 	if s.Pending != nil {
@@ -163,7 +218,7 @@ func (s *State) Request(ctx context.Context, method, path string, input, output 
 	client := &http.Client{Timeout: 45 * time.Second, CheckRedirect: func(*http.Request, []*http.Request) error { return errors.New("cloud redirects are not permitted") }}
 	res, err := client.Do(req)
 	if err != nil {
-		return errors.New("cloud network unavailable; local data retained")
+		return ErrNetwork
 	}
 	defer res.Body.Close()
 	raw, err := io.ReadAll(io.LimitReader(res.Body, 4*MaxBlob+1))

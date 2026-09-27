@@ -9,6 +9,7 @@ import (
 	"github.com/michael-ltm/sshm/internal/cloudsync"
 	"github.com/michael-ltm/sshm/internal/config"
 	"github.com/michael-ltm/sshm/internal/inventory"
+	"github.com/michael-ltm/sshm/internal/localstore"
 	"github.com/michael-ltm/sshm/internal/safety"
 	sshpkg "github.com/michael-ltm/sshm/internal/ssh"
 	"github.com/michael-ltm/sshm/internal/ui"
@@ -58,6 +59,17 @@ func cloudOpen(cmd *cobra.Command) (*cloudsync.State, *cloudsync.Vault, func(), 
 		return nil, nil, nil, cloudStateLoadError(err)
 	}
 	recoverMode, _ := cmd.Flags().GetBool("use-recovery")
+	store := localCredentialStore(configPath())
+	if !recoverMode && store.Enabled() {
+		v, e := cloudsync.OpenRemembered(cmd.Context(), s, store)
+		if e == nil {
+			return s, v, func() { v.Close(); release() }, nil
+		}
+		if !errors.Is(e, localstore.ErrNotFound) {
+			release()
+			return nil, nil, nil, e
+		}
+	}
 	unlockLabel := "Vault unlock phrase"
 	if recoverMode {
 		unlockLabel = "Recovery code"
@@ -70,6 +82,14 @@ func cloudOpen(cmd *cobra.Command) (*cloudsync.State, *cloudsync.Vault, func(), 
 	defer cloudsync.Wipe(pass)
 	v, err := cloudsync.Unlock(s.Username, s.Draft, pass, recoverMode)
 	if err != nil {
+		release()
+		return nil, nil, nil, err
+	}
+	if _, err = rememberCloudCredentials(cmd.Context(), s, v, configPath()); err == nil {
+		err = s.Save(path)
+	}
+	if err != nil {
+		v.Close()
 		release()
 		return nil, nil, nil, err
 	}
@@ -88,6 +108,7 @@ func cloudState() (*cloudsync.State, func(), error) {
 	}
 	return s, release, nil
 }
+
 // confirmCloudRemoval asks whether removing a local server should also
 // tombstone its cloud vault entry.
 func confirmCloudRemoval(cmd *cobra.Command) (bool, error) {
@@ -248,6 +269,17 @@ func newCloudCmd() *cobra.Command {
 					}
 				}
 			}
+			// Login establishes device trust once. Keep the account password out
+			// of local storage; protect only the revocable token and vault master.
+			remembered, err := cloudsync.Unlock(username, s.Draft, unlock, false)
+			if err != nil {
+				return err
+			}
+			_, err = rememberCloudCredentials(cmd.Context(), s, remembered, configPath())
+			remembered.Close()
+			if err != nil {
+				return err
+			}
 			if err = s.Save(path); err != nil {
 				return err
 			}
@@ -279,7 +311,7 @@ func newCloudCmd() *cobra.Command {
 				}
 				var report cloudsync.ImportReport
 				if importLocal {
-					report, err = v.Data.Import(cfg, s.DeviceID, true)
+					report, err = v.Data.ImportProtected(cmd.Context(), cfg, s.DeviceID, true, localCredentialStore(configPath()), cloudsync.InventoryIdentity(s))
 				}
 				if err != nil {
 					return err
@@ -329,7 +361,7 @@ func newCloudCmd() *cobra.Command {
 		if err != nil {
 			return err
 		}
-		report, err := v.Data.Import(cfg, s.DeviceID, !withoutKeys)
+		report, err := v.Data.ImportProtected(cmd.Context(), cfg, s.DeviceID, !withoutKeys, localCredentialStore(configPath()), cloudsync.InventoryIdentity(s))
 		if err != nil {
 			return err
 		}
@@ -490,7 +522,10 @@ func newCloudCmd() *cobra.Command {
 		}
 		s.Token = ""
 		s.Expires = 0
-		return s.Save(cloudsync.StatePath(configPath()))
+		if err := s.Save(cloudsync.StatePath(configPath())); err != nil {
+			return err
+		}
+		return localCredentialStore(configPath()).DeleteSecrets(cmd.Context(), cloudsync.AccountSecretPrefix(s))
 	}})
 	root.AddCommand(&cobra.Command{Use: "change-password", Short: "Change the account password and revoke other sessions", Args: cobra.NoArgs, RunE: func(cmd *cobra.Command, _ []string) error {
 		s, release, err := cloudState()
@@ -553,8 +588,15 @@ func newCloudCmd() *cobra.Command {
 		if out.Blob != snap.Blob || out.Signature != snap.Signature {
 			return errors.New("rotation acknowledgement mismatch")
 		}
+		previousOwner := cloudsync.InventoryIdentity(s)
 		s.Base = out
 		s.Draft = out
+		if err = cloudsync.RebindRotatedInventory(configPath(), s, nv, previousOwner); err != nil {
+			return err
+		}
+		if _, err = rememberCloudCredentials(cmd.Context(), s, nv, configPath()); err != nil {
+			return err
+		}
 		return s.Save(cloudsync.StatePath(configPath()))
 	}})
 	root.AddCommand(&cobra.Command{Use: "recover", Short: "Recover account access and vault using an offline recovery code", Args: cobra.NoArgs, RunE: func(cmd *cobra.Command, _ []string) error {
@@ -607,6 +649,9 @@ func newCloudCmd() *cobra.Command {
 		s.Base = out.Snapshot
 		s.Draft = out.Snapshot
 		// Recovery proves decryption but does not silently change the existing unlock phrase.
+		if _, err = rememberCloudCredentials(cmd.Context(), s, v, configPath()); err != nil {
+			return err
+		}
 		if err = s.Save(path); err != nil {
 			return err
 		}
@@ -903,9 +948,20 @@ func askCloudSync(cmd *cobra.Command) (bool, error) {
 	}
 }
 func publishCloudInventory(cmd *cobra.Command, s *cloudsync.State, v *cloudsync.Vault) error {
+	store := localCredentialStore(configPath())
+	if store.Enabled() {
+		if _, err := rememberCloudCredentials(cmd.Context(), s, v, configPath()); err != nil {
+			return err
+		}
+	}
 	report, err := cloudsync.PublishInventory(configPath(), s, v.Data)
 	if err != nil {
 		return fmt.Errorf("encrypted sync succeeded, but local list could not be updated: %w; retry sshm cloud sync", err)
+	}
+	if store.Enabled() {
+		if _, err := rememberCloudCredentials(cmd.Context(), s, v, configPath()); err != nil {
+			return err
+		}
 	}
 	fmt.Fprintf(cmd.OutOrStdout(), "Local list: %d cloud connections, %d existing local matches preserved, %d conflicts withheld. Keys and passwords remain encrypted.\n", report.Cloud, report.Local, report.Conflicts)
 	if report.Removed > 0 {

@@ -153,12 +153,12 @@ func handleTestConnection(ctx context.Context, deps Deps, args map[string]any) (
 	if !ok || s == nil {
 		return errResult("not_found", fmt.Sprintf("unknown server %q", alias)), nil
 	}
-	r := status.Probe(ctx, s, 5*time.Second)
+	r := status.ProbeWithOptions(ctx, s, 5*time.Second, deps.sshOptions(ctx, sshpkg.BuildOpts{ConfigPath: deps.ConfigPath, ProbeOnly: true}))
 	activityErr := config.RecordProbes(deps.ConfigPath, map[string]config.ProbeObservation{
 		alias: config.NewProbeObservation(s, r.Reachable, r.ObservedAt),
 	})
 	out := map[string]any{
-		"alias": alias, "reachable": r.Reachable,
+		"alias": alias, "reachable": r.Reachable, "route": r.Route,
 		"latency_ms": r.Latency.Milliseconds(),
 		"error":      safety.MaskSecrets(r.Error),
 	}
@@ -205,12 +205,13 @@ func handleCheckSSH(ctx context.Context, deps Deps, args map[string]any) (any, e
 
 	mode := sshCheckMode(args)
 	out := map[string]any{"alias": alias, "mode": string(mode), "runtime_version": deps.Version, "inventory_source": "local"}
-	tcp := status.Probe(ctx, s, 5*time.Second)
+	tcp := status.ProbeWithOptions(ctx, s, 5*time.Second, deps.sshOptions(ctx, sshpkg.BuildOpts{ConfigPath: deps.ConfigPath, ProbeOnly: true}))
 	activityErr := config.RecordProbes(deps.ConfigPath, map[string]config.ProbeObservation{
 		alias: config.NewProbeObservation(s, tcp.Reachable, tcp.ObservedAt),
 	})
 	out["tcp"] = map[string]any{
 		"ok":         tcp.Reachable,
+		"route":      tcp.Route,
 		"latency_ms": tcp.Latency.Milliseconds(),
 		"error":      safety.MaskSecrets(tcp.Error),
 	}
@@ -242,19 +243,19 @@ func handleCheckSSH(ctx context.Context, deps Deps, args map[string]any) (any, e
 	var cli *sshpkg.Client
 	select {
 	case <-dialCtx.Done():
-		out["ssh"] = map[string]any{"ok": false, "error": dialCtx.Err().Error()}
+		out["ssh"] = map[string]any{"ok": false, "error": dialCtx.Err().Error(), "code": sshpkg.FailureCategory(dialCtx.Err()), "configured_route": tcp.Route}
 		out["ok"] = false
 		return out, nil
 	case got := <-ch:
 		if got.err != nil {
-			out["ssh"] = map[string]any{"ok": false, "error": safety.MaskSecrets(got.err.Error())}
+			out["ssh"] = map[string]any{"ok": false, "error": safety.MaskSecrets(got.err.Error()), "code": sshpkg.FailureCategory(got.err), "configured_route": tcp.Route}
 			out["ok"] = false
 			return out, nil
 		}
 		cli = got.cli
 	}
 	defer cli.Close()
-	out["ssh"] = map[string]any{"ok": true}
+	out["ssh"] = map[string]any{"ok": true, "route": cli.Route()}
 	if mode == sshCheckHandshake || mode == sshCheckAuth {
 		out["ok"] = true
 		return out, nil

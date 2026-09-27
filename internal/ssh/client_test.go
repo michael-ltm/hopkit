@@ -26,7 +26,7 @@ func TestBuildClientConfig_KeyAuthFromPath(t *testing.T) {
 	keyPath := writeTempKey(t)
 
 	srv := &config.Server{User: "ming", Auth: config.AuthKey, KeyPath: keyPath}
-	cfg, closer, err := BuildClientConfig(srv, BuildOpts{})
+	cfg, closer, err := BuildClientConfig(srv, BuildOpts{ConfigPath: filepath.Join(t.TempDir(), "config.toml")})
 	require.NoError(t, err)
 	defer closer.Close()
 	require.Equal(t, "ming", cfg.User)
@@ -35,14 +35,14 @@ func TestBuildClientConfig_KeyAuthFromPath(t *testing.T) {
 
 func TestBuildClientConfig_RejectsEmptyUser(t *testing.T) {
 	srv := &config.Server{Auth: config.AuthKey, KeyPath: writeTempKey(t)}
-	_, _, err := BuildClientConfig(srv, BuildOpts{})
+	_, _, err := BuildClientConfig(srv, BuildOpts{ConfigPath: filepath.Join(t.TempDir(), "config.toml")})
 	require.Error(t, err)
 	require.Contains(t, err.Error(), "user is required")
 }
 
 func TestBuildClientConfig_PasswordAuthUsesProvidedPassword(t *testing.T) {
 	srv := &config.Server{User: "ming", Auth: config.AuthPassword}
-	cfg, closer, err := BuildClientConfig(srv, BuildOpts{Password: "secret"})
+	cfg, closer, err := BuildClientConfig(srv, BuildOpts{ConfigPath: filepath.Join(t.TempDir(), "config.toml"), Password: "secret"})
 	require.NoError(t, err)
 	defer closer.Close()
 	require.Len(t, cfg.Auth, 1)
@@ -50,7 +50,7 @@ func TestBuildClientConfig_PasswordAuthUsesProvidedPassword(t *testing.T) {
 
 func TestBuildClientConfig_RejectsMissingKeyFile(t *testing.T) {
 	srv := &config.Server{User: "ming", Auth: config.AuthKey, KeyPath: "/no/such/path.pem"}
-	_, _, err := BuildClientConfig(srv, BuildOpts{})
+	_, _, err := BuildClientConfig(srv, BuildOpts{ConfigPath: filepath.Join(t.TempDir(), "config.toml")})
 	require.Error(t, err)
 }
 
@@ -61,14 +61,14 @@ func TestAddress_AppendsDefaultPort(t *testing.T) {
 
 func TestBuildClientConfig_RejectsPasswordAuthMissingPassword(t *testing.T) {
 	srv := &config.Server{User: "ming", Auth: config.AuthPassword}
-	_, _, err := BuildClientConfig(srv, BuildOpts{})
+	_, _, err := BuildClientConfig(srv, BuildOpts{ConfigPath: filepath.Join(t.TempDir(), "config.toml")})
 	require.Error(t, err)
 	require.Contains(t, err.Error(), "password not provided")
 }
 
 func TestBuildClientConfig_RejectsUnknownAuth(t *testing.T) {
 	srv := &config.Server{User: "ming", Auth: "pubkey-cert"}
-	_, _, err := BuildClientConfig(srv, BuildOpts{})
+	_, _, err := BuildClientConfig(srv, BuildOpts{ConfigPath: filepath.Join(t.TempDir(), "config.toml")})
 	require.Error(t, err)
 	require.Contains(t, err.Error(), "unsupported auth")
 }
@@ -76,7 +76,7 @@ func TestBuildClientConfig_RejectsUnknownAuth(t *testing.T) {
 func TestBuildClientConfig_CloudEntryDoesNotBlockLocalKey(t *testing.T) {
 	keyPath := writeTempKey(t)
 	srv := &config.Server{User: "root", Auth: config.AuthKey, KeyPath: keyPath, CloudEntry: "vault-entry"}
-	cfg, closer, err := BuildClientConfig(srv, BuildOpts{})
+	cfg, closer, err := BuildClientConfig(srv, BuildOpts{ConfigPath: filepath.Join(t.TempDir(), "config.toml")})
 	require.NoError(t, err)
 	defer closer.Close()
 	require.Len(t, cfg.Auth, 1)
@@ -85,7 +85,7 @@ func TestBuildClientConfig_CloudEntryDoesNotBlockLocalKey(t *testing.T) {
 func TestBuildClientConfig_AuthCloudUsesLocalKey(t *testing.T) {
 	keyPath := writeTempKey(t)
 	srv := &config.Server{User: "root", Auth: config.AuthCloud, KeyPath: keyPath}
-	cfg, closer, err := BuildClientConfig(srv, BuildOpts{})
+	cfg, closer, err := BuildClientConfig(srv, BuildOpts{ConfigPath: filepath.Join(t.TempDir(), "config.toml")})
 	require.NoError(t, err)
 	defer closer.Close()
 	require.Len(t, cfg.Auth, 1)
@@ -93,9 +93,9 @@ func TestBuildClientConfig_AuthCloudUsesLocalKey(t *testing.T) {
 
 func TestBuildClientConfig_AuthCloudWithoutMaterialStaysLocked(t *testing.T) {
 	srv := &config.Server{User: "root", Auth: config.AuthCloud, CloudEntry: "vault-entry"}
-	_, _, err := BuildClientConfig(srv, BuildOpts{})
+	_, _, err := BuildClientConfig(srv, BuildOpts{ConfigPath: filepath.Join(t.TempDir(), "config.toml")})
 	require.Error(t, err)
-	require.Contains(t, err.Error(), "sshm cloud agent")
+	require.Contains(t, err.Error(), "sshm service setup")
 }
 
 func TestBuildClientConfig_UnavailableLocalKeyRequiresExactCachedVaultIdentity(t *testing.T) {

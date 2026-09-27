@@ -2,27 +2,35 @@
 
 Use only with a cloud-enabled SSHM client. `sshm cloud status` is safe to inspect;
 cloud setup and credential entry require the user's own interactive
-terminal. Default MCP uses local SSH keys and the same user's SSH Agent. Never ask the user to put account passwords, vault phrases, recovery
+terminal. Default MCP uses device-protected local credentials, then existing native keys/Agents. Never ask the user to put account passwords, vault phrases, recovery
 codes, SSH private keys or passwords in chat, tool arguments, environment
 variables or AI-visible logs.
 
 - In default `sshm mcp` / `--cloud-auth local` mode, execute the requested SSH
   operation using existing local credentials, including cloud-linked aliases.
-  Cloud-only references select Agent identities using a public-key cache bound
-  to the exact connection route and vault entry. No browser approval tools are
-  registered. If local identity is unavailable, direct the user to run
-  `sshm cloud agent` in their own trusted terminal, unlock once, and retry the
-  requested operation. This loads eligible vault keys into their SSH Agent for
-  CLI and AI use; do not ask for the unlock phrase through a tool or chat.
-  Interactive `sshm connect` / `sshm exec` can fall back to terminal vault unlock.
-- Keys remain encrypted in the vault. Loading parses keys in memory and caches
-  only public identities; it creates no plaintext private key, passphrase sidecar
-  or persistent master-key cache. Missing encrypted-key passphrases require
-  separate recovery; unlocking the vault does not recover a lost SSH passphrase.
-- Local availability follows the SSH Agent's lifetime and key expiry/removal.
-  Stopping `cloud agent`, restarting MCP or revoking cloud access does not remove
-  identities already loaded into the local SSH Agent. Same-user programs can use
-  that unlocked Agent. Use explicit browser mode when online cloud authorization
+  Paired/migrated credentials survive new MCP processes and local service restarts.
+  Cloud connectivity and token expiry govern synchronization, not local SSH.
+  Credential identity binds host, user, port and credential/vault association;
+  changing a local proxy/jump route does not require credential approval.
+- Inspect `sshm service status` when local access fails. If no local store exists,
+  the one-time legacy migration is `sshm service setup` in the user's own terminal,
+  followed by `sshm service install` for background startup. An old key still needs
+  its original passphrase once if no decryptable vault copy exists. Never repeat
+  setup/unlock as a generic fix: `local_device_locked` requires a deliberate local
+  `sshm service unlock`; `local_credential_missing` requires registering that target;
+  unavailable device protection requires fixing its OS backend. A stopped service
+  does not block the shared direct CLI/MCP credential resolver.
+- For timeout/refused/proxy errors, use `check_ssh` and its selected route;
+  verify or correct the local transport. A failing direct probe does not prove
+  a proxy route is broken. Do not request cloud login/unlock to fix network errors.
+- `gen_key` automatically encrypts and persists a new key on the trusted device;
+  `passphrase_file` is optional. Never create a plaintext passphrase sidecar or
+  put a secret in tool arguments to work around setup errors.
+- Keys, saved SSH passwords, cloud tokens and remembered vault masters are encrypted
+  locally under OS protection. Account login passwords are not persisted.
+  `cloud logout` clears cloud access while keeping independent local SSH credentials;
+  `service lock` persists across restarts. Do not automatically unlock an explicit lock.
+  Same-user programs can use the trusted local identity. Use explicit browser mode when online cloud authorization
   is required for each new cloud connection.
 - Only in explicit `sshm mcp --cloud-auth browser` mode, when the cloud connection
   is locked and approval tools are present, call `cloud_unlock` with a brief non-secret

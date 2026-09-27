@@ -1,12 +1,11 @@
 // Package status provides cheap reachability probes for the server list.
 //
-// v0.1 uses TCP-connect probe only — it surfaces "is the SSH port open?"
-// without needing credentials. v0.2 layers an SSH handshake probe on top.
+// Probes follow the selected SSH transport. Jump hosts require their own
+// authentication; final targets are checked without requesting credentials.
 package status
 
 import (
 	"context"
-	"net"
 	"time"
 
 	"github.com/michael-ltm/sshm/internal/config"
@@ -20,6 +19,7 @@ const defaultProbeTimeout = 3 * time.Second
 
 // Result is a single probe outcome.
 type Result struct {
+	Route     string        `json:"route"`
 	Reachable bool          `json:"reachable"`
 	Latency   time.Duration `json:"latency_ns,omitempty"` // zero when Reachable is false
 	Error     string        `json:"error,omitempty"`      // empty when Reachable is true
@@ -29,8 +29,13 @@ type Result struct {
 	ObservedAt time.Time `json:"-"`
 }
 
-// Probe attempts a TCP connect to the server within timeout.
+// Probe checks reachability through the selected SSH route within timeout.
 func Probe(ctx context.Context, s *config.Server, timeout time.Duration) (result Result) {
+	return ProbeWithOptions(ctx, s, timeout, sshpkg.BuildOpts{})
+}
+
+// ProbeWithOptions shares the connection route and jump-host config with SSH.
+func ProbeWithOptions(ctx context.Context, s *config.Server, timeout time.Duration, opts sshpkg.BuildOpts) (result Result) {
 	defer func() {
 		result.ObservedAt = time.Now().UTC()
 	}()
@@ -41,19 +46,23 @@ func Probe(ctx context.Context, s *config.Server, timeout time.Duration) (result
 	defer cancel()
 
 	start := time.Now()
-	d := net.Dialer{}
-	conn, err := d.DialContext(ctx, "tcp", sshpkg.Address(s))
+	opts.Timeout = timeout
+	route, err := sshpkg.ProbeRoute(ctx, s, opts)
 	if err != nil {
-		return Result{Reachable: false, Error: err.Error()}
+		return Result{Reachable: false, Error: err.Error(), Route: route}
 	}
-	_ = conn.Close()
-	return Result{Reachable: true, Latency: time.Since(start)}
+	return Result{Reachable: true, Latency: time.Since(start), Route: route}
 }
 
 // ProbeMany runs Probe across all servers concurrently (bounded to 16).
 // If ctx is cancelled before all goroutines are launched, no further probes
 // are started and only the results of already-launched probes are returned.
 func ProbeMany(ctx context.Context, servers map[string]*config.Server, timeout time.Duration) map[string]Result {
+	return ProbeManyWithOptions(ctx, servers, timeout, sshpkg.BuildOpts{})
+}
+
+// ProbeManyWithOptions applies one configuration context to every target route.
+func ProbeManyWithOptions(ctx context.Context, servers map[string]*config.Server, timeout time.Duration, opts sshpkg.BuildOpts) map[string]Result {
 	const maxConc = 16
 	sem := make(chan struct{}, maxConc)
 	type item struct {
@@ -83,7 +92,7 @@ launchLoop:
 		launched++
 		go func(a string, srv *config.Server) {
 			defer func() { <-sem }()
-			out <- item{a, Probe(ctx, srv, timeout)}
+			out <- item{a, ProbeWithOptions(ctx, srv, timeout, opts)}
 		}(alias, s)
 	}
 

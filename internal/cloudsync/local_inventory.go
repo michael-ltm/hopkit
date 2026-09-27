@@ -58,7 +58,12 @@ func PublishInventory(path string, state *State, data Data) (InventoryReport, er
 			if server.CloudVault != owner {
 				continue
 			}
-			if _, ok := data.Entries[server.CloudEntry]; !ok || data.Deleted[server.CloudEntry] || data.Conflicts[server.CloudEntry].Local != nil || data.Conflicts[server.CloudEntry].Remote != nil {
+			if _, conflicted := data.Conflicts[server.CloudEntry]; conflicted && !data.Deleted[server.CloudEntry] {
+				// Preserve the last verified local target and its addressable alias.
+				// A conflict withholds incoming changes, not existing local access.
+				continue
+			}
+			if _, ok := data.Entries[server.CloudEntry]; !ok || data.Deleted[server.CloudEntry] {
 				// Keep project/default references resolvable as explicit unavailable entries.
 				if len(config.CleanupProtectionReasons(cfg, alias)) == 0 {
 					delete(cfg.Servers, alias)
@@ -135,6 +140,12 @@ func PublishInventory(path string, state *State, data Data) (InventoryReport, er
 			server.KeyPath = ""
 			server.Auth = config.AuthCloud
 			server.CloudEntry, server.CloudVault = id, owner
+			if old := cfg.Servers[alias]; old != nil && old.CloudEntry == id && old.CloudVault == owner && old.Host == server.Host && old.User == server.User && (old.Port == server.Port || (old.Port == 0 && server.Port == 22)) {
+				// Once published, transport is a local device choice. Background
+				// sync must not erase a working proxy/jump override on this device.
+				server.Proxy, server.ProxyJump, server.ProxyCommand = old.Proxy, old.ProxyJump, old.ProxyCommand
+				server.Forwards = append([]string(nil), old.Forwards...)
+			}
 			a := data.Activity[id]
 			if a.LastConnected > 0 {
 				server.LastUsed = time.UnixMilli(a.LastConnected)

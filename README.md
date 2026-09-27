@@ -24,7 +24,7 @@ sshm list              # searchable inventory + details + safe action menu
 sshm ls --plain        # script-friendly server table
 sshm c my-host         # interactive shell
 sshm exec my-host 'uptime'
-sshm test --all        # parallel direct-TCP reachability check
+sshm test --all        # parallel reachability check through configured routes
 sshm cleanup           # guided review of unused server records
 sshm download my-host /tmp/app.zip ./app.zip --resume --sha256 <hash>
 ```
@@ -39,11 +39,17 @@ end-to-end encrypted. Existing local commands and MCP keep using local configura
 sshm cloud register --username your-name --import-local
 # On another device:
 sshm cloud login --username your-name --import-local
-sshm cloud watch
+sshm service setup     # one-time migration of old credentials
+sshm service install   # background local service and optional sync
 ```
 
 Use the cloud preview client from the console; the existing stable package does
 not include these commands. Use `sshm update` for signed, confirmed updates and `sshm integrations install --app all --mcp` for optional AI setup. See [cloud setup, recovery and limitations](docs/cloud-sync.md).
+
+Migrated credentials work across CLI/MCP processes and service restarts without
+repeated vault unlock. Cloud failures affect synchronization, not local SSH.
+Use `sshm service status` to inspect readiness and `service lock/unlock` for an
+explicit device lock. See [local trust, migration and platform limits](docs/cloud-sync.md#默认本地-ssh-与本机信任).
 
 ## Features
 
@@ -69,7 +75,7 @@ not include these commands. Use `sshm update` for signed, confirmed updates and 
 - `add` (huh wizard) / `edit` / `rm` / `show`; exact-alias confirmation for destructive removal
 - `connect` (interactive shell) / `exec` (one-off) / `test` (single + --all)
 - `status` (remote resource snapshot) / `init` (baseline hardening)
-- `gen-key` (encrypted ed25519, hidden passphrase prompt; no plaintext recovery
+- `gen-key` (encrypted ed25519 with automatic device protection; no plaintext recovery
   sidecar) / `copy-id` (one-shot password, never stored). Automation can supply
   `--passphrase-file` from a separately managed private file; see
   [credential handling](docs/security.md#credential-handling).

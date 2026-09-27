@@ -2,6 +2,8 @@ package mcp
 
 import (
 	"context"
+	"crypto/rand"
+	"encoding/base64"
 	"fmt"
 	"strings"
 	"time"
@@ -12,6 +14,7 @@ import (
 	"github.com/michael-ltm/sshm/internal/config"
 	"github.com/michael-ltm/sshm/internal/keys"
 	"github.com/michael-ltm/sshm/internal/keystore"
+	"github.com/michael-ltm/sshm/internal/localstore"
 	"github.com/michael-ltm/sshm/internal/safety"
 	sshpkg "github.com/michael-ltm/sshm/internal/ssh"
 )
@@ -86,28 +89,50 @@ func handleGenKey(ctx context.Context, deps Deps, args map[string]any) (any, err
 		return errResult("path", err.Error()), nil
 	}
 	phrasePath := strArg(args, "passphrase_file")
+	device := deps.LocalStore
+	if device == nil {
+		device = localstore.New(deps.ConfigPath)
+	}
+	var phraseBytes []byte
 	if strings.TrimSpace(phrasePath) == "" {
-		return errResult("bad_request", "passphrase_file is required: run sshm gen-key in your own terminal to enter and save a passphrase outside chat, or provide the path of an existing protected passphrase file; never send its contents"), nil
-	}
-	phrasePath, err = sshpkg.ExpandHome(phrasePath)
-	if err != nil {
-		return errResult("bad_request", "invalid passphrase_file path"), nil
-	}
-	phraseBytes, err := keys.ReadPassphraseFile(phrasePath)
-	if err != nil {
-		return errResult("bad_request", "passphrase_file must be an existing protected regular file (owner-only permissions, no symlink), containing one nonempty line of at most 1024 bytes. Windows passphrase files are not supported until ACL validation is available: run sshm gen-key in your own terminal to enter and save the phrase outside chat"), nil
+		if err := device.Ensure(ctx); err != nil {
+			return errResult("local_credential_unavailable", err.Error()), nil
+		}
+		random := make([]byte, 32)
+		if _, err := rand.Read(random); err != nil {
+			return errResult("keygen", "could not generate key protection"), nil
+		}
+		phraseBytes = []byte(base64.RawStdEncoding.EncodeToString(random))
+		clear(random)
+	} else {
+		phrasePath, err = sshpkg.ExpandHome(phrasePath)
+		if err != nil {
+			return errResult("bad_request", "invalid passphrase_file path"), nil
+		}
+		phraseBytes, err = keys.ReadPassphraseFile(phrasePath)
+		if err != nil {
+			return errResult("bad_request", "passphrase_file must be an existing protected regular file containing one nonempty line; never send its contents. Omit it to use automatic device protection"), nil
+		}
 	}
 	defer clear(phraseBytes)
 	passphrase := string(phraseBytes)
-	pub, err := keys.GenerateED25519Encrypted(expanded, alias+"@sshm", passphrase)
+	var pub string
+	if device.Enabled() {
+		pub, err = keys.GenerateED25519Protected(expanded, alias+"@sshm", passphrase, func(key []byte) error {
+			return device.RememberKeyFile(ctx, expanded, localstore.Credential{Key: key, Passphrase: phraseBytes})
+		})
+	} else {
+		pub, err = keys.GenerateED25519Encrypted(expanded, alias+"@sshm", passphrase)
+	}
 	if err != nil {
 		return errResult("keygen", err.Error()), nil
 	}
-	// Best-effort: the encrypted key on disk is the primary deliverable and
-	// is valid regardless of agent/keychain availability (e.g. a headless
-	// host with no ssh-agent), so a keystore failure must not fail gen_key
-	// or orphan the key file already written to disk.
-	store := keystore.BestEffort(keystore.StoreAndLoad(expanded, passphrase))
+	var store keystore.Result
+	if device.Enabled() {
+		store.Persisted = true
+	} else {
+		store = keystore.BestEffort(keystore.StoreAndLoad(expanded, passphrase))
+	}
 
 	// Use Update so the KeyPath/Auth write is serialized against concurrent mutations.
 	if uerr := config.Update(deps.ConfigPath, func(cfg *config.Config) error {
@@ -286,10 +311,10 @@ func registerOpsTools(s *server.MCPServer, deps Deps, names []string) []string {
 		names = append(names, name)
 	}
 	reg("bootstrap", "Run baseline hardening on a server.", handleBootstrap)
-	reg("gen_key", "Generate an encrypted ed25519 keypair using a user-prepared protected passphrase file. Never send passphrase contents; no recovery sidecar is created. On Windows, use interactive sshm gen-key instead (passphrase-file ACL validation is unavailable).", handleGenKey,
+	reg("gen_key", "Generate an encrypted ed25519 keypair and save access with this device's protection. No passphrase input or recovery sidecar is needed. An existing protected passphrase_file is optional; never send its contents.", handleGenKey,
 		mcp.WithSchemaAdditionalProperties(false),
 		mcp.WithString("path", mcp.Required(), mcp.Description("private key path")),
-		mcp.WithString("passphrase_file", mcp.Required(), mcp.Description("path of an existing protected passphrase file prepared outside chat; never its contents")))
+		mcp.WithString("passphrase_file", mcp.Description("optional path of an existing protected passphrase file prepared outside chat; never its contents")))
 	reg("copy_id", "Get instructions to install the public key (password stays on the CLI).", handleCopyID)
 	reg("tail_logs", "Tail a remote log file using the remote platform's native command.", handleTailLogs,
 		mcp.WithString("path", mcp.Description("remote log file path")),
