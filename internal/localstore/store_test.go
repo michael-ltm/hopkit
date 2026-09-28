@@ -180,6 +180,39 @@ func TestStoreConcurrentUpdatesDoNotLoseCredentials(t *testing.T) {
 		require.Equal(t, []byte{byte(i)}, b)
 	}
 }
+
+func TestStoreUpdateCancellationDoesNotCommitStagedSecrets(t *testing.T) {
+	s := testStore(t)
+	require.NoError(t, s.SetSecret(context.Background(), "keep", []byte("original")))
+	before, err := os.ReadFile(s.Path())
+	require.NoError(t, err)
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	err = s.Update(ctx, func(d *Data) error {
+		d.Secrets["staged"] = []byte("must not persist")
+		cancel()
+		return nil
+	})
+	require.ErrorIs(t, err, context.Canceled)
+	after, err := os.ReadFile(s.Path())
+	require.NoError(t, err)
+	require.Equal(t, before, after)
+}
+
+func TestStoreUpdateNewLockDoesNotCommitStagedSecrets(t *testing.T) {
+	s := testStore(t)
+	require.NoError(t, s.SetSecret(context.Background(), "keep", []byte("original")))
+	before, err := os.ReadFile(s.Path())
+	require.NoError(t, err)
+	err = s.Update(context.Background(), func(d *Data) error {
+		d.Secrets["staged"] = []byte("must not persist")
+		return os.WriteFile(s.Path()+".locked", []byte("explicit device lock\n"), 0600)
+	})
+	require.ErrorIs(t, err, ErrLocked)
+	after, err := os.ReadFile(s.Path())
+	require.NoError(t, err)
+	require.True(t, bytes.Equal(before, after))
+}
 func TestStoreValidatesKeyBeforePersisting(t *testing.T) {
 	s := testStore(t)
 	c := testCredential(t)

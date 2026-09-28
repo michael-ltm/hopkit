@@ -12,7 +12,9 @@ import (
 
 func (System) Seal(ctx context.Context, id string, value []byte) (string, []byte, error) {
 	// The system's host secret is outside the SSHM data/backup directory.
-	if blob, e := runCommand(ctx, value, "systemd-creds", "--user", "--name="+id, "--with-key=host", "--no-ask-password", "encrypt", "-", "-"); e == nil && len(blob) > 0 {
+	// Own-user credentials do not request interactive Polkit authorization.
+	// Older systemd-creds versions reject --no-ask-password.
+	if blob, e := runCommand(ctx, value, "systemd-creds", "--user", "--name="+id, "--with-key=host", "encrypt", "-", "-"); e == nil && len(blob) > 0 {
 		return "systemd-user", blob, nil
 	} else if errors.Is(e, context.Canceled) || errors.Is(e, context.DeadlineExceeded) {
 		return "", nil, commandFailure(e)
@@ -32,7 +34,7 @@ func (System) Seal(ctx context.Context, id string, value []byte) (string, []byte
 func (System) Open(ctx context.Context, id, backend string, blob []byte) ([]byte, error) {
 	switch backend {
 	case "systemd-user":
-		b, e := runCommand(ctx, blob, "systemd-creds", "--user", "--name="+id, "--no-ask-password", "decrypt", "-", "-")
+		b, e := runCommand(ctx, blob, "systemd-creds", "--user", "--name="+id, "decrypt", "-", "-")
 		if e != nil {
 			return nil, commandFailure(e)
 		}

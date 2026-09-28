@@ -21,10 +21,11 @@ import (
 )
 
 var (
-	ErrNotFound = errors.New("local credential is not configured")
-	ErrInactive = errors.New("local credential was disabled by an accepted deletion; register an active credential locally")
-	ErrLocked   = errors.New("device is explicitly locked; run 'sshm service unlock' in a local terminal")
-	ErrCorrupt  = errors.New("local credential store failed verification; preserve it and restore its encrypted backup")
+	ErrNotFound       = errors.New("local credential is not configured")
+	ErrInactive       = errors.New("local credential was disabled by an accepted deletion; register an active credential locally")
+	ErrLocked         = errors.New("device is explicitly locked; run 'sshm service unlock' in a local terminal")
+	ErrCorrupt        = errors.New("local credential store failed verification; preserve it and restore its encrypted backup")
+	ErrKeyFileChanged = errors.New("configured key file identity changed; register the replacement key locally")
 )
 
 const maxStoreSize = 32 << 20
@@ -197,6 +198,9 @@ func (s *Store) Update(ctx context.Context, fn func(*Data) error) error {
 	if e = fn(d); e != nil {
 		return e
 	}
+	if e = ctx.Err(); e != nil {
+		return e
+	}
 	plain, e := json.Marshal(d)
 	if e != nil {
 		return e
@@ -217,6 +221,12 @@ func (s *Store) Update(ctx context.Context, fn func(*Data) error) error {
 		return e
 	}
 	defer clear(out)
+	if e = ctx.Err(); e != nil {
+		return e
+	}
+	if e = s.CheckLocked(); e != nil {
+		return e
+	}
 	return writePrivate(s.Path(), out)
 }
 func (s *Store) Ensure(ctx context.Context) error {
@@ -230,21 +240,44 @@ func (s *Store) Ensure(ctx context.Context) error {
 	return s.Update(ctx, func(*Data) error { return nil })
 }
 func (s *Store) Put(ctx context.Context, target *config.Server, credentials []Credential) error {
-	id, e := Identity(target)
+	id, cs, e := prepareCredentials(target, credentials)
 	if e != nil {
 		return e
 	}
-	cs := cloneCredentials(credentials)
 	defer CloseCredentials(cs)
-	if e = validateCredentials(cs); e != nil {
-		return e
-	}
 	return s.Update(ctx, func(d *Data) error {
-		CloseCredentials(d.Connections[id])
-		d.Connections[id] = cloneCredentials(cs)
-		delete(d.Disabled, id)
+		d.put(id, cs)
 		return nil
 	})
+}
+
+// Put validates and stages credentials in an Update transaction. Only a
+// successful Update persists them; the transaction owns its own byte copies.
+func (d *Data) Put(target *config.Server, credentials []Credential) error {
+	id, cs, e := prepareCredentials(target, credentials)
+	if e != nil {
+		return e
+	}
+	defer CloseCredentials(cs)
+	d.put(id, cs)
+	return nil
+}
+func prepareCredentials(target *config.Server, credentials []Credential) (string, []Credential, error) {
+	id, e := Identity(target)
+	if e != nil {
+		return "", nil, e
+	}
+	cs := cloneCredentials(credentials)
+	if e = validateCredentials(cs); e != nil {
+		CloseCredentials(cs)
+		return "", nil, e
+	}
+	return id, cs, nil
+}
+func (d *Data) put(id string, cs []Credential) {
+	CloseCredentials(d.Connections[id])
+	d.Connections[id] = cloneCredentials(cs)
+	delete(d.Disabled, id)
 }
 func (s *Store) Resolve(ctx context.Context, target *config.Server) ([]Credential, error) {
 	id, e := Identity(target)
@@ -256,6 +289,19 @@ func (s *Store) Resolve(ctx context.Context, target *config.Server) ([]Credentia
 		return nil, e
 	}
 	defer d.Close()
+	return d.resolve(id, target)
+}
+
+// Resolve applies the same target and key-file checks to an already opened
+// snapshot, without reopening the device protector for each target.
+func (d *Data) Resolve(target *config.Server) ([]Credential, error) {
+	id, e := Identity(target)
+	if e != nil {
+		return nil, e
+	}
+	return d.resolve(id, target)
+}
+func (d *Data) resolve(id string, target *config.Server) ([]Credential, error) {
 	if d.Disabled[id] {
 		return nil, ErrInactive
 	}
@@ -290,12 +336,25 @@ func (s *Store) Disable(ctx context.Context, target *config.Server) error {
 		return e
 	}
 	return s.Update(ctx, func(d *Data) error {
-		if d.Disabled == nil {
-			d.Disabled = map[string]bool{}
-		}
-		d.Disabled[id] = true
+		d.disable(id)
 		return nil
 	})
+}
+
+// Disable stages an accepted deletion while retaining recovery material.
+func (d *Data) Disable(target *config.Server) error {
+	id, e := Identity(target)
+	if e != nil {
+		return e
+	}
+	d.disable(id)
+	return nil
+}
+func (d *Data) disable(id string) {
+	if d.Disabled == nil {
+		d.Disabled = map[string]bool{}
+	}
+	d.Disabled[id] = true
 }
 func (s *Store) RememberKeyFile(ctx context.Context, path string, c Credential) error {
 	id, e := keyFileID(path)
@@ -336,10 +395,18 @@ func (s *Store) SetSecret(ctx context.Context, name string, value []byte) error 
 		return errors.New("invalid local secret")
 	}
 	return s.Update(ctx, func(d *Data) error {
-		clear(d.Secrets[name])
-		d.Secrets[name] = append([]byte(nil), value...)
-		return nil
+		return d.SetSecret(name, value)
 	})
+}
+
+// SetSecret stages a private copy of a secret in the current transaction.
+func (d *Data) SetSecret(name string, value []byte) error {
+	if name == "" || len(name) > 256 || len(value) > 1<<20 {
+		return errors.New("invalid local secret")
+	}
+	clear(d.Secrets[name])
+	d.Secrets[name] = append([]byte(nil), value...)
+	return nil
 }
 func (s *Store) Secret(ctx context.Context, name string) ([]byte, error) {
 	d, e := s.Read(ctx)

@@ -176,6 +176,29 @@ type migrationProtector struct {
 	openError      error
 }
 
+func TestRememberCloudCredentialsUsesOneStoreTransaction(t *testing.T) {
+	cfg := config.New()
+	cfg.Servers["first"] = &config.Server{Host: "first.invalid", User: "ops", Auth: config.AuthPassword}
+	cfg.Servers["second"] = &config.Server{Host: "second.invalid", User: "ops", Auth: config.AuthPassword}
+	store, _, _ := migrationSetup(t, cfg)
+	require.NoError(t, store.Ensure(context.Background()))
+	p := &migrationProtector{Protector: store.Protector}
+	store.Protector = p
+	vault, _, err := cloudsync.NewVault("fixture-user", []byte("synthetic-batch-phrase"))
+	require.NoError(t, err)
+	defer vault.Close()
+	_, err = vault.Data.Import(cfg, "fixture-device", false)
+	require.NoError(t, err)
+	for id := range vault.Data.Entries {
+		require.NoError(t, vault.Data.SetPassword(id, "synthetic-batch-password"))
+	}
+	state := &cloudsync.State{URL: "https://fixture.invalid", Username: "fixture-user", Base: cloudsync.Snapshot{RootPublic: vault.Public()}}
+	report, err := rememberCloudCredentials(context.Background(), state, vault, store.ConfigPath)
+	require.NoError(t, err)
+	require.Equal(t, 2, report.Loaded)
+	require.Equal(t, 1, p.opens, "the command must not preflight every target in separate store reads")
+}
+
 func (p *migrationProtector) Open(ctx context.Context, id, backend string, data []byte) ([]byte, error) {
 	p.opens++
 	if p.opens > 1 && p.openError != nil {

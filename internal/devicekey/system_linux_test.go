@@ -7,12 +7,50 @@ import (
 	"context"
 	"errors"
 	"os"
+	"slices"
 	"strings"
 	"testing"
 	"time"
 
 	"github.com/stretchr/testify/require"
 )
+
+func TestSystemdUserProtectionUsesSupportedNoninteractiveCLI(t *testing.T) {
+	old := runCommand
+	t.Cleanup(func() { runCommand = old })
+	id := "sshm-" + strings.Repeat("a", 64)
+	plain := []byte("synthetic-device-key")
+	blob := []byte("synthetic-systemd-ciphertext")
+	calls := 0
+	runCommand = func(_ context.Context, input []byte, name string, args ...string) ([]byte, error) {
+		calls++
+		require.Equal(t, "systemd-creds", name, "supported systemd protection must not fall back to a different backend")
+		// systemd-creds 257 rejects this systemctl option before processing stdin.
+		if slices.Contains(args, "--no-ask-password") {
+			return nil, ErrUnavailable
+		}
+		require.Contains(t, args, "--user", "own-user scope does not request interactive Polkit authorization")
+		require.Contains(t, args, "--name="+id)
+		require.NotContains(t, strings.Join(args, " "), string(plain))
+		require.NotContains(t, strings.Join(args, " "), string(blob))
+		require.Equal(t, []string{"-", "-"}, args[len(args)-2:], "credentials must remain on stdin/stdout")
+		if slices.Contains(args, "encrypt") {
+			require.Contains(t, args, "--with-key=host")
+			require.Equal(t, plain, input)
+			return blob, nil
+		}
+		require.Contains(t, args, "decrypt")
+		require.Equal(t, blob, input)
+		return plain, nil
+	}
+	backend, sealed, err := (System{}).Seal(context.Background(), id, plain)
+	require.NoError(t, err)
+	require.Equal(t, "systemd-user", backend)
+	opened, err := (System{}).Open(context.Background(), id, backend, sealed)
+	require.NoError(t, err)
+	require.Equal(t, plain, opened)
+	require.Equal(t, 2, calls)
+}
 
 func TestSecretServiceWrappersDoNotOverwritePriorKey(t *testing.T) {
 	old := runCommand
@@ -151,7 +189,7 @@ func TestNativeSystemdProtectionWithoutSessionEnvironment(t *testing.T) {
 	}
 	id := "sshm-" + strings.Repeat("f", 64)
 	value := []byte("synthetic-native-devicekey-roundtrip")
-	blob, err := runCommand(context.Background(), value, "systemd-creds", "--user", "--name="+id, "--with-key=host", "--no-ask-password", "encrypt", "-", "-")
+	blob, err := runCommand(context.Background(), value, "systemd-creds", "--user", "--name="+id, "--with-key=host", "encrypt", "-", "-")
 	require.NoError(t, err)
 	require.NotContains(t, string(blob), string(value))
 	opened, err := (System{}).Open(context.Background(), id, "systemd-user", blob)

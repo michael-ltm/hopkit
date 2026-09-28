@@ -28,20 +28,6 @@ func rememberCloudCredentials(ctx context.Context, s *cloudsync.State, v *clouds
 		return cloudsync.LoadReport{}, err
 	}
 	store := localCredentialStore(path)
-	// This helper also runs during the first interactive vault unlock. Filter
-	// inactive targets before RememberVault can register any active entries.
-	for alias, target := range cfg.Servers {
-		if target == nil {
-			continue
-		}
-		cs, err := store.Resolve(ctx, target)
-		localstore.CloseCredentials(cs)
-		if errors.Is(err, localstore.ErrInactive) {
-			delete(cfg.Servers, alias)
-		} else if err != nil && !errors.Is(err, localstore.ErrNotFound) {
-			return cloudsync.LoadReport{}, fmt.Errorf("resolve local credential for %s: %w", alias, err)
-		}
-	}
 	return cloudsync.RememberVault(ctx, s, v, cfg, store)
 }
 

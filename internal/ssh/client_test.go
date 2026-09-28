@@ -115,7 +115,8 @@ func TestBuildClientConfig_UnavailableLocalKeyRequiresExactCachedVaultIdentity(t
 	require.NoError(t, os.WriteFile(filepath.Join(dir, "prod-7w.pub"), gssh.MarshalAuthorizedKey(localSigner.PublicKey()), 0644))
 	require.NoError(t, os.WriteFile(filepath.Join(dir, "prod-7w~cde0eb5a.pub"), gssh.MarshalAuthorizedKey(vaultSigner.PublicKey()), 0644))
 	// Alias sibling public keys must never authorize an agent identity by
-	// themselves; only a cache for this exact route and binding may do so.
+	// themselves. Cloud markers may use the exact target cache; native key
+	// selections must still match the current private file.
 	for _, auth := range []string{config.AuthKey, config.AuthCloud} {
 		for _, key := range []struct{ name, path string }{
 			{"encrypted", encryptedKeyPath},
@@ -136,7 +137,7 @@ func TestBuildClientConfig_UnavailableLocalKeyRequiresExactCachedVaultIdentity(t
 						require.NoError(t, StoreLocalAgentIdentities(configPath, &cached, []gssh.PublicKey{vaultSigner.PublicKey()}))
 					}
 					cfg, closer, err := BuildClientConfig(srv, BuildOpts{Alias: "prod-7w", ConfigPath: configPath, Insecure: true})
-					if cache != "exact" {
+					if cache != "exact" || auth == config.AuthKey {
 						require.Error(t, err)
 						require.Nil(t, closer)
 						return

@@ -15,6 +15,7 @@ import (
 	"time"
 
 	"github.com/michael-ltm/sshm/internal/config"
+	"github.com/michael-ltm/sshm/internal/localstore"
 	gssh "golang.org/x/crypto/ssh"
 	"golang.org/x/crypto/ssh/agent"
 )
@@ -317,6 +318,14 @@ func loadLocalAgentSigners(configPath string, server *config.Server) ([]gssh.Sig
 				_ = closer.Close()
 			}
 			return nil, nil, errors.New("invalid public key in local identity cache")
+		}
+		if server.Auth == config.AuthKey && server.KeyPath != "" {
+			// Target caches can contain other devices' keys. An explicit file
+			// selection must be proved by that file, never its .pub sidecar.
+			selected := localstore.Credential{Fingerprint: gssh.FingerprintSHA256(pub)}
+			if err := selected.VerifyKeyFile(server.KeyPath); err != nil {
+				continue
+			}
 		}
 		signer, closer, err := agentSignerFor(pub)
 		if err != nil {

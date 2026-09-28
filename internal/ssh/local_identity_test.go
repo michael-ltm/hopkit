@@ -1,8 +1,10 @@
 package ssh
 
 import (
+	"crypto/rand"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"io"
 	"net"
 	"os"
@@ -436,4 +438,104 @@ func TestLegacyMigrationRequiresAgentSigningProof(t *testing.T) {
 	require.NoError(t, err)
 	require.NoFileExists(t, newPath)
 	require.FileExists(t, oldPath)
+}
+
+func writeKeySelectionCache(t *testing.T, path string, target *config.Server, pubs []gssh.PublicKey, legacy bool) {
+	t.Helper()
+	if !legacy {
+		require.NoError(t, StoreLocalAgentIdentities(path, target, pubs))
+		return
+	}
+	oldPath, err := legacyLocalIdentityCachePath(path, target)
+	require.NoError(t, err)
+	require.NoError(t, os.MkdirAll(filepath.Dir(oldPath), 0700))
+	cached := localIdentityCache{}
+	for _, pub := range pubs {
+		cached.PublicKeys = append(cached.PublicKeys, strings.TrimSpace(string(gssh.MarshalAuthorizedKey(pub))))
+	}
+	data, err := json.Marshal(cached)
+	require.NoError(t, err)
+	require.NoError(t, os.WriteFile(oldPath, data, 0600))
+}
+
+func TestCachedAgentIdentityCannotOverrideExplicitKeyFile(t *testing.T) {
+	skipIfNoUnixSockets(t)
+	old := genEd25519(t)
+	oldSigner, err := gssh.NewSignerFromKey(old)
+	require.NoError(t, err)
+	t.Setenv("SSH_AUTH_SOCK", serveTestAgent(t, old))
+	for _, legacy := range []bool{false, true} {
+		for _, state := range []string{"replaced encrypted", "missing", "empty", "malformed", "unreadable"} {
+			t.Run(fmt.Sprintf("legacy-%t/%s", legacy, state), func(t *testing.T) {
+				path := filepath.Join(t.TempDir(), "config.toml")
+				target := localIdentityServer()
+				target.Auth = config.AuthKey
+				target.KeyPath = filepath.Join(t.TempDir(), "selected-key")
+				switch state {
+				case "replaced encrypted":
+					target.KeyPath = writeEncryptedTempKey(t, genEd25519(t))
+				case "empty":
+					require.NoError(t, os.WriteFile(target.KeyPath, nil, 0600))
+				case "malformed":
+					require.NoError(t, os.WriteFile(target.KeyPath, []byte("not a private key"), 0600))
+				case "unreadable":
+					require.NoError(t, os.Mkdir(target.KeyPath, 0700))
+				}
+				// A stale public sidecar never authorizes the old cached identity.
+				require.NoError(t, os.WriteFile(target.KeyPath+".pub", gssh.MarshalAuthorizedKey(oldSigner.PublicKey()), 0600))
+				writeKeySelectionCache(t, path, target, []gssh.PublicKey{oldSigner.PublicKey()}, legacy)
+				signers, closer, err := loadLocalAgentSigners(path, target)
+				if closer != nil {
+					defer closer.Close()
+				}
+				require.ErrorIs(t, err, errLocalIdentityUnavailable)
+				require.Empty(t, signers)
+				require.False(t, HasLocalAuth(target, BuildOpts{ConfigPath: path}))
+				if legacy {
+					newPath, err := localIdentityCachePath(path, target)
+					require.NoError(t, err)
+					require.NoFileExists(t, newPath, "unverified keys must not migrate")
+				}
+			})
+		}
+	}
+}
+
+func TestCachedAgentIdentitySelectsAndMigratesOnlyCurrentKeyFile(t *testing.T) {
+	skipIfNoUnixSockets(t)
+	current, old := genEd25519(t), genEd25519(t)
+	currentSigner, err := gssh.NewSignerFromKey(current)
+	require.NoError(t, err)
+	oldSigner, err := gssh.NewSignerFromKey(old)
+	require.NoError(t, err)
+	keyring := agent.NewKeyring()
+	require.NoError(t, keyring.Add(agent.AddedKey{PrivateKey: current}))
+	require.NoError(t, keyring.Add(agent.AddedKey{PrivateKey: old}))
+	t.Setenv("SSH_AUTH_SOCK", serveAgentBackend(t, keyring))
+	for _, legacy := range []bool{false, true} {
+		t.Run(fmt.Sprintf("legacy-%t", legacy), func(t *testing.T) {
+			path := filepath.Join(t.TempDir(), "config.toml")
+			target := localIdentityServer()
+			target.Auth, target.KeyPath = config.AuthKey, writeEncryptedTempKey(t, current)
+			require.NoError(t, os.WriteFile(target.KeyPath+".pub", gssh.MarshalAuthorizedKey(oldSigner.PublicKey()), 0600))
+			writeKeySelectionCache(t, path, target, []gssh.PublicKey{oldSigner.PublicKey(), currentSigner.PublicKey()}, legacy)
+			signers, closer, err := loadLocalAgentSigners(path, target)
+			require.NoError(t, err)
+			defer closer.Close()
+			require.Len(t, signers, 1)
+			challenge := []byte("current explicit key file proof")
+			signature, err := signers[0].Sign(rand.Reader, challenge)
+			require.NoError(t, err)
+			require.NoError(t, currentSigner.PublicKey().Verify(challenge, signature))
+			if legacy {
+				newPath, err := localIdentityCachePath(path, target)
+				require.NoError(t, err)
+				data, err := os.ReadFile(newPath)
+				require.NoError(t, err)
+				var cached localIdentityCache
+				require.NoError(t, json.Unmarshal(data, &cached))
+				require.Equal(t, []string{strings.TrimSpace(string(gssh.MarshalAuthorizedKey(currentSigner.PublicKey())))}, cached.PublicKeys)
+			}
+		})
+	}
 }

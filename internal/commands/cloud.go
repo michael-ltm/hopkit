@@ -344,8 +344,11 @@ func newCloudCmd() *cobra.Command {
 	root.AddCommand(&cobra.Command{Use: "status", Short: "Show account and sync status without unlocking", Args: cobra.NoArgs, RunE: func(cmd *cobra.Command, _ []string) error {
 		s, release, err := cloudState()
 		if err != nil {
-			fmt.Fprintln(cmd.OutOrStdout(), "Local mode. Cloud account not configured.")
-			return nil
+			if errors.Is(err, os.ErrNotExist) {
+				fmt.Fprintln(cmd.OutOrStdout(), "Local mode. Cloud account not configured.")
+				return nil
+			}
+			return err
 		}
 		defer release()
 		return writeJSON(cmd.OutOrStdout(), map[string]any{"username": s.Username, "endpoint": s.URL, "device_id": s.DeviceID, "logged_in": s.Token != "", "revision": s.Base.Revision, "unsynced": s.Dirty, "pending_retry": s.Pending != nil, "session_expired": s.Expires < time.Now().UnixMilli()})

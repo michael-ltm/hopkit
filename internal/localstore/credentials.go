@@ -19,6 +19,16 @@ import (
 // (or a proved matching public half) can authorize reuse; a stale .pub sidecar
 // is insufficient when a user has replaced an encrypted private file.
 func verifyKeyFile(path string, saved Credential) error {
+	return checkKeyFile(path, saved, true)
+}
+
+// VerifyKeyFile requires an existing file to prove an incoming credential is
+// the user's explicit local selection. Resolve separately permits a missing
+// file so previously saved credentials remain usable offline.
+func (c Credential) VerifyKeyFile(path string) error {
+	return checkKeyFile(path, c, false)
+}
+func checkKeyFile(path string, saved Credential, allowMissing bool) error {
 	if strings.HasPrefix(path, "~/") {
 		home, err := os.UserHomeDir()
 		if err != nil {
@@ -28,13 +38,16 @@ func verifyKeyFile(path string, saved Credential) error {
 	}
 	data, err := os.ReadFile(path)
 	if os.IsNotExist(err) {
-		return nil
+		if allowMissing {
+			return nil
+		}
+		return err
 	}
 	if err != nil {
 		return errors.New("configured key file cannot be read")
 	}
 	defer clear(data)
-	if bytes.Equal(data, saved.Key) {
+	if len(saved.Key) > 0 && bytes.Equal(data, saved.Key) {
 		return nil
 	}
 	actual, err := gssh.ParsePrivateKey(data)
@@ -51,7 +64,7 @@ func verifyKeyFile(path string, saved Credential) error {
 		}
 	}
 	if public == nil || gssh.FingerprintSHA256(public) != saved.Fingerprint {
-		return errors.New("configured key file identity changed; register the replacement key locally")
+		return ErrKeyFileChanged
 	}
 	return nil
 }

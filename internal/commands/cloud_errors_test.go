@@ -1,6 +1,7 @@
 package commands
 
 import (
+	"bytes"
 	"errors"
 	"fmt"
 	"os"
@@ -57,4 +58,27 @@ func TestCloudStateErrorsDistinguishMissingAndDamaged(t *testing.T) {
 	_, _, err = cloudState()
 	require.Contains(t, err.Error(), "无法读取")
 	require.NotContains(t, err.Error(), "尚未配置")
+}
+
+func TestCloudStatusDoesNotHideDamagedAccountAsLocalMode(t *testing.T) {
+	old := flagConfigPath
+	t.Cleanup(func() { flagConfigPath = old })
+	flagConfigPath = filepath.Join(t.TempDir(), "config.toml")
+	require.NoError(t, config.Save(flagConfigPath, config.New()))
+	run := func() (string, error) {
+		root := newCloudCmd()
+		cmd, _, err := root.Find([]string{"status"})
+		require.NoError(t, err)
+		var out bytes.Buffer
+		cmd.SetOut(&out)
+		err = cmd.RunE(cmd, nil)
+		return out.String(), err
+	}
+	out, err := run()
+	require.NoError(t, err)
+	require.Contains(t, out, "Cloud account not configured")
+	require.NoError(t, os.WriteFile(cloudsync.StatePath(flagConfigPath), []byte("broken"), 0600))
+	out, err = run()
+	require.Error(t, err)
+	require.NotContains(t, out, "not configured")
 }
