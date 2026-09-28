@@ -4,7 +4,7 @@
 import assert from 'node:assert/strict';
 import { spawn } from 'node:child_process';
 import { once } from 'node:events';
-import { mkdtemp, readFile, rm, readdir } from 'node:fs/promises';
+import { mkdtemp, readFile, rm, readdir, mkdir, writeFile } from 'node:fs/promises';
 import { createServer } from 'node:http';
 import { tmpdir } from 'node:os';
 import { dirname, join, resolve } from 'node:path';
@@ -201,6 +201,13 @@ try {
     await cdp('Page.navigate', { url: origin + path });
     await waitFor(`document.querySelector('#account-chip')?.checkVisibility() && document.querySelector('#job-rows')?.children.length === 1`, 'signed-in fixture loads');
   };
+  const screenshot = async name => {
+    if (!process.env.SSHM_UI_SCREENSHOTS) return;
+    const directory = resolve(process.env.SSHM_UI_SCREENSHOTS);
+    await mkdir(directory, { recursive: true });
+    const { data } = await cdp('Page.captureScreenshot', { format: 'png' });
+    await writeFile(join(directory, name + '.png'), Buffer.from(data, 'base64'));
+  };
   const checkTerminalCapability = async () => {
     await click('#server-rows .row-menu-button');
     await evaluate(`([...document.querySelectorAll('.row-menu button')].find(b => b.textContent === '连接终端')).id = 'fixture-terminal'`);
@@ -213,6 +220,17 @@ try {
     await click('#server-terminal-dialog [data-close]');
     console.log('PASS: terminal eligibility uses agent capabilities, including stable 0.7.1');
   };
+
+  await cdp('Emulation.setDeviceMetricsOverride', { width: 1280, height: 900, deviceScaleFactor: 1, mobile: false });
+  await navigate('/');
+  await screenshot('home-desktop');
+  await click('#landing .inline-actions .primary');
+  assert.equal(await evaluate(`document.querySelector('#add-dialog').open`), true, 'primary homepage action installs locally instead of requiring cloud access');
+  assert.ok(await visible('#local-start-command'), 'local use is available before cloud onboarding');
+  assert.equal(await visible('#install-login'), false, 'cloud onboarding is optional and collapsed');
+  assert.equal(await evaluate(`document.querySelector('#action-unlock-dialog').open`), false, 'local installation never requests vault unlock');
+  await click('#add-dialog [data-close]');
+  console.log('PASS: local installation is the primary homepage flow');
 
   await navigate('/servers');
   assert.ok(await visible('#add-server'), 'Locked server page must show the Add Server button');
@@ -286,6 +304,8 @@ try {
   console.log('PASS: install command unlock keeps installation context');
 
   await navigate('/devices');
+  assert.equal(await visible('#dispatch-jobs'), false, 'remote jobs stay outside the default device workflow');
+  await click('#device-advanced > summary');
   await click('#job-history summary');
   const receiptButton = await evaluate(`(() => {
     const buttons = [...document.querySelectorAll('#job-rows button')];
@@ -299,6 +319,7 @@ try {
   console.log('PASS: receipt unlock verifies the signature in place');
 
   await navigate('/devices');
+  await click('#device-advanced > summary');
   await openPrompt('#dispatch-jobs', '/devices');
   await unlock();
   await waitFor(`document.querySelector('#job-dialog').open`, 'existing device dispatch resumes');
@@ -320,6 +341,20 @@ try {
   await waitFor(`document.querySelector('#top-login').checkVisibility() && !document.querySelector('#account-chip').checkVisibility()`, 'logout returns to signed-out UI');
   await delay(100);
   assert.equal(await visible('#flash'), false, 'logout must not flash an expired-session error');
+  await cdp('Emulation.setDeviceMetricsOverride', { width: 390, height: 844, deviceScaleFactor: 1, mobile: false });
+  assert.equal(await evaluate('document.documentElement.scrollWidth <= innerWidth'), true, 'homepage fits a narrow viewport');
+  await screenshot('home-mobile');
+  await click('#landing .inline-actions .primary');
+  assert.ok(await visible('#local-start-command'), 'signed-out users can install and start locally');
+  assert.equal(await evaluate(`document.querySelector('#login-dialog').open || document.querySelector('#action-unlock-dialog').open`), false, 'local onboarding does not open login or unlock');
+  assert.equal(await evaluate(`(() => {
+    const dialog = document.querySelector('#add-dialog'), bounds = dialog.getBoundingClientRect();
+    return bounds.left >= 0 && bounds.right <= innerWidth && dialog.scrollWidth <= dialog.clientWidth;
+  })()`), true, 'local installation dialog fits a narrow viewport');
+  await screenshot('install-mobile');
+  await click('#install-sync > summary');
+  assert.ok(await visible('#install-login'), 'optional sync onboarding can still be opened');
+  await click('#add-dialog [data-close]');
   console.log('PASS: narrow-screen unlock and clean logout');
   assert.deepEqual(browserErrors, [], 'no uncaught browser exceptions');
   assert.deepEqual(unexpectedRequests, [], 'all requests stay within the synthetic fixture');

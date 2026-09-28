@@ -1,8 +1,10 @@
-# SSHM development handoff — 2026-09-27
+# SSHM development handoff — 2026-09-28
 
 SSHM manages local SSH connections and optional client-encrypted cloud synchronization. Production endpoint: https://sshm.yunmini.net. Published cloud client release: `0.8.0-cloud-preview.35`. See [the September 27 release report](superpowers/reports/2026-09-27-preview35-release.md) for current deployment evidence and `docs/cloud-sync.md` for architecture. The older `docs/2026-09-08-device-version-reporting.md` records the previous rollout.
 
 ## Start here
+
+The September 28 website update makes local installation the primary path. Cloud enrollment, credential migration and AI integration are optional expandable instructions. Remote tasks and web terminal guidance remain under advanced controls. Browser vault unlocking still protects cloud contents; it does not lock the device's saved local credentials. See [the website update report](superpowers/reports/2026-09-28-local-first-website.md).
 
 - CLI / interactive home: `internal/commands/root.go`, `home.go`, `internal/ui/home.go`.
 - Encrypted vault, synchronization and merge: `internal/cloudsync/`.
