@@ -1,8 +1,10 @@
 # SSHM development handoff — 2026-09-28
 
-SSHM manages local SSH connections and optional client-encrypted cloud synchronization. Production endpoint: https://sshm.yunmini.net. Published cloud client release: `0.8.0-cloud-preview.35`. See [the September 27 release report](superpowers/reports/2026-09-27-preview35-release.md) for current deployment evidence and `docs/cloud-sync.md` for architecture. The older `docs/2026-09-08-device-version-reporting.md` records the previous rollout.
+SSHM manages local SSH connections and optional client-encrypted cloud synchronization. Production endpoint: https://sshm.yunmini.net. Published cloud client release: `0.8.0-cloud-preview.36`. See [the September 28 cleanup report](superpowers/reports/2026-09-28-preview36-cleanup.md) for current deployment evidence and `docs/cloud-sync.md` for architecture. The older `docs/2026-09-08-device-version-reporting.md` records the previous rollout.
 
 ## Start here
+
+Preview.36 fixes cross-device key pollution in explicit local-file bindings, batches each credential import into one atomic store update, checks explicit file selection for legacy Agent cache fallback, and clarifies optional web-terminal status. Linux and MacBook Air local services are ready after restart. Mac mini encrypted recovery and GrokBot native credential-service installation are still pending explicit authorization after automatic approval rejection; their old cloud agents remain. Do not describe those migrations as complete.
 
 The September 28 website update makes local installation the primary path. Cloud enrollment, credential migration and AI integration are optional expandable instructions. Remote tasks and web terminal guidance remain under advanced controls. Browser vault unlocking still protects cloud contents; it does not lock the device's saved local credentials. See [the website update report](superpowers/reports/2026-09-28-local-first-website.md).
 
@@ -30,11 +32,12 @@ The release builder requires `--version` and `--darwin-dir`. Build both Darwin a
 
 ```sh
 # On macOS, from the intended release source revision; choose a new version.
-release_version=0.8.0-cloud-preview.35
+release_version=0.8.0-cloud-preview.37 # choose an unpublished version
 darwin_build_dir=/tmp/sshm-native-$release_version
 mkdir -p "$darwin_build_dir"
 for arch in amd64 arm64; do
-  MACOSX_DEPLOYMENT_TARGET=12.0 CGO_ENABLED=1 GOOS=darwin GOARCH="$arch" go build \
+  MACOSX_DEPLOYMENT_TARGET=12.0 CGO_CFLAGS=-mmacosx-version-min=12.0 CGO_LDFLAGS=-mmacosx-version-min=12.0 \
+    CGO_ENABLED=1 GOOS=darwin GOARCH="$arch" go build \
     -ldflags "-s -w -X github.com/michael-ltm/sshm/internal/commands.Version=$release_version" \
     -o "$darwin_build_dir/sshm-darwin-$arch" ./cmd/sshm
 done
@@ -51,11 +54,11 @@ After validating the complete public assets and generated installers, deploy wit
 ## Runtime distinctions and pending operational work
 
 - Installed file, running MCP process, running cloud agent, and last heartbeat are distinct. Version `.30` records installation observations separately from legacy process heartbeats.
-- MacBook Air, Mac mini, GrokBot and the local Linux workstation now have `.35`; executable hashes match the signed release. Fresh MCP initialization on each remote host reports `.35`. The local service and Mac mini desktop helper were restarted. Existing AI sessions and cloud agents retain their loaded process until restarted; do not copy in-memory vault keys.
+- MacBook Air, Mac mini, GrokBot and the local Linux workstation now have `.36`; executable hashes and installed-version account observations match the signed release. Local Linux and MacBook Air services and the Mac mini desktop helper were restarted. The obsolete temporary MCP grant was removed. The Mac mini/GrokBot old cloud agents remain until their explicitly gated migrations finish; existing AI sessions retain loaded code. Never copy in-memory vault keys.
 - `tmp-ai-compute` was offline at final version-display acceptance. Its last `.25` heartbeat is historical, not proof of installed version or a completed update.
 - Continuous terminals use protocol v3 with short admission authorization; old protocol requests retain their original lifetime. Existing agents must actually load the new binary.
 - A previous old MCP process dropped unknown cloud binding fields while writing activity. Compatibility sidecars and authenticated sync recovery were implemented in `.27–.29`. The September 27 recovery separately verified persistent local credentials for `prod-go`, `grokbot`, `aliyun-hcg-prod` and `racing-server`, with an unavailable external Agent. This does not establish recovery for every historical cloud entry.
-- Plugin-managed Codex / Claude skills are preserved by the updater; update their owning plugin through its supported mechanism. Never silently rewrite plugin caches. Installed SSHM plugins on the three remote machines now use the current `0.7.1` plugin assets; this version is independent of the `.35` executable. Existing enabled/disabled states were preserved. Restart Claude or open a new Codex thread to load the updated integration.
+- Plugin-managed Codex / Claude skills are preserved by the updater; update their owning plugin through its supported mechanism. Never silently rewrite plugin caches. Installed SSHM plugins on the three remote machines now use the current `0.7.1` plugin assets; this version is independent of the `.36` executable. Existing enabled/disabled states were preserved. Restart Claude or open a new Codex thread to load the updated integration.
 
 ## Execution environment
 
