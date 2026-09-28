@@ -109,7 +109,7 @@ func TestProbeRouteJumpUsesSSHForwardingForUnreachableNominalTarget(t *testing.T
 	}()
 	keyPath := writeTempKey(t)
 	opts := BuildOpts{Insecure: true, Timeout: time.Second, ResolveJump: func(string) (*config.Server, BuildOpts, error) {
-		return &config.Server{Host: "127.0.0.1", Port: jump.Addr().(*net.TCPAddr).Port, User: "jump", Auth: config.AuthKey, KeyPath: keyPath}, BuildOpts{}, nil
+		return &config.Server{Host: "127.0.0.1", Port: jump.Addr().(*net.TCPAddr).Port, User: "jump", Auth: config.AuthKey, KeyPath: keyPath}, BuildOpts{ConfigPath: keyPath + ".config"}, nil
 	}}
 	route, err := ProbeRoute(context.Background(), &config.Server{Host: "nominal-target.invalid", Port: 22, ProxyJump: "jump"}, opts)
 	require.NoError(t, err)
