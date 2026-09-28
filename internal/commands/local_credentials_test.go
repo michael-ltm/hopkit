@@ -109,7 +109,13 @@ func TestStoredCloudFailuresLeaveIndependentCredentialsUsable(t *testing.T) {
 			require.NoError(t, state.Save(cloudsync.StatePath(store.ConfigPath)))
 			_, err = cloudsync.RememberVault(context.Background(), state, vault, cfg, store)
 			require.NoError(t, err)
-			ctx, cancel := context.WithTimeout(context.Background(), 100*time.Millisecond)
+			timeout := 10 * time.Second
+			if scenario == "timeout" {
+				// Only this scenario tests a deadline; normal requests also need
+				// time for the encrypted local-store work before network I/O.
+				timeout = 100 * time.Millisecond
+			}
+			ctx, cancel := context.WithTimeout(context.Background(), timeout)
 			err = syncStoredCloudOnce(ctx, store.ConfigPath)
 			cancel()
 			require.Error(t, err)
