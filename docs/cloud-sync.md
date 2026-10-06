@@ -191,7 +191,7 @@ Preview.17 fixes agent exit after temporary relay HTTP 409 conflicts. The encryp
 
 ### 跨平台 Agent 兼容性（preview.21）
 
-显式 `SSH_AUTH_SOCK` 始终优先。没有该变量时，Linux 识别当前用户拥有的 `~/.ssh/sshm-agent.sock`，再使用 SSHM 管理的 Agent；原 socket 已失效时可回退。加密私钥会在允许的候选 Agent 内按公钥精确匹配，因此可连接但没有该密钥的 Agent 不会遮蔽后续候选。macOS 沿用当前用户 launchd Agent 和管理 Agent，Windows 使用 OpenSSH 命名管道或显式指定管道。不会读取密钥口令、自动解密私钥或扫描其他用户的 Agent。已有 Agent 中的密钥仅保留在内存，主机重启后仍需要正常的密钥解锁流程。
+显式 `SSH_AUTH_SOCK` 优先使用；如果它不存在、拒绝连接或已失效，SSHM 会按当前用户权限回退到 macOS launchd Agent、Linux 原有 socket、SSHM 管理 Agent 或 Windows OpenSSH 命名管道。显式 Agent 已经可连接但没有目标身份时不会偷偷切换，以免使用错误密钥。加密私钥会在允许的候选 Agent 内按公钥精确匹配。不会读取密钥口令、自动解密私钥或扫描其他用户的 Agent。已有 Agent 中的密钥仅保留在内存，主机重启后仍需要正常的密钥解锁流程。
 
 ## 官网一键安装
 

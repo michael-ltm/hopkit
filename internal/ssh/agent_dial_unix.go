@@ -10,31 +10,48 @@ import (
 	"time"
 )
 
-// dialAgent connects to the ssh-agent named by SSH_AUTH_SOCK.
+// agentPaths returns the current user's agent candidates in preference order.
+// An explicitly supplied socket remains first, but a dead inherited value must
+// not prevent GUI/MCP processes from recovering through the platform or managed
+// SSHM agent.
 func agentPaths() []string {
-	paths := []string{os.Getenv("SSH_AUTH_SOCK")}
-	if paths[0] == "" {
-		paths = []string{platformAgentSocket(), ownAgentSocket(ManagedAgentPath())}
+	paths := make([]string, 0, 3)
+	add := func(path string) {
+		if path == "" || slicesContains(paths, path) {
+			return
+		}
+		paths = append(paths, path)
 	}
+	add(os.Getenv("SSH_AUTH_SOCK"))
+	add(platformAgentSocket())
+	add(ownAgentSocket(ManagedAgentPath()))
 	return paths
 }
+
+func slicesContains(paths []string, want string) bool {
+	for _, path := range paths {
+		if path == want {
+			return true
+		}
+	}
+	return false
+}
+
+func explicitAgentConfigured() bool { return os.Getenv("SSH_AUTH_SOCK") != "" }
 
 func dialAgentAt(sock string) (net.Conn, error) { return net.DialTimeout("unix", sock, 5*time.Second) }
 
 func dialAgent() (net.Conn, error) {
-	var lastErr error
+	var errs []error
 	for _, sock := range agentPaths() {
-		if sock == "" {
-			continue
-		}
 		conn, err := dialAgentAt(sock)
 		if err == nil {
 			return conn, nil
 		}
-		lastErr = err
+		errs = append(errs, fmt.Errorf("%s: %w", sock, err))
 	}
-	if lastErr != nil {
-		return nil, fmt.Errorf("connect to ssh-agent: %w", lastErr)
+	if len(errs) > 0 {
+		return nil, fmt.Errorf("connect to ssh-agent: %w", errors.Join(errs...))
 	}
 	return nil, errors.New("SSH_AUTH_SOCK not set (no ssh-agent running)")
 }

@@ -36,7 +36,7 @@ func TestWindowsAgentRecovery(t *testing.T) {
 		}
 	}()
 	t.Setenv("SSH_AUTH_SOCK", pipe)
-	require.Equal(t, []string{pipe}, agentPaths())
+	require.Equal(t, []string{pipe, windowsAgentPipe}, agentPaths())
 	signer, closer, err := loadKeySigner(writeEncryptedTempKey(t, key))
 	require.NoError(t, err)
 	defer closer.Close()

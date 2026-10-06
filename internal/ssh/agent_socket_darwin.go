@@ -11,7 +11,8 @@ import (
 
 // GUI-launched MCP processes may not inherit SSH_AUTH_SOCK. Consult only the
 // current user's launchd environment; never search other users' agents or load
-// a key/passphrase automatically. An explicit SSH_AUTH_SOCK takes precedence.
+// a key/passphrase automatically. An explicit SSH_AUTH_SOCK is tried first;
+// callers may fall back when that endpoint is unavailable.
 func platformAgentSocket() string {
 	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
 	defer cancel()

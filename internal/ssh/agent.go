@@ -12,6 +12,8 @@ import (
 	"golang.org/x/crypto/ssh/agent"
 )
 
+var errAgentNoMatchingIdentity = errors.New("ssh-agent holds no matching identity (ssh-add the key first)")
+
 func agentAuth() (gssh.AuthMethod, io.Closer, error) {
 	conn, err := dialAgent()
 	if err != nil {
@@ -28,7 +30,8 @@ func agentAuth() (gssh.AuthMethod, io.Closer, error) {
 func agentSignerFor(want gssh.PublicKey) (gssh.Signer, io.Closer, error) {
 	var lastErr error
 	seen := map[string]bool{}
-	for _, path := range agentPaths() {
+	paths := agentPaths()
+	for i, path := range paths {
 		if path == "" || seen[path] {
 			continue
 		}
@@ -43,6 +46,12 @@ func agentSignerFor(want gssh.PublicKey) (gssh.Signer, io.Closer, error) {
 			return signer, closer, nil
 		}
 		lastErr = err
+		// A reachable explicitly selected agent is authoritative. Only a failed
+		// endpoint dial should fall through to the platform/managed candidates;
+		// protocol and identity errors must remain tied to the selected agent.
+		if i == 0 && explicitAgentConfigured() {
+			return nil, nil, err
+		}
 	}
 	if lastErr == nil {
 		lastErr = errors.New("no SSH agent available; start the platform agent and load the key")
@@ -82,5 +91,5 @@ func signerFromAgent(conn net.Conn, want gssh.PublicKey) (gssh.Signer, io.Closer
 		}
 	}
 	conn.Close()
-	return nil, nil, errors.New("ssh-agent holds no matching identity (ssh-add the key first)")
+	return nil, nil, errAgentNoMatchingIdentity
 }

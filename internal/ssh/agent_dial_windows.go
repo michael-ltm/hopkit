@@ -3,6 +3,7 @@
 package ssh
 
 import (
+	"errors"
 	"fmt"
 	"net"
 	"os"
@@ -17,17 +18,38 @@ import (
 const windowsAgentPipe = `\\.\pipe\openssh-ssh-agent`
 
 // dialAgent connects to the Windows OpenSSH agent named pipe. SSH_AUTH_SOCK
-// overrides the target when it names another pipe (e.g. gpg4win's agent);
-// cygwin-style socket paths are not dialable from Go and are ignored.
+// is tried first when it names another pipe (e.g. gpg4win's agent); cygwin-
+// style socket paths are not dialable from Go and are ignored. A failed
+// explicit pipe falls back to the Windows OpenSSH service pipe.
 func agentPaths() []string {
-	pipe := windowsAgentPipe
+	paths := make([]string, 0, 2)
 	if sock := os.Getenv("SSH_AUTH_SOCK"); strings.HasPrefix(sock, `\\.\pipe\`) {
-		pipe = sock
+		paths = append(paths, sock)
 	}
-	return []string{pipe}
+	if len(paths) == 0 || paths[0] != windowsAgentPipe {
+		paths = append(paths, windowsAgentPipe)
+	}
+	return paths
 }
 
-func dialAgent() (net.Conn, error) { return dialAgentAt(agentPaths()[0]) }
+func explicitAgentConfigured() bool {
+	return strings.HasPrefix(os.Getenv("SSH_AUTH_SOCK"), `\\.\pipe\`)
+}
+
+func dialAgent() (net.Conn, error) {
+	var errs []error
+	for _, pipe := range agentPaths() {
+		conn, err := dialAgentAt(pipe)
+		if err == nil {
+			return conn, nil
+		}
+		errs = append(errs, err)
+	}
+	if len(errs) > 0 {
+		return nil, fmt.Errorf("connect to ssh-agent: %w", errors.Join(errs...))
+	}
+	return nil, errors.New("SSH_AUTH_SOCK not set (no ssh-agent running)")
+}
 
 func dialAgentAt(pipe string) (net.Conn, error) {
 	timeout := 5 * time.Second
