@@ -4,6 +4,7 @@ package keystore
 
 import (
 	"context"
+	"net"
 	"os"
 	"path/filepath"
 	"testing"
@@ -14,7 +15,7 @@ import (
 	"golang.org/x/crypto/ssh/agent"
 )
 
-func TestStartSessionAgentServesManagedSocketWithoutSSHAgentBinary(t *testing.T) {
+func TestServeGoAgentServesManagedSocketWithoutSSHAgentBinary(t *testing.T) {
 	home, err := os.MkdirTemp("/tmp", "sshm-session-agent-")
 	require.NoError(t, err)
 	t.Cleanup(func() { _ = os.RemoveAll(home) })
@@ -25,9 +26,11 @@ func TestStartSessionAgentServesManagedSocketWithoutSSHAgentBinary(t *testing.T)
 
 	ctx, cancel := context.WithCancel(context.Background())
 	t.Cleanup(cancel)
-	require.NoError(t, StartSessionAgent(ctx))
+	// Test the Go fallback directly: StartSessionAgent intentionally reuses any
+	// platform agent, including launchd agents independent of this test's HOME.
+	require.NoError(t, serveGoAgent(ctx))
 
-	conn, err := sshpkg.DialAgent()
+	conn, err := net.Dial("unix", sshpkg.ManagedAgentPath())
 	require.NoError(t, err)
 	t.Cleanup(func() { _ = conn.Close() })
 	keys, err := agent.NewClient(conn).List()

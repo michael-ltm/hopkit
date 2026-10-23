@@ -10,11 +10,11 @@ import (
 	"time"
 )
 
-// agentPaths returns the current user's agent candidates in preference order.
+// platformAgentPaths returns the current user's agent candidates in preference order.
 // An explicitly supplied socket remains first, but a dead inherited value must
 // not prevent GUI/MCP processes from recovering through the platform or managed
 // SSHM agent.
-func agentPaths() []string {
+func platformAgentPaths() []string {
 	paths := make([]string, 0, 3)
 	add := func(path string) {
 		if path == "" || slicesContains(paths, path) {

@@ -414,7 +414,14 @@ func TestCloudLocalIdentityDiagnosticsDistinguishUnavailableAgent(t *testing.T) 
 	signer, err := gssh.NewSignerFromKey(genEd25519(t))
 	require.NoError(t, err)
 	require.NoError(t, StoreLocalAgentIdentities(path, target, []gssh.PublicKey{signer.PublicKey()}))
-	t.Setenv("SSH_AUTH_SOCK", filepath.Join(t.TempDir(), "missing-agent"))
+	missing := filepath.Join(t.TempDir(), "missing-agent")
+	t.Setenv("SSH_AUTH_SOCK", missing)
+	// A missing explicit socket normally falls back to platform discovery, which
+	// can find the macOS CI runner's launchd agent even with an isolated HOME.
+	// Exercise a real failed dial while keeping all candidates inside this test.
+	previousAgentPaths := agentPaths
+	agentPaths = func() []string { return []string{missing} }
+	t.Cleanup(func() { agentPaths = previousAgentPaths })
 	_, _, err = buildAuth(target, BuildOpts{ConfigPath: path})
 	require.Equal(t, "local_agent_unavailable", FailureCategory(err))
 	require.NotContains(t, err.Error(), "cloud agent")

@@ -17,11 +17,11 @@ import (
 // "OpenSSH Authentication Agent" service.
 const windowsAgentPipe = `\\.\pipe\openssh-ssh-agent`
 
-// dialAgent connects to the Windows OpenSSH agent named pipe. SSH_AUTH_SOCK
+// platformAgentPaths lists Windows OpenSSH agent named pipes. SSH_AUTH_SOCK
 // is tried first when it names another pipe (e.g. gpg4win's agent); cygwin-
 // style socket paths are not dialable from Go and are ignored. A failed
 // explicit pipe falls back to the Windows OpenSSH service pipe.
-func agentPaths() []string {
+func platformAgentPaths() []string {
 	paths := make([]string, 0, 2)
 	if sock := os.Getenv("SSH_AUTH_SOCK"); strings.HasPrefix(sock, `\\.\pipe\`) {
 		paths = append(paths, sock)
