@@ -60,6 +60,10 @@ func handleExec(ctx context.Context, deps Deps, args map[string]any) (any, error
 	}
 	unsafe, _ := args["unsafe"].(bool)
 	detach, _ := args["detach"].(bool)
+	rawEnvironment, _ := args["raw_environment"].(bool)
+	if detach && rawEnvironment {
+		return errResult("bad_request", "raw_environment is not supported with detach"), nil
+	}
 	if !unsafe {
 		if hit, why := safety.IsDangerous(command); hit {
 			audit(deps, safety.Entry{Tool: "exec", Alias: alias, Reason: reason,
@@ -76,7 +80,7 @@ func handleExec(ctx context.Context, deps Deps, args map[string]any) (any, error
 	if !ok {
 		return errResult("not_found", fmt.Sprintf("unknown server %q", alias)), nil
 	}
-	cli, err := dialExecRemote(s, deps.sshOptions(ctx, sshpkg.BuildOpts{ConfigPath: deps.ConfigPath, Alias: alias}))
+	cli, err := dialExecRemote(s, deps.sshOptions(ctx, sshpkg.BuildOpts{ConfigPath: deps.ConfigPath, Alias: alias, SkipDiscovery: rawEnvironment}))
 	if err != nil {
 		audit(deps, safety.Entry{Tool: "exec", Alias: alias, Reason: reason, Result: "ssh failed"})
 		return errResult("ssh", safety.MaskSecrets(err.Error())), nil
@@ -84,9 +88,6 @@ func handleExec(ctx context.Context, deps Deps, args map[string]any) (any, error
 	defer cli.Close()
 
 	if detach {
-		if raw, _ := args["raw_environment"].(bool); raw {
-			return errResult("bad_request", "raw_environment is not supported with detach"), nil
-		}
 		return runDetached(ctx, deps, cli, alias, command, reason, unsafe, strArg(args, "platform"))
 	}
 
@@ -99,7 +100,7 @@ func handleExec(ctx context.Context, deps Deps, args map[string]any) (any, error
 	}
 
 	var res *sshpkg.ExecResult
-	if raw, _ := args["raw_environment"].(bool); raw {
+	if rawEnvironment {
 		res, err = cli.Exec(cmdCtx, command)
 	} else {
 		res, err = runExecRemoteCommand(cmdCtx, cli, command)

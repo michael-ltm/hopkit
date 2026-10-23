@@ -97,7 +97,7 @@ shell or wrap in 'sh -c "..."', e.g.:
 }
 
 func execOnce(ctx context.Context, cmd *cobra.Command, alias string, s *config.Server, remoteCmd string, insecure bool, password string, rawEnvironment bool) error {
-	cli, err := sshpkg.Dial(s, sshpkg.BuildOpts{Password: password, Insecure: insecure, Alias: alias, ConfigPath: configPath()})
+	cli, err := sshpkg.Dial(s, sshpkg.BuildOpts{Password: password, Insecure: insecure, Alias: alias, ConfigPath: configPath(), SkipDiscovery: rawEnvironment})
 	if err != nil {
 		return err
 	}

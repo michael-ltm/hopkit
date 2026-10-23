@@ -9,6 +9,7 @@ import (
 	"github.com/coder/websocket"
 	"github.com/michael-ltm/sshm/internal/cloudsync"
 	"github.com/michael-ltm/sshm/internal/config"
+	sshpkg "github.com/michael-ltm/sshm/internal/ssh"
 	"net/http"
 	"net/url"
 	"strings"
@@ -263,7 +264,7 @@ func connectPath(ctx context.Context, s *cloudsync.State, v *cloudsync.Vault, pa
 					defer done()
 					tty, err := openTarget(dialCtx, s, master, path, p)
 					if err != nil {
-						_ = x.payload(cloudsync.ShellPayload{Type: "error", Data: targetError(err)}, send)
+						_ = x.payload(targetErrorPayload(err), send)
 						closeSession(f.Session)
 						_ = send(map[string]string{"type": "close", "session": f.Session})
 						return
@@ -350,6 +351,11 @@ func runTerminal(x *session, id string, tty terminal, send func(any) error, clos
 	}
 }
 func targetError(err error) string {
+	var session *sshpkg.SessionError
+	if errors.As(err, &session) {
+		// Keep the legacy wire code; new clients inspect safe diagnostics.
+		return "pty_unavailable"
+	}
 	switch err.Error() {
 	case "invalid_target", "vault_unavailable", "target_removed", "target_conflict", "source_device_required", "choose_credential", "invalid_credential", "key_locked", "password_unavailable", "pty_unavailable", "ssh_credential", "ssh_authentication", "ssh_timeout", "ssh_host_key", "ssh_connection", "ssh_refused", "ssh_dns", "ssh_unknown":
 		return err.Error()

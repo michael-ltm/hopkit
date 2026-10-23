@@ -1,6 +1,7 @@
 package commands
 
 import (
+	"errors"
 	"fmt"
 	"os"
 
@@ -59,7 +60,12 @@ func connect(alias string, s *config.Server, insecure bool, activeConfigPath str
 		return err
 	}
 	defer c.Close()
-	return c.AttachInteractive()
+	err = c.AttachInteractive()
+	var session *sshpkg.SessionError
+	if errors.As(err, &session) && session.Stage == "pty_request" && session.Code == "pty_denied" {
+		return fmt.Errorf("%w\nSSH authentication succeeded, but the server rejected a terminal request.\nFor a restricted execution account, run an explicitly permitted command with:\n  sshm exec <alias> --raw-environment <command>", err)
+	}
+	return err
 }
 
 func dialInteractive(alias string, s *config.Server, insecure bool, activeConfigPath string) (*sshpkg.Client, error) {

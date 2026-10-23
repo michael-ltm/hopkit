@@ -2,10 +2,11 @@ package ssh
 
 import (
 	"errors"
-	"fmt"
 	"io"
 	"os"
+	"runtime"
 
+	"github.com/muesli/cancelreader"
 	gssh "golang.org/x/crypto/ssh"
 	"golang.org/x/term"
 )
@@ -28,11 +29,11 @@ func (c *Client) AttachInteractiveCommand(command string) error {
 
 func (c *Client) attachInteractive(command string) error {
 	if c.conn == nil {
-		return errors.New("not connected")
+		return sessionError("session_open", errors.New("not connected"))
 	}
 	sess, err := c.conn.NewSession()
 	if err != nil {
-		return fmt.Errorf("new session: %w", err)
+		return sessionError("session_open", err)
 	}
 	defer sess.Close()
 
@@ -43,7 +44,7 @@ func (c *Client) attachInteractive(command string) error {
 	if term.IsTerminal(fd) {
 		oldState, err = term.MakeRaw(fd)
 		if err != nil {
-			return fmt.Errorf("make raw tty: %w", err)
+			return sessionError("local_tty", err)
 		}
 		defer term.Restore(fd, oldState)
 		if width, height, err := term.GetSize(fd); err == nil {
@@ -57,25 +58,49 @@ func (c *Client) attachInteractive(command string) error {
 		gssh.TTY_OP_OSPEED: 14400,
 	}
 	if err := sess.RequestPty(getTerm(), h, w, modes); err != nil {
-		return fmt.Errorf("request pty: %w", err)
+		return sessionError("pty_request", err)
 	}
 
 	stdin, err := sess.StdinPipe()
 	if err != nil {
-		return fmt.Errorf("open stdin pipe: %w", err)
+		return sessionError("stdin_pipe", err)
+	}
+	var reader io.Reader = os.Stdin
+	var cancellable cancelreader.CancelReader
+	stat, _ := os.Stdin.Stat()
+	// Regular files and /dev/null cannot be registered with epoll. They do not
+	// need an interruptible terminal read; preserve redirected stdin support.
+	// On Windows cancelreader opens CONIN$, so redirected pipes must keep
+	// their original reader instead of being replaced by console input.
+	if term.IsTerminal(fd) || (runtime.GOOS != "windows" && stat != nil && stat.Mode()&os.ModeNamedPipe != 0) {
+		cancellable, err = cancelreader.NewReader(os.Stdin)
+		if err != nil {
+			return sessionError("stdin_pipe", err)
+		}
+		defer cancellable.Close()
+		defer cancellable.Cancel()
+		reader = cancellable
 	}
 	sess.Stdout = os.Stdout
 	sess.Stderr = os.Stderr
 
-	go func() { _, _ = io.Copy(stdin, os.Stdin) }()
-
 	if command == "" {
 		if err := sess.Shell(); err != nil {
-			return fmt.Errorf("start shell: %w", err)
+			return sessionError("shell_start", err)
 		}
 	} else if err := sess.Start(command); err != nil {
-		return fmt.Errorf("start interactive command: %w", err)
+		return sessionError("command_start", err)
 	}
+	// Do not leave a reader blocked on the local terminal after setup fails or
+	// the remote program exits. Closing stdin also unblocks a pending SSH write.
+	copied := make(chan struct{})
+	go func() { defer close(copied); _, _ = io.Copy(stdin, reader) }()
+	defer func() {
+		_ = sess.Close()
+		if cancellable != nil && cancellable.Cancel() {
+			<-copied
+		}
+	}()
 	return sess.Wait()
 }
 

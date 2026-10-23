@@ -47,12 +47,24 @@ type ShellFrame struct {
 	Ciphertext string `json:"ciphertext"`
 }
 type ShellPayload struct {
-	Target     string `json:"target,omitempty"`
-	Credential string `json:"credential,omitempty"`
-	Type       string `json:"type"`
-	Data       string `json:"data,omitempty"`
-	Cols       int    `json:"cols,omitempty"`
-	Rows       int    `json:"rows,omitempty"`
+	Diagnostics *TerminalDiagnostics `json:"diagnostics,omitempty"`
+	Target      string               `json:"target,omitempty"`
+	Credential  string               `json:"credential,omitempty"`
+	Type        string               `json:"type"`
+	Data        string               `json:"data,omitempty"`
+	Cols        int                  `json:"cols,omitempty"`
+	Rows        int                  `json:"rows,omitempty"`
+}
+
+// TerminalDiagnostics contains only allowlisted stages/codes, never raw SSH
+// errors, hosts, commands or credentials. Older clients ignore this field.
+type TerminalDiagnostics struct {
+	Stage            string `json:"stage"`
+	ReasonCode       string `json:"reason_code"`
+	SSHAuthenticated bool   `json:"ssh_authenticated"`
+	PTYRequested     bool   `json:"pty_requested"`
+	PTYGranted       bool   `json:"pty_granted"`
+	SuggestedAction  string `json:"suggested_action,omitempty"`
 }
 
 // Each direction has a distinct key, nonce space and monotonic receive counter.

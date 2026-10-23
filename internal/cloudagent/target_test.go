@@ -25,7 +25,7 @@ import (
 	"time"
 )
 
-func testSSH(t *testing.T) (string, int, <-chan struct{}) {
+func testSSH(t *testing.T, rejected ...string) (string, int, <-chan struct{}) {
 	t.Helper()
 	_, key, e := ed25519.GenerateKey(rand.Reader)
 	require.NoError(t, e)
@@ -67,6 +67,10 @@ func testSSH(t *testing.T) (string, int, <-chan struct{}) {
 			go func() {
 				defer ch.Close()
 				for r := range requests {
+					if len(rejected) > 0 && r.Type == rejected[0] {
+						r.Reply(false, nil)
+						continue
+					}
 					switch r.Type {
 					case "pty-req", "window-change":
 						r.Reply(true, nil)
@@ -173,10 +177,16 @@ func TestTargetRejectsForeignRoutesChangedAliasesAndAmbiguousPasswords(t *testin
 }
 
 func TestEncryptedRelaySelectsRemoteTargetAndClosesSSH(t *testing.T) {
+	for _, rejected := range []string{"", "pty-req", "shell"} {
+		t.Run("reject="+rejected, func(t *testing.T) { testEncryptedRelayTarget(t, rejected) })
+	}
+}
+
+func testEncryptedRelayTarget(t *testing.T, rejected string) {
 	home := t.TempDir()
 	t.Setenv("HOME", home)
 	t.Setenv("USERPROFILE", home)
-	host, port, sshClosed := testSSH(t)
+	host, port, sshClosed := testSSH(t, rejected)
 	v, _, e := cloudsync.NewVault("encrypted-target", []byte("test-unlock"))
 	require.NoError(t, e)
 	defer v.Close()
@@ -237,6 +247,19 @@ func TestEncryptedRelaySelectsRemoteTargetAndClosesSSH(t *testing.T) {
 				}
 				var reply cloudsync.ShellPayload
 				switch p.Type {
+				case "error":
+					if rejected == "" || !selected || ready || p.Data != "pty_unavailable" || p.Diagnostics == nil {
+						return fmt.Errorf("unexpected terminal error: %+v", p)
+					}
+					d := p.Diagnostics
+					stage, code := "pty_request", "pty_denied"
+					if rejected == "shell" {
+						stage, code = "shell_start", "shell_start_failed"
+					}
+					if d.Stage != stage || d.ReasonCode != code || !d.SSHAuthenticated || !d.PTYRequested || d.PTYGranted != (rejected == "shell") {
+						return fmt.Errorf("incorrect terminal diagnostics: %+v", d)
+					}
+					return nil
 				case "select":
 					if selected {
 						return fmt.Errorf("duplicate selection")

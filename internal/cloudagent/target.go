@@ -49,7 +49,7 @@ func openTarget(ctx context.Context, state *cloudsync.State, master []byte, path
 	tty, err := client.OpenTerminal(ctx, p.Cols, p.Rows)
 	if err != nil {
 		client.Close()
-		return nil, errors.New("pty_unavailable")
+		return nil, err
 	}
 	if opts.Alias != "" {
 		_ = config.RecordSSHUse(path, opts.Alias, &target, time.Now())

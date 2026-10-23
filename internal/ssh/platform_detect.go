@@ -62,7 +62,7 @@ func RecordPlatform(path, alias string, expected *config.Server, platform string
 	})
 }
 func (c *Client) detectManagedPlatform(s *config.Server, opts BuildOpts, path string) {
-	if opts.Alias == "" || (s.Platform != "" && time.Since(s.SSHMCheckedAt) < 24*time.Hour) {
+	if opts.SkipDiscovery || opts.Alias == "" || (s.Platform != "" && time.Since(s.SSHMCheckedAt) < 24*time.Hour) {
 		return
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), 2500*time.Millisecond)

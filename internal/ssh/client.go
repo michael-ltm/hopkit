@@ -26,6 +26,9 @@ func (nopCloser) Close() error { return nil }
 // BuildOpts is non-persistent input gathered at connect time (e.g. password
 // prompted from TTY). Never write the contents of BuildOpts to disk.
 type BuildOpts struct {
+	// SkipDiscovery suppresses automatic platform/installation exec probes.
+	// Raw exec must send only the explicitly requested command.
+	SkipDiscovery bool
 	// LocalStore overrides the device credential store (normally derived from ConfigPath).
 	LocalStore *localstore.Store
 	// StrictRoute restricts transport to the configured route: environment
