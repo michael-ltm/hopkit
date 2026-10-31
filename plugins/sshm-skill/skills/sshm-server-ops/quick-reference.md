@@ -17,8 +17,8 @@ a specific `reason`.
 
 | Tool | Required args | Optional args | Returns |
 |---|---|---|---|
-| `list_servers` | — | — | compact servers sorted by alias, including platform and activity timestamps |
-| `find_servers` | `query` | `limit` (default 5, max 20) | ranked matches with description, tags/group, score, and matched fields |
+| `list_servers` | — | — | compact servers sorted by alias, including platform, activity timestamps, `last_checked`, and `status_stale` (recorded status older than 15 minutes or of unknown age) |
+| `find_servers` | `query` | `limit` (default 5, max 20) | ranked matches with description, tags/group, score, matched fields, `last_checked`, and `status_stale` |
 | `get_server` | `alias` | — | full server record; host masked |
 | `test_connection` | `alias` | — | `{reachable, latency_ms, error}`; TCP only |
 | `check_ssh` | `alias` | `mode=tcp\|handshake\|auth\|exec` (default `exec`) | layered `{tcp, ssh, exec, ok}` |

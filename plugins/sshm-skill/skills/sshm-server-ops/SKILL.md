@@ -13,6 +13,7 @@ and host-key verification.
 - Inventory: `get_server` for a named alias, `find_servers` for intent, and
   `list_servers` only for full inventory/ambiguity. `check_ssh` proves SSH
   readiness; `test_connection` proves TCP only.
+  `last_status` is history: `check_ssh` a `status_stale` host first.
 - Named project: call `get_project` directly; `list_projects` only discovers
   names or resolves initial ambiguity. Confirm changes before `upsert_project`.
 - Environment: `check_environment` checks paths/auth in this session only.

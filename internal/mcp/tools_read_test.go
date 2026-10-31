@@ -2,9 +2,11 @@ package mcp
 
 import (
 	"context"
+	"encoding/json"
 	"os"
 	"path/filepath"
 	"testing"
+	"time"
 
 	"github.com/michael-ltm/sshm/internal/config"
 	"github.com/stretchr/testify/require"
@@ -160,4 +162,40 @@ func TestCheckSSHReturnsSafeLocalCredentialCodesAndProbeRoute(t *testing.T) {
 	require.Equal(t, "direct", result["tcp"].(map[string]any)["route"])
 	require.Equal(t, "local_credential_missing", result["ssh"].(map[string]any)["code"])
 	require.Equal(t, "direct", result["ssh"].(map[string]any)["configured_route"])
+}
+
+func TestListAndFindServersExposeStatusAge(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "config.toml")
+	cfg := config.New()
+	checked := time.Now().Add(-4 * 24 * time.Hour).UTC()
+	cfg.Servers["mac"] = &config.Server{Host: "192.0.2.20", User: "u", Description: "macOS builder", LastStatus: config.StatusOffline, LastChecked: checked}
+	cfg.Servers["fresh"] = &config.Server{Host: "192.0.2.21", User: "u", LastStatus: config.StatusOnline, LastChecked: time.Now().UTC()}
+	require.NoError(t, config.Save(path, cfg))
+
+	for name, call := range map[string]func() (any, error){
+		"list": func() (any, error) { return handleListServers(context.Background(), Deps{ConfigPath: path}, nil) },
+		"find": func() (any, error) {
+			return handleFindServers(context.Background(), Deps{ConfigPath: path}, map[string]any{"query": "macos"})
+		},
+	} {
+		out, err := call()
+		require.NoError(t, err, name)
+		js, err := jsonResult(out)
+		require.NoError(t, err, name)
+		var decoded struct {
+			Servers []map[string]any `json:"servers"`
+			Matches []map[string]any `json:"matches"`
+		}
+		require.NoError(t, json.Unmarshal([]byte(js), &decoded), name)
+		rows := append(decoded.Servers, decoded.Matches...)
+		byAlias := map[string]map[string]any{}
+		for _, row := range rows {
+			byAlias[row["alias"].(string)] = row
+		}
+		require.Equal(t, true, byAlias["mac"]["status_stale"], name)
+		require.Equal(t, checked.Format(time.RFC3339Nano), byAlias["mac"]["last_checked"], name)
+		if fresh, ok := byAlias["fresh"]; ok {
+			require.NotContains(t, fresh, "status_stale", name)
+		}
+	}
 }

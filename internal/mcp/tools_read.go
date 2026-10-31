@@ -32,8 +32,11 @@ func handleListServers(ctx context.Context, deps Deps, _ map[string]any) (any, e
 		Tags               []string   `json:"tags,omitempty"`
 		Platform           string     `json:"platform,omitempty"`
 		LastStatus         string     `json:"last_status,omitempty"`
+		LastChecked        *time.Time `json:"last_checked,omitempty"`
+		StatusStale        bool       `json:"status_stale,omitempty"`
 		LastUsed           *time.Time `json:"last_used,omitempty"`
 	}
+	now := time.Now()
 	var list []entry
 	for alias, s := range cfg.Servers {
 		if s == nil {
@@ -42,7 +45,8 @@ func handleListServers(ctx context.Context, deps Deps, _ map[string]any) (any, e
 		list = append(list, entry{
 			Alias: alias, Host: safety.MaskSecrets(s.Host), User: s.User,
 			Description: s.Description, DescriptionMissing: strings.TrimSpace(s.Description) == "", Group: s.Group,
-			Tags: s.Tags, Platform: s.Platform, LastStatus: s.LastStatus, LastUsed: optionalTimestamp(s.LastUsed),
+			Tags: s.Tags, Platform: s.Platform, LastStatus: s.LastStatus, LastChecked: optionalTimestamp(s.LastChecked),
+			StatusStale: config.StatusStale(s, now), LastUsed: optionalTimestamp(s.LastUsed),
 		})
 	}
 	sort.Slice(list, func(i, j int) bool { return list[i].Alias < list[j].Alias })
@@ -68,6 +72,7 @@ func handleGetServer(ctx context.Context, deps Deps, args map[string]any) (any, 
 		"notes_present": strings.TrimSpace(s.Notes) != "",
 		"tags":          s.Tags, "group": s.Group,
 		"platform": s.Platform, "init_state": s.InitState, "last_status": s.LastStatus,
+		"status_stale":       config.StatusStale(s, time.Now()),
 		"cleanup_protected":  s.CleanupProtected,
 		"metadata_untrusted": true,
 	}
@@ -116,17 +121,21 @@ func handleFindServers(_ context.Context, deps Deps, args map[string]any) (any, 
 		User        string     `json:"user"`
 		Host        string     `json:"host"`
 		LastStatus  string     `json:"last_status,omitempty"`
+		LastChecked *time.Time `json:"last_checked,omitempty"`
+		StatusStale bool       `json:"status_stale,omitempty"`
 		Platform    string     `json:"platform,omitempty"`
 		LastUsed    *time.Time `json:"last_used,omitempty"`
 		Score       int        `json:"score"`
 		MatchedOn   []string   `json:"matched_on"`
 	}
+	now := time.Now()
 	list := make([]entry, 0, len(matches))
 	for _, match := range matches {
 		list = append(list, entry{
 			Alias: match.Alias, Description: match.Server.Description,
 			Group: match.Server.Group, Tags: match.Server.Tags, User: match.Server.User,
 			Host: safety.MaskSecrets(match.Server.Host), LastStatus: match.Server.LastStatus,
+			LastChecked: optionalTimestamp(match.Server.LastChecked), StatusStale: config.StatusStale(match.Server, now),
 			Platform: match.Server.Platform, LastUsed: optionalTimestamp(match.Server.LastUsed),
 			Score: match.Score, MatchedOn: match.MatchedOn,
 		})
@@ -318,9 +327,9 @@ func registerReadTools(s *server.MCPServer, deps Deps, names []string) []string 
 		})
 		names = append(names, name)
 	}
-	reg("list_servers", "List all configured servers (host IPs masked).", handleListServers)
+	reg("list_servers", "List all configured servers (host IPs masked). last_status is a recorded observation, not a live probe: status_stale marks one older than 15 minutes or of unknown age, so run check_ssh before concluding a stale host is offline.", handleListServers)
 	findTool := mcp.NewTool("find_servers",
-		mcp.WithDescription("Find the best servers for an intent using AI-safe alias, description, group, tags, user, and host metadata. Private notes are excluded."),
+		mcp.WithDescription("Find the best servers for an intent using AI-safe alias, description, group, tags, user, and host metadata. Private notes are excluded. last_status is recorded, not live; verify status_stale entries with check_ssh."),
 		mcp.WithString("query", mcp.Required(), mcp.Description("intent or capability query, e.g. 'windows dynamic-debug cdb'")),
 		mcp.WithNumber("limit", mcp.Description("maximum results, 1..20; default 5")))
 	s.AddTool(findTool, func(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {

@@ -116,6 +116,20 @@ func RecordProbes(path string, results map[string]ProbeObservation) error {
 	})
 }
 
+// StatusFreshFor bounds how long a recorded reachability observation may be
+// presented as current. Older observations remain useful history but must be
+// re-verified before a host is treated as online or offline.
+const StatusFreshFor = 15 * time.Minute
+
+// StatusStale reports whether a server's LastStatus is older than
+// StatusFreshFor, or has no check time to prove its age.
+func StatusStale(server *Server, now time.Time) bool {
+	if server == nil || server.LastStatus == "" {
+		return false
+	}
+	return server.LastChecked.IsZero() || now.Sub(server.LastChecked) > StatusFreshFor
+}
+
 // RecordSSHCheck stores only a bounded classification, never raw command or
 // authentication errors. Inspections must not advance LastUsed.
 func RecordSSHCheck(path, alias string, expected *Server, category string, at time.Time) error {

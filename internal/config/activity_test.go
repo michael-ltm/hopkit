@@ -148,3 +148,12 @@ func TestFailedSSHAttemptIsNotSuccessAndTCPDoesNotClearAuthFailure(t *testing.T)
 	require.NoError(t, e)
 	require.Empty(t, got.Servers["host"].LastSSHError)
 }
+
+func TestStatusStaleRequiresRecentObservation(t *testing.T) {
+	now := time.Date(2026, 10, 31, 12, 0, 0, 0, time.UTC)
+	require.False(t, StatusStale(nil, now))
+	require.False(t, StatusStale(&Server{}, now), "no status means nothing to call stale")
+	require.True(t, StatusStale(&Server{LastStatus: StatusOffline}, now), "a status without a check time is unverified")
+	require.True(t, StatusStale(&Server{LastStatus: StatusOffline, LastChecked: now.Add(-StatusFreshFor - time.Second)}, now))
+	require.False(t, StatusStale(&Server{LastStatus: StatusOnline, LastChecked: now.Add(-time.Minute)}, now))
+}

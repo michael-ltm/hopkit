@@ -4,6 +4,13 @@ All notable changes to this project will be documented in this file. Format: [Ke
 
 ## [Unreleased]
 
+### Fixed
+- MCP `list_servers`, `find_servers` and `get_server` no longer present a
+  recorded `last_status` as live: they expose `last_checked` and mark
+  observations older than 15 minutes (or of unknown age) with
+  `status_stale`, and the bundled skill requires a fresh `check_ssh` before
+  calling such a host offline.
+
 ## [0.7.1] — 2026-09-10
 
 ### Fixed
