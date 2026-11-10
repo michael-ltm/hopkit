@@ -4,6 +4,8 @@ All notable changes to this project will be documented in this file. Format: [Ke
 
 ## [Unreleased]
 
+## [0.8.2] - 2026-11-10
+
 ### Fixed
 - `service install` over a running service now restarts it on the new
   binary: macOS boots out the loaded launchd job before bootstrapping (it
