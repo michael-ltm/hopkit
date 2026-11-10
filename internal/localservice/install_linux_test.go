@@ -32,7 +32,7 @@ func TestInstallUsesPrivateUnitAndUserManager(t *testing.T) {
 	require.Contains(t, string(unit), "%%name$$")
 	commands, e := os.ReadFile(log)
 	require.NoError(t, e)
-	require.Equal(t, "--user daemon-reload\n--user enable --now "+filepath.Base(unitPath)+"\n", string(commands))
+	require.Equal(t, "--user daemon-reload\n--user enable "+filepath.Base(unitPath)+"\n--user restart "+filepath.Base(unitPath)+"\n", string(commands))
 	require.True(t, Status(cfg).Startup)
 }
 func TestPrivateServiceFileRefusesSymlink(t *testing.T) {

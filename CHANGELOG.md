@@ -4,6 +4,12 @@ All notable changes to this project will be documented in this file. Format: [Ke
 
 ## [Unreleased]
 
+### Fixed
+- `service install` over a running service now restarts it on the new
+  binary: macOS boots out the loaded launchd job before bootstrapping (it
+  used to fail with "could not register local service startup"), and
+  Linux restarts the unit instead of relying on `enable --now`.
+
 ## [0.8.1] - 2026-11-10
 
 ### Changed

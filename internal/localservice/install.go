@@ -109,10 +109,44 @@ func Install(configPath, executable string, system bool) error {
 		return nil
 	}
 	if runtime.GOOS == "linux" {
-		if e = run("systemctl", "--user", "daemon-reload"); e != nil {
+		for _, step := range systemdRegistration(filepath.Base(path)) {
+			if e = run("systemctl", step.args...); e != nil {
+				return e
+			}
+		}
+		return nil
+	}
+	for _, step := range launchdRegistration(os.Getuid(), "sshm-local-"+instance(configPath), path) {
+		if e = run("launchctl", step.args...); e != nil && !step.mayFail {
 			return e
 		}
-		return run("systemctl", "--user", "enable", "--now", filepath.Base(path))
 	}
-	return run("launchctl", "bootstrap", fmt.Sprintf("gui/%d", os.Getuid()), path)
+	return nil
+}
+
+type registrationStep struct {
+	args    []string
+	mayFail bool
+}
+
+// systemdRegistration enables the unit and restarts it, so a reinstall that
+// changed ExecStart takes effect; restart also starts a unit that is stopped.
+func systemdRegistration(unit string) []registrationStep {
+	return []registrationStep{
+		{args: []string{"--user", "daemon-reload"}},
+		{args: []string{"--user", "enable", unit}},
+		{args: []string{"--user", "restart", unit}},
+	}
+}
+
+// launchdRegistration unloads any loaded copy of the job before loading the
+// plist: launchctl bootstrap fails while the label is loaded, and launchd keeps
+// the old ProgramArguments until the job is booted out. The bootout fails
+// harmlessly on a first install.
+func launchdRegistration(uid int, label, plist string) []registrationStep {
+	domain := fmt.Sprintf("gui/%d", uid)
+	return []registrationStep{
+		{args: []string{"bootout", domain + "/" + label}, mayFail: true},
+		{args: []string{"bootstrap", domain, plist}},
+	}
 }

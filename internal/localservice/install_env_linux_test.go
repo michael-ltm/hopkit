@@ -104,7 +104,7 @@ func TestInstallPassesDerivedSessionToEachManagerCommand(t *testing.T) {
 	require.NoError(t, Install(cfg, filepath.Join(bin, "sshm"), false))
 	commands, err := os.ReadFile(log)
 	require.NoError(t, err)
-	require.Equal(t, "--user daemon-reload\n--user enable --now "+filepath.Base(startupPath(cfg))+"\n", string(commands))
+	require.Equal(t, "--user daemon-reload\n--user enable "+filepath.Base(startupPath(cfg))+"\n--user restart "+filepath.Base(startupPath(cfg))+"\n", string(commands))
 	require.Empty(t, os.Getenv("XDG_RUNTIME_DIR"), "only the subprocess environment may change")
 	require.Empty(t, os.Getenv("DBUS_SESSION_BUS_ADDRESS"))
 }
