@@ -16,11 +16,11 @@ func TestRequestExplainsCloudErrors(t *testing.T) {
 		want   string
 	}{
 		{"invalid_login", 401, "account does not exist or password is incorrect"},
-		{"unauthorized", 401, "sshm cloud login"},
+		{"unauthorized", 401, "hopkit cloud login"},
 		{"account_unavailable", 409, "username is unavailable"},
 		{"invalid_recovery", 401, "recovery code"},
 		{"rate_limited", 429, "try again later"},
-		{"revision_conflict", 409, "sshm cloud sync"},
+		{"revision_conflict", 409, "hopkit cloud sync"},
 		{"device_limit", 409, "revoke"},
 		{"device_relay_unavailable", 409, "offline"},
 		{"future_error", 503, "try again later"},

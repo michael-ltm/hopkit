@@ -13,9 +13,9 @@ import (
 	"sort"
 	"time"
 
-	"github.com/michael-ltm/sshm/internal/config"
-	"github.com/michael-ltm/sshm/internal/keystore"
-	sshpkg "github.com/michael-ltm/sshm/internal/ssh"
+	"github.com/michael-ltm/hopkit/internal/config"
+	"github.com/michael-ltm/hopkit/internal/keystore"
+	sshpkg "github.com/michael-ltm/hopkit/internal/ssh"
 	gssh "golang.org/x/crypto/ssh"
 	"golang.org/x/crypto/ssh/agent"
 )
@@ -250,7 +250,7 @@ func loadAndProve(raw any, public gssh.PublicKey) error {
 	defer conn.Close()
 	_ = conn.SetDeadline(time.Now().Add(15 * time.Second))
 	client := agent.NewClient(conn)
-	if err = client.Add(agent.AddedKey{PrivateKey: raw, Comment: "sshm cloud protected key"}); err != nil {
+	if err = client.Add(agent.AddedKey{PrivateKey: raw, Comment: "hopkit cloud protected key"}); err != nil {
 		return err
 	}
 	challenge := make([]byte, 32)

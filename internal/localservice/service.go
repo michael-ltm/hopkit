@@ -16,8 +16,8 @@ import (
 	"sync"
 	"time"
 
-	"github.com/michael-ltm/sshm/internal/config"
-	"github.com/michael-ltm/sshm/internal/localstore"
+	"github.com/michael-ltm/hopkit/internal/config"
+	"github.com/michael-ltm/hopkit/internal/localstore"
 	"golang.org/x/crypto/ssh"
 	"golang.org/x/crypto/ssh/agent"
 )

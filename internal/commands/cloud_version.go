@@ -5,7 +5,7 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/michael-ltm/sshm/internal/cloudsync"
+	"github.com/michael-ltm/hopkit/internal/cloudsync"
 	"github.com/spf13/cobra"
 )
 

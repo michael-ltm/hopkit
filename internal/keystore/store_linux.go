@@ -11,6 +11,6 @@ func StoreAndLoad(keyPath, passphrase string) (Result, error) {
 	}
 	return Result{
 		Persisted: false,
-		Note:      "loaded into ssh-agent for this session; Linux ssh-agent does not persist across reboot — re-run `sshm` after login, or use a keyring agent (gnome-keyring/keychain) for persistence",
+		Note:      "loaded into ssh-agent for this session; Linux ssh-agent does not persist across reboot — re-run `hopkit` after login, or use a keyring agent (gnome-keyring/keychain) for persistence",
 	}, nil
 }

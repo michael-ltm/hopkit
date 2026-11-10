@@ -9,7 +9,7 @@ import (
 	"path/filepath"
 	"testing"
 
-	"github.com/michael-ltm/sshm/internal/config"
+	"github.com/michael-ltm/hopkit/internal/config"
 	"github.com/stretchr/testify/require"
 	gssh "golang.org/x/crypto/ssh"
 )
@@ -95,7 +95,7 @@ func TestBuildClientConfig_AuthCloudWithoutMaterialStaysLocked(t *testing.T) {
 	srv := &config.Server{User: "root", Auth: config.AuthCloud, CloudEntry: "vault-entry"}
 	_, _, err := BuildClientConfig(srv, BuildOpts{ConfigPath: filepath.Join(t.TempDir(), "config.toml")})
 	require.Error(t, err)
-	require.Contains(t, err.Error(), "sshm service setup")
+	require.Contains(t, err.Error(), "hopkit service setup")
 }
 
 func TestBuildClientConfig_UnavailableLocalKeyRequiresExactCachedVaultIdentity(t *testing.T) {

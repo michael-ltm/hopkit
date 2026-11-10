@@ -5,8 +5,8 @@ import (
 	"io"
 	"strings"
 
-	"github.com/michael-ltm/sshm/internal/config"
-	"github.com/michael-ltm/sshm/internal/ui"
+	"github.com/michael-ltm/hopkit/internal/config"
+	"github.com/michael-ltm/hopkit/internal/ui"
 	"github.com/spf13/cobra"
 )
 

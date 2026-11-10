@@ -16,14 +16,14 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/michael-ltm/sshm/internal/config"
-	"github.com/michael-ltm/sshm/internal/devicekey"
+	"github.com/michael-ltm/hopkit/internal/config"
+	"github.com/michael-ltm/hopkit/internal/devicekey"
 )
 
 var (
 	ErrNotFound       = errors.New("local credential is not configured")
 	ErrInactive       = errors.New("local credential was disabled by an accepted deletion; register an active credential locally")
-	ErrLocked         = errors.New("device is explicitly locked; run 'sshm service unlock' in a local terminal")
+	ErrLocked         = errors.New("device is explicitly locked; run 'hopkit service unlock' in a local terminal")
 	ErrCorrupt        = errors.New("local credential store failed verification; preserve it and restore its encrypted backup")
 	ErrKeyFileChanged = errors.New("configured key file identity changed; register the replacement key locally")
 )

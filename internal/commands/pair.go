@@ -13,12 +13,12 @@ import (
 	"strings"
 	"time"
 
-	"github.com/michael-ltm/sshm/internal/config"
-	"github.com/michael-ltm/sshm/internal/keys"
-	"github.com/michael-ltm/sshm/internal/keystore"
-	"github.com/michael-ltm/sshm/internal/pair"
-	sshpkg "github.com/michael-ltm/sshm/internal/ssh"
-	"github.com/michael-ltm/sshm/internal/wizard"
+	"github.com/michael-ltm/hopkit/internal/config"
+	"github.com/michael-ltm/hopkit/internal/keys"
+	"github.com/michael-ltm/hopkit/internal/keystore"
+	"github.com/michael-ltm/hopkit/internal/pair"
+	sshpkg "github.com/michael-ltm/hopkit/internal/ssh"
+	"github.com/michael-ltm/hopkit/internal/wizard"
 	"github.com/spf13/cobra"
 )
 
@@ -70,10 +70,10 @@ saved only after sshm verifies a real key-authenticated SSH session.`,
 			}
 			if len(args) == 0 {
 				if cmd.LocalNonPersistentFlags().NFlag() > 0 {
-					return fmt.Errorf("pair flags require an alias; run plain `sshm pair` for the guided form")
+					return fmt.Errorf("pair flags require an alias; run plain `hopkit pair` for the guided form")
 				}
 				if !commandHasTerminal(cmd) {
-					return fmt.Errorf("guided pairing requires a terminal; use `sshm pair <alias> --host <host>`")
+					return fmt.Errorf("guided pairing requires a terminal; use `hopkit pair <alias> --host <host>`")
 				}
 				cfg, _, err := loadConfig()
 				if err != nil {
@@ -472,7 +472,7 @@ func runPairNoCallback(cmd *cobra.Command, alias string, server *config.Server, 
 			fmt.Fprintln(out, scripts.POSIX)
 		}
 	}
-	fmt.Fprintf(out, "\nRun the command on the target, then sshm retries key login as %s for up to %s (Ctrl+C to stop)...\n", server.User, opts.timeout)
+	fmt.Fprintf(out, "\nRun the command on the target, then hopkit retries key login as %s for up to %s (Ctrl+C to stop)...\n", server.User, opts.timeout)
 
 	verifyCtx, verifyCancel := context.WithTimeout(cmd.Context(), opts.timeout)
 	defer verifyCancel()
@@ -505,9 +505,9 @@ func pairRetryInstruction(alias string, existing bool, explicitIdentity, actualI
 		return fmt.Sprintf("rerun the same pair command with `--identity` pointing to the kept key %q; do not generate or install a second key", actualIdentity)
 	}
 	if existing {
-		return fmt.Sprintf("rerun `sshm pair %s`; the guided platform choice and existing key will be reused", alias)
+		return fmt.Sprintf("rerun `hopkit pair %s`; the guided platform choice and existing key will be reused", alias)
 	}
-	return fmt.Sprintf("rerun plain `sshm pair`, enter alias %q and the same address; the existing generated key will be reused", alias)
+	return fmt.Sprintf("rerun plain `hopkit pair`, enter alias %q and the same address; the existing generated key will be reused", alias)
 }
 
 func pairListenAddress(callbackHost, configured string) string {
@@ -601,10 +601,10 @@ func pairCandidate(existing *config.Server, exists bool, opts pairOptions) (*con
 	if exists {
 		candidate := *existing
 		if opts.hostSet && opts.host != candidate.Host {
-			return nil, fmt.Errorf("server host differs from --host; use `sshm edit` explicitly before pairing")
+			return nil, fmt.Errorf("server host differs from --host; use `hopkit edit` explicitly before pairing")
 		}
 		if opts.portSet && opts.port != candidate.Port {
-			return nil, fmt.Errorf("server port differs from --port; use `sshm edit` explicitly before pairing")
+			return nil, fmt.Errorf("server port differs from --port; use `hopkit edit` explicitly before pairing")
 		}
 		if opts.descriptionSet {
 			candidate.Description = opts.description

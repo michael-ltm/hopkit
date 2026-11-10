@@ -5,8 +5,8 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/michael-ltm/sshm/internal/config"
-	sshpkg "github.com/michael-ltm/sshm/internal/ssh"
+	"github.com/michael-ltm/hopkit/internal/config"
+	sshpkg "github.com/michael-ltm/hopkit/internal/ssh"
 )
 
 // Snapshot is a point-in-time view of a remote host.

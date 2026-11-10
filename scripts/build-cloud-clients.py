@@ -17,14 +17,14 @@ import tempfile
 from concurrent.futures import ThreadPoolExecutor
 
 ROOT = Path(__file__).resolve().parents[1]
-VERSION_SYMBOL = 'github.com/michael-ltm/sshm/internal/commands.Version'
+VERSION_SYMBOL = 'github.com/michael-ltm/hopkit/internal/commands.Version'
 
 
 def verify_darwin(path, arch, version):
     result = subprocess.run(['go', 'version', '-m', '-json', str(path)],
                             check=True, capture_output=True, text=True)
     info = json.loads(result.stdout)
-    if info.get('Path') != 'github.com/michael-ltm/sshm/cmd/sshm':
+    if info.get('Path') != 'github.com/michael-ltm/hopkit/cmd/hopkit':
         raise ValueError(f'{path.name}: not an SSHM command binary')
     settings = {item['Key']: item.get('Value', '') for item in info.get('Settings', [])}
     for key, expected in [('GOOS', 'darwin'), ('GOARCH', arch), ('CGO_ENABLED', '1')]:
@@ -65,7 +65,7 @@ def stage_release(version, darwin_dir, output):
             env = dict(os.environ, GOOS=system, GOARCH=arch, CGO_ENABLED='0')
             subprocess.run(['go', 'build', '-trimpath', '-ldflags',
                             f'-s -w -X {VERSION_SYMBOL}={version}',
-                            '-o', str(staged / name), './cmd/sshm'], cwd=ROOT, env=env, check=True)
+                            '-o', str(staged / name), './cmd/hopkit'], cwd=ROOT, env=env, check=True)
 
         with ThreadPoolExecutor(max_workers=3) as pool:
             list(pool.map(build, [(system, arch) for system in ('linux', 'windows')

@@ -15,7 +15,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/michael-ltm/sshm/internal/config"
+	"github.com/michael-ltm/hopkit/internal/config"
 	gssh "golang.org/x/crypto/ssh"
 	"golang.org/x/net/proxy"
 )

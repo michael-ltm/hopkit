@@ -5,9 +5,9 @@ import (
 	"errors"
 
 	"github.com/mark3labs/mcp-go/server"
-	"github.com/michael-ltm/sshm/internal/config"
-	"github.com/michael-ltm/sshm/internal/localstore"
-	sshpkg "github.com/michael-ltm/sshm/internal/ssh"
+	"github.com/michael-ltm/hopkit/internal/config"
+	"github.com/michael-ltm/hopkit/internal/localstore"
+	sshpkg "github.com/michael-ltm/hopkit/internal/ssh"
 )
 
 // Deps is the non-global state an MCP server needs: where the config and

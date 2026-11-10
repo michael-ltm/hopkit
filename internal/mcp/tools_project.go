@@ -10,8 +10,8 @@ import (
 
 	"github.com/mark3labs/mcp-go/mcp"
 	"github.com/mark3labs/mcp-go/server"
-	"github.com/michael-ltm/sshm/internal/config"
-	"github.com/michael-ltm/sshm/internal/safety"
+	"github.com/michael-ltm/hopkit/internal/config"
+	"github.com/michael-ltm/hopkit/internal/safety"
 )
 
 var projectNamePattern = regexp.MustCompile(`^[a-z0-9][a-z0-9._-]*$`)

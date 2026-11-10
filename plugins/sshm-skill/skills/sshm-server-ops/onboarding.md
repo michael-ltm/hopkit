@@ -5,11 +5,11 @@ installation, but must never enter an AI tool call or chat.
 
 1. Check `list_servers` / `get_server` so an existing host is not duplicated.
 2. Prefer the terminal-only one-line path when the user can paste a command on
-   the target: plain `sshm pair` guides the user through alias, address,
+   the target: plain `hopkit pair` guides the user through alias, address,
    Windows/Linux/macOS platform, description, tags, and group. It discovers the
    username and does not save a new alias until key-authenticated `whoami` and
    `hostname` both succeed. Windows must run the printed line in Administrator
-   PowerShell. The flag form `sshm pair <alias> --host <host> --target
+   PowerShell. The flag form `hopkit pair <alias> --host <host> --target
    windows|posix` remains available for automation.
 3. `pair` needs a target-reachable private LAN/Tailscale callback. Never suggest
    a public or TUN fake-IP callback. If automatic routing is rejected, the

@@ -8,9 +8,9 @@ import (
 	"time"
 
 	"github.com/charmbracelet/huh"
-	cleanupmodel "github.com/michael-ltm/sshm/internal/cleanup"
-	"github.com/michael-ltm/sshm/internal/config"
-	"github.com/michael-ltm/sshm/internal/ui"
+	cleanupmodel "github.com/michael-ltm/hopkit/internal/cleanup"
+	"github.com/michael-ltm/hopkit/internal/config"
+	"github.com/michael-ltm/hopkit/internal/ui"
 	"github.com/spf13/cobra"
 )
 
@@ -176,7 +176,7 @@ func renderCleanupReport(cmd *cobra.Command, report cleanupmodel.Report) error {
 			ui.SanitizeTerminalText(entry.Alias), ui.SanitizeTerminalText(entry.Reason), cleanupAge(entry))
 	}
 	if !commandHasTerminal(cmd) {
-		fmt.Fprintln(cmd.OutOrStdout(), "Run `sshm cleanup` in a terminal to select and remove records safely.")
+		fmt.Fprintln(cmd.OutOrStdout(), "Run `hopkit cleanup` in a terminal to select and remove records safely.")
 	}
 	return nil
 }

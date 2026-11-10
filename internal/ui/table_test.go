@@ -5,7 +5,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/michael-ltm/sshm/internal/config"
+	"github.com/michael-ltm/hopkit/internal/config"
 	"github.com/stretchr/testify/require"
 )
 
@@ -34,5 +34,5 @@ func TestRenderServerTable_IncludesAllExpectedColumns(t *testing.T) {
 func TestRenderServerTable_EmptyShowsHint(t *testing.T) {
 	out := RenderServerTable(map[string]*config.Server{}, ASCIIIcons(), false)
 	require.Contains(t, out, "No servers")
-	require.Contains(t, out, "sshm add")
+	require.Contains(t, out, "hopkit add")
 }

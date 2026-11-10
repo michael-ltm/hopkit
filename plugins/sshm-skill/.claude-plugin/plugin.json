@@ -5,6 +5,6 @@
   "author": {
     "name": "michael-ltm"
   },
-  "license": "MIT",
-  "homepage": "https://github.com/michael-ltm/sshm"
+  "license": "Apache-2.0",
+  "homepage": "https://github.com/michael-ltm/hopkit"
 }

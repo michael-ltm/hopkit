@@ -11,7 +11,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/michael-ltm/sshm/internal/config"
+	"github.com/michael-ltm/hopkit/internal/config"
 	"github.com/stretchr/testify/require"
 )
 
@@ -26,7 +26,7 @@ func TestIntegration_McpStdioListServers(t *testing.T) {
 	require.NoError(t, config.Save(cfgPath, cfg))
 
 	bin := filepath.Join(dir, "sshm")
-	build := exec.Command("go", "build", "-o", bin, "github.com/michael-ltm/sshm/cmd/sshm")
+	build := exec.Command("go", "build", "-o", bin, "github.com/michael-ltm/hopkit/cmd/hopkit")
 	out, err := build.CombinedOutput()
 	require.NoError(t, err, "go build failed: %s", out)
 

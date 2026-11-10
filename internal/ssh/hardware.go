@@ -3,8 +3,8 @@ package ssh
 import (
 	"context"
 	"errors"
-	"github.com/michael-ltm/sshm/internal/config"
-	"github.com/michael-ltm/sshm/internal/inventory"
+	"github.com/michael-ltm/hopkit/internal/config"
+	"github.com/michael-ltm/hopkit/internal/inventory"
 )
 
 func (c *Client) DetectHardware(ctx context.Context, platform string) *inventory.Snapshot {

@@ -1,23 +1,23 @@
 # Optional cloud sync and updates
 
-Use only with a cloud-enabled SSHM client. `sshm cloud status` is safe to inspect;
+Use only with a cloud-enabled SSHM client. `hopkit cloud status` is safe to inspect;
 cloud setup and credential entry require the user's own interactive
 terminal. Default MCP uses device-protected local credentials, then existing native keys/Agents. Never ask the user to put account passwords, vault phrases, recovery
 codes, SSH private keys or passwords in chat, tool arguments, environment
 variables or AI-visible logs.
 
-- In default `sshm mcp` / `--cloud-auth local` mode, execute the requested SSH
+- In default `hopkit mcp` / `--cloud-auth local` mode, execute the requested SSH
   operation using existing local credentials, including cloud-linked aliases.
   Paired/migrated credentials survive new MCP processes and local service restarts.
   Cloud connectivity and token expiry govern synchronization, not local SSH.
   Credential identity binds host, user, port and credential/vault association;
   changing a local proxy/jump route does not require credential approval.
-- Inspect `sshm service status` when local access fails. If no local store exists,
-  the one-time legacy migration is `sshm service setup` in the user's own terminal,
-  followed by `sshm service install` for background startup. An old key still needs
+- Inspect `hopkit service status` when local access fails. If no local store exists,
+  the one-time legacy migration is `hopkit service setup` in the user's own terminal,
+  followed by `hopkit service install` for background startup. An old key still needs
   its original passphrase once if no decryptable vault copy exists. Never repeat
   setup/unlock as a generic fix: `local_device_locked` requires a deliberate local
-  `sshm service unlock`; `local_credential_missing` requires registering that target;
+  `hopkit service unlock`; `local_credential_missing` requires registering that target;
   unavailable device protection requires fixing its OS backend. A stopped service
   does not block the shared direct CLI/MCP credential resolver.
 - For timeout/refused/proxy errors, use `check_ssh` and its selected route;
@@ -32,7 +32,7 @@ variables or AI-visible logs.
   `service lock` persists across restarts. Do not automatically unlock an explicit lock.
   Same-user programs can use the trusted local identity. Use explicit browser mode when online cloud authorization
   is required for each new cloud connection.
-- Only in explicit `sshm mcp --cloud-auth browser` mode, when the cloud connection
+- Only in explicit `hopkit mcp --cloud-auth browser` mode, when the cloud connection
   is locked and approval tools are present, call `cloud_unlock` with a brief non-secret
   reason. Present its approval URL and verification code to the user, who checks
   the code and approves MCP credential access in the trusted browser. Poll
@@ -66,10 +66,10 @@ variables or AI-visible logs.
 - `cloud watch` holds an unlocked vault in its process and syncs periodically.
 - `cloud conflicts` preserves conflicting records. Do not choose credentials or
   delete same-name records based only on alias; retain different users/routes.
-- `sshm update --check` verifies the signed release feed. Installing an update
+- `hopkit update --check` verifies the signed release feed. Installing an update
   needs explicit user intent or the CLI confirmation; do not set `--yes` merely
   to bypass the question. Existing signed updates may refresh only SSHM-managed
   integrations. Plugin-managed or locally edited skill files stay untouched.
-- `sshm integrations status` inspects setup. Use `integrations install --app
+- `hopkit integrations status` inspects setup. Use `integrations install --app
   codex|claude|all` only when requested. MCP registration is a separate `--mcp`
   option, using each app's own CLI; never replace another server configuration.

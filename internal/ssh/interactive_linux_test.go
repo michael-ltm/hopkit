@@ -9,7 +9,7 @@ import (
 	"time"
 
 	"github.com/creack/pty"
-	"github.com/michael-ltm/sshm/internal/testutil"
+	"github.com/michael-ltm/hopkit/internal/testutil"
 	"github.com/stretchr/testify/require"
 	"golang.org/x/term"
 )

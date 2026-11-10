@@ -1,17 +1,17 @@
 version: 2
 
-project_name: sshm
+project_name: hopkit
 
 builds:
-  - id: sshm
-    main: ./cmd/sshm
-    binary: sshm
+  - id: hopkit
+    main: ./cmd/hopkit
+    binary: hopkit
     env: [CGO_ENABLED=0]
     goos: [linux, darwin, windows]
     goarch: [amd64, arm64]
     ldflags:
       - -s -w
-      - -X github.com/michael-ltm/sshm/internal/commands.Version={{.Version}}
+      - -X github.com/michael-ltm/hopkit/internal/commands.Version={{.Version}}
 
 archives:
   - id: default
@@ -38,31 +38,31 @@ changelog:
     exclude: ["^docs:", "^test:", "^ci:", "^chore:"]
 
 brews:
-  - name: sshm
+  - name: hopkit
     repository:
       owner: michael-ltm
       name: homebrew-tap
       token: "{{ .Env.HOMEBREW_TAP_TOKEN }}"
-    homepage: "https://github.com/michael-ltm/sshm"
-    description: "A pretty, AI-friendly SSH connection manager"
-    license: MIT
+    homepage: "https://github.com/michael-ltm/hopkit"
+    description: "AI-friendly SSH manager with a built-in MCP server"
+    license: Apache-2.0
     install: |
-      bin.install "sshm"
+      bin.install "hopkit"
     test: |
-      system "#{bin}/sshm", "version"
+      system "#{bin}/hopkit", "version"
 
 scoops:
   - repository:
       owner: michael-ltm
       name: scoop-bucket
       token: "{{ .Env.SCOOP_BUCKET_TOKEN }}"
-    homepage: "https://github.com/michael-ltm/sshm"
-    description: "A pretty, AI-friendly SSH connection manager"
-    license: MIT
+    homepage: "https://github.com/michael-ltm/hopkit"
+    description: "AI-friendly SSH manager with a built-in MCP server"
+    license: Apache-2.0
 
 release:
   github:
     owner: michael-ltm
-    name: sshm
+    name: hopkit
   draft: false
   prerelease: auto

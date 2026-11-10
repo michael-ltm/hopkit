@@ -16,7 +16,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/michael-ltm/sshm/internal/config"
+	"github.com/michael-ltm/hopkit/internal/config"
 	"github.com/stretchr/testify/require"
 	gssh "golang.org/x/crypto/ssh"
 )

@@ -7,8 +7,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/michael-ltm/sshm/internal/config"
-	sshpkg "github.com/michael-ltm/sshm/internal/ssh"
+	"github.com/michael-ltm/hopkit/internal/config"
+	sshpkg "github.com/michael-ltm/hopkit/internal/ssh"
 	"github.com/spf13/cobra"
 	"golang.org/x/term"
 )
@@ -27,7 +27,7 @@ The command and its arguments are joined with spaces and run through the
 remote shell. For commands containing quoted strings, escape your local
 shell or wrap in 'sh -c "..."', e.g.:
 
-    sshm exec myhost sh -c 'grep -r "hello world" /tmp'
+    hopkit exec myhost sh -c 'grep -r "hello world" /tmp'
 `,
 		Args: func(cmd *cobra.Command, args []string) error {
 			if len(args) < 1 {
@@ -49,7 +49,7 @@ shell or wrap in 'sh -c "..."', e.g.:
 			}
 			if !localCredentialStore(configPath()).Enabled() && s.CloudEntry != "" && !sshpkg.HasLocalAuth(s, sshpkg.BuildOpts{ConfigPath: configPath(), Alias: args[0]}) {
 				if !term.IsTerminal(int(os.Stdin.Fd())) {
-					return fmt.Errorf("no local SSH credential is registered; run 'sshm service setup' once in a local terminal")
+					return fmt.Errorf("no local SSH credential is registered; run 'hopkit service setup' once in a local terminal")
 				}
 				if rawEnvironment {
 					return fmt.Errorf("--raw-environment is only supported for direct SSH connections")

@@ -9,14 +9,14 @@
     {
       "name": "sshm-skill",
       "source": "./plugins/sshm-skill",
-      "description": "Manage SSH servers with sshm — list, connect, exec, bootstrap, inspect — from any AI assistant.",
+      "description": "Manage SSH servers with hopkit — list, connect, exec, bootstrap, inspect — from any AI assistant.",
       "version": "0.7.1",
       "author": {
         "name": "michael-ltm"
       },
-      "homepage": "https://github.com/michael-ltm/sshm",
-      "repository": "https://github.com/michael-ltm/sshm",
-      "license": "MIT"
+      "homepage": "https://github.com/michael-ltm/hopkit",
+      "repository": "https://github.com/michael-ltm/hopkit",
+      "license": "Apache-2.0"
     }
   ]
 }

@@ -11,9 +11,9 @@ import (
 	"strings"
 	"time"
 
-	"github.com/michael-ltm/sshm/internal/config"
-	"github.com/michael-ltm/sshm/internal/keystore"
-	sshpkg "github.com/michael-ltm/sshm/internal/ssh"
+	"github.com/michael-ltm/hopkit/internal/config"
+	"github.com/michael-ltm/hopkit/internal/keystore"
+	sshpkg "github.com/michael-ltm/hopkit/internal/ssh"
 	gssh "golang.org/x/crypto/ssh"
 	"golang.org/x/crypto/ssh/agent"
 )
@@ -173,7 +173,7 @@ func loadTimedAndProve(raw any, public gssh.PublicKey) error {
 		}
 	}
 	if !exists {
-		if err := client.Add(agent.AddedKey{PrivateKey: raw, Comment: "sshm cloud local identity", LifetimeSecs: 12 * 60 * 60}); err != nil {
+		if err := client.Add(agent.AddedKey{PrivateKey: raw, Comment: "hopkit cloud local identity", LifetimeSecs: 12 * 60 * 60}); err != nil {
 			return err
 		}
 	}

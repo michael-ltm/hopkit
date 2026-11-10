@@ -3,7 +3,7 @@ package commands
 import (
 	"context"
 	"fmt"
-	"github.com/michael-ltm/sshm/internal/ui"
+	"github.com/michael-ltm/hopkit/internal/ui"
 	"os"
 	"path/filepath"
 	"strconv"
@@ -11,11 +11,11 @@ import (
 	"time"
 
 	"github.com/charmbracelet/huh"
-	"github.com/michael-ltm/sshm/internal/config"
-	"github.com/michael-ltm/sshm/internal/keys"
-	sshpkg "github.com/michael-ltm/sshm/internal/ssh"
-	"github.com/michael-ltm/sshm/internal/status"
-	"github.com/michael-ltm/sshm/internal/wizard"
+	"github.com/michael-ltm/hopkit/internal/config"
+	"github.com/michael-ltm/hopkit/internal/keys"
+	sshpkg "github.com/michael-ltm/hopkit/internal/ssh"
+	"github.com/michael-ltm/hopkit/internal/status"
+	"github.com/michael-ltm/hopkit/internal/wizard"
 	"github.com/spf13/cobra"
 )
 
@@ -109,7 +109,7 @@ func addQuick(cmd *cobra.Command, cfg *config.Config, alias, user, host string, 
 
 func runGuidedAdd(cmd *cobra.Command, cfg *config.Config) error {
 	if !commandHasTerminal(cmd) {
-		return fmt.Errorf("guided add requires a terminal; use `sshm pair <alias> --host <host>` or `sshm add --quick ...`")
+		return fmt.Errorf("guided add requires a terminal; use `hopkit pair <alias> --host <host>` or `hopkit add --quick ...`")
 	}
 	mode := "manual"
 	form := huh.NewForm(huh.NewGroup(
@@ -217,7 +217,7 @@ func addWizard(cmd *cobra.Command, cfg *config.Config) error {
 	}
 
 	if in.CopyIDAfter && srv.Auth == config.AuthKey && srv.KeyPath != "" {
-		fmt.Fprintln(cmd.OutOrStdout(), "Next step: run `sshm copy-id "+in.Alias+"` (it will prompt for the password once)")
+		fmt.Fprintln(cmd.OutOrStdout(), "Next step: run `hopkit copy-id "+in.Alias+"` (it will prompt for the password once)")
 	}
 	return nil
 }

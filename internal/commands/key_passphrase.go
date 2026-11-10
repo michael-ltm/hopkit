@@ -6,8 +6,8 @@ import (
 	"encoding/base64"
 	"fmt"
 
-	"github.com/michael-ltm/sshm/internal/keys"
-	sshpkg "github.com/michael-ltm/sshm/internal/ssh"
+	"github.com/michael-ltm/hopkit/internal/keys"
+	sshpkg "github.com/michael-ltm/hopkit/internal/ssh"
 	"github.com/spf13/cobra"
 )
 

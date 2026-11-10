@@ -4,7 +4,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/michael-ltm/sshm/internal/testutil"
+	"github.com/michael-ltm/hopkit/internal/testutil"
 	"github.com/stretchr/testify/require"
 )
 
@@ -19,7 +19,7 @@ func TestConnectExplainsOnlyPTYDenial(t *testing.T) {
 			if rejected == "pty-req" {
 				require.ErrorContains(t, err, "request pty: ssh: pty-req failed")
 				require.ErrorContains(t, err, "authentication succeeded")
-				require.ErrorContains(t, err, "sshm exec <alias> --raw-environment <command>")
+				require.ErrorContains(t, err, "hopkit exec <alias> --raw-environment <command>")
 				require.Len(t, fixture.Requests(), 2, "must not fall back to shell or exec")
 			} else {
 				require.NotContains(t, err.Error(), "--raw-environment")

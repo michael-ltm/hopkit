@@ -10,12 +10,12 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/huh"
 	"github.com/charmbracelet/lipgloss"
-	"github.com/michael-ltm/sshm/internal/cloudsync"
-	"github.com/michael-ltm/sshm/internal/config"
-	sshpkg "github.com/michael-ltm/sshm/internal/ssh"
-	"github.com/michael-ltm/sshm/internal/status"
-	"github.com/michael-ltm/sshm/internal/ui"
-	"github.com/michael-ltm/sshm/internal/wizard"
+	"github.com/michael-ltm/hopkit/internal/cloudsync"
+	"github.com/michael-ltm/hopkit/internal/config"
+	sshpkg "github.com/michael-ltm/hopkit/internal/ssh"
+	"github.com/michael-ltm/hopkit/internal/status"
+	"github.com/michael-ltm/hopkit/internal/ui"
+	"github.com/michael-ltm/hopkit/internal/wizard"
 	"github.com/spf13/cobra"
 	"golang.org/x/term"
 )
@@ -344,7 +344,7 @@ func runServerActions(cmd *cobra.Command, alias string) (bool, error) {
 				if err := removeCloudEntry(cmd, alias, server.CloudEntry); err != nil {
 					return false, fmt.Errorf("local removal succeeded, but the cloud tombstone failed: %w", err)
 				}
-				fmt.Fprintln(cmd.OutOrStdout(), "Cloud entry marked for deletion; run `sshm cloud sync` to push it.")
+				fmt.Fprintln(cmd.OutOrStdout(), "Cloud entry marked for deletion; run `hopkit cloud sync` to push it.")
 			}
 			return true, nil
 		}

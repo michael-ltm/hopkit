@@ -3,8 +3,8 @@ package cloudagent
 import (
 	"errors"
 
-	"github.com/michael-ltm/sshm/internal/cloudsync"
-	sshpkg "github.com/michael-ltm/sshm/internal/ssh"
+	"github.com/michael-ltm/hopkit/internal/cloudsync"
+	sshpkg "github.com/michael-ltm/hopkit/internal/ssh"
 )
 
 func targetErrorPayload(err error) cloudsync.ShellPayload {

@@ -124,7 +124,7 @@ func Execute(ctx context.Context, command, directory string, stdout, stderr io.W
 	}
 	conn, err := dial(ctx)
 	if err != nil {
-		return -1, fmt.Errorf("desktop session is enabled but unavailable; use sshm desktop status (command was not sent): %w", err)
+		return -1, fmt.Errorf("desktop session is enabled but unavailable; use hopkit desktop status (command was not sent): %w", err)
 	}
 	defer conn.Close()
 	stop := context.AfterFunc(ctx, func() { _ = conn.Close() })

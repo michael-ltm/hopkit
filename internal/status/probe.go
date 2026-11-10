@@ -8,8 +8,8 @@ import (
 	"context"
 	"time"
 
-	"github.com/michael-ltm/sshm/internal/config"
-	sshpkg "github.com/michael-ltm/sshm/internal/ssh"
+	"github.com/michael-ltm/hopkit/internal/config"
+	sshpkg "github.com/michael-ltm/hopkit/internal/ssh"
 )
 
 // defaultProbeTimeout is the TCP-connect deadline used when the caller

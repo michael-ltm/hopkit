@@ -23,9 +23,9 @@ import (
 	"testing"
 	"time"
 
-	"github.com/michael-ltm/sshm/internal/cloudsync"
-	"github.com/michael-ltm/sshm/internal/config"
-	sshpkg "github.com/michael-ltm/sshm/internal/ssh"
+	"github.com/michael-ltm/hopkit/internal/cloudsync"
+	"github.com/michael-ltm/hopkit/internal/config"
+	sshpkg "github.com/michael-ltm/hopkit/internal/ssh"
 	"github.com/stretchr/testify/require"
 	"golang.org/x/crypto/hkdf"
 	gssh "golang.org/x/crypto/ssh"

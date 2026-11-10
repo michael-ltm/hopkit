@@ -1,8 +1,8 @@
 package commands
 
 import (
-	"github.com/michael-ltm/sshm/internal/cloudsync"
-	"github.com/michael-ltm/sshm/internal/config"
+	"github.com/michael-ltm/hopkit/internal/cloudsync"
+	"github.com/michael-ltm/hopkit/internal/config"
 	"github.com/spf13/cobra"
 	"github.com/stretchr/testify/require"
 	"io"

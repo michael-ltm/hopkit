@@ -7,14 +7,14 @@ import (
 	"time"
 
 	"github.com/charmbracelet/lipgloss"
-	"github.com/michael-ltm/sshm/internal/config"
+	"github.com/michael-ltm/hopkit/internal/config"
 )
 
 // RenderServerTable returns a colorized table of servers. If color is false,
 // styles are stripped (test mode, --no-color, non-tty).
 func RenderServerTable(servers map[string]*config.Server, ic IconSet, color bool) string {
 	if len(servers) == 0 {
-		return "No servers yet. Add one with: sshm add\n"
+		return "No servers yet. Add one with: hopkit add\n"
 	}
 
 	aliases := make([]string, 0, len(servers))
@@ -24,7 +24,7 @@ func RenderServerTable(servers map[string]*config.Server, ic IconSet, color bool
 		}
 	}
 	if len(aliases) == 0 {
-		return "No servers yet. Add one with: sshm add\n"
+		return "No servers yet. Add one with: hopkit add\n"
 	}
 	sort.Slice(aliases, func(i, j int) bool {
 		a, b := aliases[i], aliases[j]

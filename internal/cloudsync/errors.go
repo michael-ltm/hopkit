@@ -9,9 +9,9 @@ func (e *APIError) Message(language string) string {
 	case "invalid_login":
 		en, zh = "account does not exist or password is incorrect; check your username and account password", "账号不存在或密码错误，请检查用户名和账号密码"
 	case "unauthorized":
-		en, zh = "cloud login has expired or was revoked; run sshm cloud login", "云端登录已过期或已被撤销，请运行 sshm cloud login 重新登录"
+		en, zh = "cloud login has expired or was revoked; run hopkit cloud login", "云端登录已过期或已被撤销，请运行 hopkit cloud login 重新登录"
 	case "account_unavailable":
-		en, zh = "username is unavailable; choose another username or run sshm cloud login", "该用户名不可用，请更换用户名；已有账号请运行 sshm cloud login"
+		en, zh = "username is unavailable; choose another username or run hopkit cloud login", "该用户名不可用，请更换用户名；已有账号请运行 hopkit cloud login"
 	case "registration_closed":
 		en, zh = "cloud registration is currently closed", "云端暂未开放注册"
 	case "invalid_recovery":
@@ -23,11 +23,11 @@ func (e *APIError) Message(language string) string {
 	case "rate_limited", "link_limit":
 		en, zh = "too many requests; please try again later", "操作过于频繁，请稍后重试"
 	case "device_limit":
-		en, zh = "account device limit reached; revoke an unused device with sshm cloud devices --revoke <device-id>", "账号设备数量已达上限，请用 sshm cloud devices --revoke <device-id> 撤销不用的设备"
+		en, zh = "account device limit reached; revoke an unused device with hopkit cloud devices --revoke <device-id>", "账号设备数量已达上限，请用 hopkit cloud devices --revoke <device-id> 撤销不用的设备"
 	case "revision_conflict":
-		en, zh = "cloud data has changed; run sshm cloud sync and resolve any conflicts before retrying", "云端数据已有更新，请运行 sshm cloud sync 并处理冲突后重试"
+		en, zh = "cloud data has changed; run hopkit cloud sync and resolve any conflicts before retrying", "云端数据已有更新，请运行 hopkit cloud sync 并处理冲突后重试"
 	case "operation_mismatch":
-		en, zh = "sync operation does not match the previous upload; preserve local data and retry sshm cloud sync", "同步操作与上次上传不一致，请保留本地数据并重试 sshm cloud sync"
+		en, zh = "sync operation does not match the previous upload; preserve local data and retry hopkit cloud sync", "同步操作与上次上传不一致，请保留本地数据并重试 hopkit cloud sync"
 	case "device_relay_unavailable":
 		en, zh = "target device is offline or its relay is unavailable; check the device agent and try again", "目标设备离线或连接服务不可用，请检查设备代理后重试"
 	case "relay_unavailable":
@@ -35,13 +35,13 @@ func (e *APIError) Message(language string) string {
 	case "invalid_device":
 		en, zh = "device information is invalid; check the device ID, label and metadata", "设备信息无效，请检查设备 ID、名称和其他信息"
 	case "invalid_link", "link_revoked":
-		en, zh = "device link is invalid, expired or revoked; start sshm cloud link again", "设备关联请求无效、已过期或已撤销，请重新运行 sshm cloud link"
+		en, zh = "device link is invalid, expired or revoked; start hopkit cloud link again", "设备关联请求无效、已过期或已撤销，请重新运行 hopkit cloud link"
 	case "link_exists", "link_already_approved", "link_changed":
-		en, zh = "device link already exists or has changed; check its status or start sshm cloud link again", "设备关联请求已存在或状态已改变，请检查状态或重新运行 sshm cloud link"
+		en, zh = "device link already exists or has changed; check its status or start hopkit cloud link again", "设备关联请求已存在或状态已改变，请检查状态或重新运行 hopkit cloud link"
 	case "invalid_signature", "invalid_rotation", "invalid_grant":
 		en, zh = "cloud security verification failed; check the account and vault, then sync before retrying", "云端安全验证失败，请核对账号和保险库，同步后重试"
 	case "client_required":
-		en, zh = "this operation requires the sshm command-line client", "此操作需要使用 sshm 命令行客户端"
+		en, zh = "this operation requires the hopkit command-line client", "此操作需要使用 hopkit 命令行客户端"
 	case "not_allowed", "origin_denied":
 		en, zh = "this session is not permitted to perform the operation", "当前会话无权执行此操作"
 	case "not_found":

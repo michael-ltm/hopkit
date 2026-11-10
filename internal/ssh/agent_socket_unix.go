@@ -3,7 +3,7 @@
 package ssh
 
 import (
-	"github.com/michael-ltm/sshm/internal/config"
+	"github.com/michael-ltm/hopkit/internal/config"
 	"os"
 	"path/filepath"
 	"syscall"

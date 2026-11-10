@@ -11,7 +11,7 @@ import (
 	"path/filepath"
 	"time"
 
-	sshpkg "github.com/michael-ltm/sshm/internal/ssh"
+	sshpkg "github.com/michael-ltm/hopkit/internal/ssh"
 	"golang.org/x/crypto/ssh/agent"
 )
 

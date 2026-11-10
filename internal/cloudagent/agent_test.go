@@ -8,7 +8,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"github.com/coder/websocket"
-	"github.com/michael-ltm/sshm/internal/cloudsync"
+	"github.com/michael-ltm/hopkit/internal/cloudsync"
 	"github.com/stretchr/testify/require"
 	"golang.org/x/crypto/hkdf"
 	"io"

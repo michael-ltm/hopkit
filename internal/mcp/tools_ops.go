@@ -10,13 +10,13 @@ import (
 
 	"github.com/mark3labs/mcp-go/mcp"
 	"github.com/mark3labs/mcp-go/server"
-	"github.com/michael-ltm/sshm/internal/bootstrap"
-	"github.com/michael-ltm/sshm/internal/config"
-	"github.com/michael-ltm/sshm/internal/keys"
-	"github.com/michael-ltm/sshm/internal/keystore"
-	"github.com/michael-ltm/sshm/internal/localstore"
-	"github.com/michael-ltm/sshm/internal/safety"
-	sshpkg "github.com/michael-ltm/sshm/internal/ssh"
+	"github.com/michael-ltm/hopkit/internal/bootstrap"
+	"github.com/michael-ltm/hopkit/internal/config"
+	"github.com/michael-ltm/hopkit/internal/keys"
+	"github.com/michael-ltm/hopkit/internal/keystore"
+	"github.com/michael-ltm/hopkit/internal/localstore"
+	"github.com/michael-ltm/hopkit/internal/safety"
+	sshpkg "github.com/michael-ltm/hopkit/internal/ssh"
 )
 
 func handleBootstrap(ctx context.Context, deps Deps, args map[string]any) (any, error) {
@@ -169,7 +169,7 @@ func handleCopyID(ctx context.Context, deps Deps, args map[string]any) (any, err
 	return map[string]any{
 		"alias": alias,
 		"action_required": fmt.Sprintf(
-			"Run `sshm copy-id %s` in a terminal — copy-id needs a password, which is never sent through the AI.", alias),
+			"Run `hopkit copy-id %s` in a terminal — copy-id needs a password, which is never sent through the AI.", alias),
 	}, nil
 }
 

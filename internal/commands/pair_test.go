@@ -11,11 +11,11 @@ import (
 	"time"
 
 	"github.com/charmbracelet/lipgloss"
-	cleanupmodel "github.com/michael-ltm/sshm/internal/cleanup"
-	"github.com/michael-ltm/sshm/internal/config"
-	"github.com/michael-ltm/sshm/internal/keys"
-	"github.com/michael-ltm/sshm/internal/keystore"
-	"github.com/michael-ltm/sshm/internal/pair"
+	cleanupmodel "github.com/michael-ltm/hopkit/internal/cleanup"
+	"github.com/michael-ltm/hopkit/internal/config"
+	"github.com/michael-ltm/hopkit/internal/keys"
+	"github.com/michael-ltm/hopkit/internal/keystore"
+	"github.com/michael-ltm/hopkit/internal/pair"
 	"github.com/spf13/cobra"
 	"github.com/stretchr/testify/require"
 	gssh "golang.org/x/crypto/ssh"
@@ -35,7 +35,7 @@ func TestPairCandidate_ExistingAliasRefusesImplicitConnectionChange(t *testing.T
 	existing := &config.Server{Host: "old.example", Port: 22, User: "old"}
 	_, err := pairCandidate(existing, true, pairOptions{host: "new.example", hostSet: true})
 	require.Error(t, err)
-	require.Contains(t, err.Error(), "sshm edit")
+	require.Contains(t, err.Error(), "hopkit edit")
 }
 
 func TestSameReportedUser_WindowsDomainPrefix(t *testing.T) {
@@ -59,8 +59,8 @@ func TestPairListenAddressMatchesCallbackFamily(t *testing.T) {
 }
 
 func TestPairRetryInstructionIsExecutableForNewAndExistingAliases(t *testing.T) {
-	require.Contains(t, pairRetryInstruction("new-pc", false, "", "~/.ssh/id_ed25519_new-pc"), "rerun plain `sshm pair`")
-	require.Contains(t, pairRetryInstruction("office-pc", true, "", "~/.ssh/id_ed25519_office-pc"), "`sshm pair office-pc`")
+	require.Contains(t, pairRetryInstruction("new-pc", false, "", "~/.ssh/id_ed25519_new-pc"), "rerun plain `hopkit pair`")
+	require.Contains(t, pairRetryInstruction("office-pc", true, "", "~/.ssh/id_ed25519_office-pc"), "`hopkit pair office-pc`")
 	require.Contains(t, pairRetryInstruction("new-pc", false, "/keys/custom", "/keys/custom"), `kept key "/keys/custom"`)
 }
 

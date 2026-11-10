@@ -15,7 +15,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/michael-ltm/sshm/internal/config"
+	"github.com/michael-ltm/hopkit/internal/config"
 	"github.com/stretchr/testify/require"
 	gssh "golang.org/x/crypto/ssh"
 	"golang.org/x/crypto/ssh/agent"
@@ -140,7 +140,7 @@ func TestBuildAuthCloudRejectsDifferentTargetOrBinding(t *testing.T) {
 		changed.Forwards = append([]string(nil), server.Forwards...)
 		mutate(&changed)
 		_, _, err := buildAuth(&changed, BuildOpts{ConfigPath: configPath})
-		require.ErrorContains(t, err, "sshm service setup")
+		require.ErrorContains(t, err, "hopkit service setup")
 	}
 }
 

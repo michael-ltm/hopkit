@@ -1,17 +1,17 @@
-// Package wizard implements interactive forms for sshm add/edit.
+// Package wizard implements interactive forms for hopkit add/edit.
 package wizard
 
 import (
 	"errors"
 	"fmt"
-	"github.com/michael-ltm/sshm/internal/ui"
+	"github.com/michael-ltm/hopkit/internal/ui"
 	"io"
 	"regexp"
 	"strconv"
 	"strings"
 
 	"github.com/charmbracelet/huh"
-	"github.com/michael-ltm/sshm/internal/config"
+	"github.com/michael-ltm/hopkit/internal/config"
 )
 
 var aliasRE = regexp.MustCompile(`^[a-z0-9][a-z0-9._-]*$`)

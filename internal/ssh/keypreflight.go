@@ -52,7 +52,7 @@ func CheckKeyPairUsable(path string) (string, error) {
 		}
 	}
 
-	challenge := []byte("sshm pair key signing preflight")
+	challenge := []byte("hopkit pair key signing preflight")
 	signature, err := signer.Sign(rand.Reader, challenge)
 	if err != nil {
 		return "", fmt.Errorf("sign with key %s: %w", expanded, err)

@@ -6,7 +6,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	sshmassets "github.com/michael-ltm/sshm/plugins/sshm-skill"
+	sshmassets "github.com/michael-ltm/hopkit/plugins/sshm-skill"
 	"io/fs"
 	"os"
 	"path/filepath"

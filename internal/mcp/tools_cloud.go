@@ -6,7 +6,7 @@ import (
 
 	"github.com/mark3labs/mcp-go/mcp"
 	"github.com/mark3labs/mcp-go/server"
-	"github.com/michael-ltm/sshm/internal/safety"
+	"github.com/michael-ltm/hopkit/internal/safety"
 )
 
 // cloudToolArgs deliberately rejects all fields outside this closed schema.

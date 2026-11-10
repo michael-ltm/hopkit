@@ -1,6 +1,6 @@
 # SSHM Cloud 使用说明（预览版）
 
-控制台：<https://sshm.yunmini.net>。原有 `sshm list/connect/exec` 和 MCP 继续读取本地配置；云端数据通过 `sshm cloud …` 使用。登录不会覆盖原配置。
+控制台：<https://sshm.yunmini.net>。原有 `hopkit list/connect/exec` 和 MCP 继续读取本地配置；云端数据通过 `hopkit cloud …` 使用。登录不会覆盖原配置。
 
 ## 首次接入
 
@@ -74,7 +74,7 @@ sshm cloud logout
 
 这是可运行的云同步与设备管理预览版，不是 Tailscale 的虚拟网络实现。原来的 SSH/Tailscale/VPN 网络可达性仍然必要。
 
-网页 Shell 从 preview.9 起通过 `sshm cloud agent --allow-shell` 显式开启。设备主动连出 WSS，以当前系统用户运行原生 PTY（Windows 使用 ConPTY）。每次会话需要解锁网页保险库并签名，命令和输出使用独立的双向 AES-GCM 密钥与递增序号。关闭页面、锁定保险库、设备断开或撤销会终止会话；preview.26 的新代理不再按总时长强制断开，旧代理需升级并重启。`presence` 仍然只发送心跳。
+网页 Shell 从 preview.9 起通过 `hopkit cloud agent --allow-shell` 显式开启。设备主动连出 WSS，以当前系统用户运行原生 PTY（Windows 使用 ConPTY）。每次会话需要解锁网页保险库并签名，命令和输出使用独立的双向 AES-GCM 密钥与递增序号。关闭页面、锁定保险库、设备断开或撤销会终止会话；preview.26 的新代理不再按总时长强制断开，旧代理需升级并重启。`presence` 仍然只发送心跳。
 
 保险库密文上限 2 MiB，单账号最多 32 个未过期会话，CLI 会话有效期 30 天，网页 Cookie 为 1 天；历史保留最近 20 次提交用于运维保护，尚无用户版本恢复 UI。未提供邮箱验证、邮件找回或 MFA；受信设备的本地加密恢复和共享凭据见下文。旧本地私钥不因启用云同步而自动加密。
 
@@ -111,8 +111,8 @@ must be updated through their Codex/Claude plugin manager.
 Successful automatic checks are cached for six hours. Network checks have a
 1.5-second budget; failed checks retry after ten minutes. An unavailable update
 service does not stop local work. A valid cached release can still be offered.
-`sshm update --check` explicitly checks immediately; `sshm update` offers the
-same Update/Skip choice, and `sshm update --yes` is explicit noninteractive
+`hopkit update --check` explicitly checks immediately; `hopkit update` offers the
+same Update/Skip choice, and `hopkit update --yes` is explicit noninteractive
 approval. `--json` remains read-only. MCP, pipes and one-off SSH operations do
 not wait for update choices. `SSHM_NO_UPDATE_CHECK=1` disables automatic checks.
 A current installation has no update menu until a newer version is available.
@@ -179,7 +179,7 @@ Preview.17 fixes agent exit after temporary relay HTTP 409 conflicts. The encryp
 
 磁盘详情保留系统可见的磁盘、未挂载分区、映射、卷和 APFS 共享容器，不仅列系统盘。列表容量仅汇总磁盘层，卷和分区不重复相加。Linux 的 zram/RAM、eMMC 启动区、未连接零容量 NBD 在“其他块设备”中单列，不计入磁盘数量；已连接 NBD、虚拟机磁盘仍保留。容器只能看到宿主允许暴露的设备，不保证看到宿主全部物理盘。单次采集最多 512 KiB 输出、256 条磁盘记录，超出或工具受限明确标记部分/不可用。
 
-从 preview.19 起，设备系统资源随已认证心跳上传，账号登录后即可查看，不需要解锁保险库。服务端严格筛选允许字段，不接收挂载路径或卷 UUID；不会公开给未登录用户。完整挂载信息仍仅在本地与端到端加密保险库内保存。服务器连接的硬件观察仍随加密记录保存，不把主机地址或服务器列表改为明文。锁定会清除保险库行和终端；设备资源继续可见。客户端应升级到 .19 或更新版本以发送资源心跳。`sshm cloud presence --once` 可在已登录客户端立即上报一次，不需要保险库解锁。
+从 preview.19 起，设备系统资源随已认证心跳上传，账号登录后即可查看，不需要解锁保险库。服务端严格筛选允许字段，不接收挂载路径或卷 UUID；不会公开给未登录用户。完整挂载信息仍仅在本地与端到端加密保险库内保存。服务器连接的硬件观察仍随加密记录保存，不把主机地址或服务器列表改为明文。锁定会清除保险库行和终端；设备资源继续可见。客户端应升级到 .19 或更新版本以发送资源心跳。`hopkit cloud presence --once` 可在已登录客户端立即上报一次，不需要保险库解锁。
 
 筛选、分页、表单选择、复选框、错误提示、撤销确认、详情、折叠箭头和悬浮提示使用统一自定义外观；选择器支持方向键、Home/End、键入查找、Escape 和焦点返回。原生 select 仅作为隐藏表单值容器，不呈现浏览器选择面板。对话框保留语义和焦点约束，禁用浏览器原生校验气泡。
 
@@ -215,7 +215,7 @@ Windows（PowerShell 5.1+）：
 
 默认安装到当前用户的 `~/.local/bin/sshm` 或 `%LOCALAPPDATA%\Programs\sshm\sshm.exe`，不需要 sudo、管理员或更改 PowerShell 执行策略。保留配置和密钥，替换前备份二进制。POSIX 安装后重新打开终端使 PATH 生效，网页接入命令使用完整路径可立即执行。可设置 `SSHM_INSTALL_DIR` 自定义目录，`SSHM_NO_PATH=1` 跳过 PATH 修改，`SSHM_INSTALL_INTEGRATIONS=1` 同时调用已有 AI 集成安装流程。普通安装不会自动登录云端、启用 SSH 服务或开放远程 Shell。
 
-构建先验证发布清单的 Ed25519 签名与全部资产哈希，再将该版 SHA-256 固定写入安装器。首次引导信任 HTTPS 提供的脚本，脚本验证二进制哈希与可运行版本后才替换；Shell/PowerShell 自身不声称独立验证 Ed25519。后续 `sshm update` 继续验证签名发布。旧脚本遇到新版本资产会拒绝哈希不匹配，重新获取脚本即可。代理故障不会自动跳过 TLS 证书校验或静默改动系统代理。
+构建先验证发布清单的 Ed25519 签名与全部资产哈希，再将该版 SHA-256 固定写入安装器。首次引导信任 HTTPS 提供的脚本，脚本验证二进制哈希与可运行版本后才替换；Shell/PowerShell 自身不声称独立验证 Ed25519。后续 `hopkit update` 继续验证签名发布。旧脚本遇到新版本资产会拒绝哈希不匹配，重新获取脚本即可。代理故障不会自动跳过 TLS 证书校验或静默改动系统代理。
 
 手动下载同时设置 `application/octet-stream`、`Content-Disposition` 文件名和链接 `download` 文件名，避免浏览器为 Linux/macOS 无扩展名可执行文件自动添加 `.txt`。
 
@@ -224,19 +224,19 @@ Windows（PowerShell 5.1+）：
 
 - 官网 POSIX 命令末尾在调用者 shell 执行 `export PATH="$HOME/.local/bin:$PATH"`，安装完成后当前终端即可使用 `sshm`。单独的 `curl ... | sh` 子进程不能修改父 shell；使用旧命令安装的用户执行一次上述 export 即可。
 - `cloud login` / `register` 成功后询问是否同步云端连接到本地列表，回车为是；`--sync` 直接同步，`--no-sync` 跳过。`--import-local` 继续合并本地记录及密钥，同时下载连接索引。
-- `cloud sync` 将加密保险库交换完成后，原子更新本地连接索引。`sshm list` 可以直接显示；默认按最近成功 SSH 连接时间倒序，同时间按别名，未连接的排最后。TCP 探测不会增加使用时间。终端交互列表的 `s` 仍可切换名称排序。
-- 本地索引包含服务器元数据、账号/保险库绑定和连接 ID，不包含私钥、密码或解锁口令。同步凭据保存在端到端加密保险库中；已迁移本机另有系统保护的独立凭据，`sshm connect` / `sshm exec` 优先直接使用。云端引用仍使用 `auth=cloud`；原本地 key/agent 连接保持认证方式与密钥路径；匹配当前保险库后登记关联，后续云端删除会先备份再移出列表。默认 MCP 使用本地加密凭据；旧版本仅有 Agent 缓存时通过 `sshm service setup` 迁移一次，详见下文。
+- `cloud sync` 将加密保险库交换完成后，原子更新本地连接索引。`hopkit list` 可以直接显示；默认按最近成功 SSH 连接时间倒序，同时间按别名，未连接的排最后。TCP 探测不会增加使用时间。终端交互列表的 `s` 仍可切换名称排序。
+- 本地索引包含服务器元数据、账号/保险库绑定和连接 ID，不包含私钥、密码或解锁口令。同步凭据保存在端到端加密保险库中；已迁移本机另有系统保护的独立凭据，`hopkit connect` / `hopkit exec` 优先直接使用。云端引用仍使用 `auth=cloud`；原本地 key/agent 连接保持认证方式与密钥路径；匹配当前保险库后登记关联，后续云端删除会先备份再移出列表。默认 MCP 使用本地加密凭据；旧版本仅有 Agent 缓存时通过 `hopkit service setup` 迁移一次，详见下文。
 - 按连接身份与路由匹配已有本地记录并保留原密钥路径。同名异连接使用稳定 ID 后缀，重复同步不追加重复行；冲突不自动选边。远端删除移除普通云引用与已关联本地记录；本地记录会先备份。默认连接、项目依赖等受保护记录保留，并在同步输出中提示处理。
 - `cloud list` 仍用于查看所有云端连接变体和凭据数量，不承担导入本地列表的作用。
 
 
 ### 已安装 SSHM 的设备快速连接（preview.25）
 
-目标设备登录后运行 `sshm cloud enable --name my-linux --description "我的 Linux"`：添加本机到保险库并开启客户端/网页加密终端。口令只进入当前进程内存，保持进程运行才能接收连接，Ctrl-C 停止；重启需要再次解锁。仅加入列表而暂不允许终端时，运行 `sshm cloud add-device --name my-linux`。也可用 `cloud add-device <设备名称或 ID>` 选其他同账号设备。
+目标设备登录后运行 `hopkit cloud enable --name my-linux --description "我的 Linux"`：添加本机到保险库并开启客户端/网页加密终端。口令只进入当前进程内存，保持进程运行才能接收连接，Ctrl-C 停止；重启需要再次解锁。仅加入列表而暂不允许终端时，运行 `hopkit cloud add-device --name my-linux`。也可用 `cloud add-device <设备名称或 ID>` 选其他同账号设备。
 
 网页“同步设备”的行菜单提供“加入服务器保险库”。2026-09-28 起移除了每行重复要求“解锁查看”的保险库列；仅在主动加入或编辑加密内容时解锁。网页与 CLI 入口计算相同的稳定连接 ID；同一设备重命名不会重复添加，不同设备同名在本地使用 ID 后缀区分。客户端连接与普通 SSH 连接保留各自身份，不按名称覆盖。
 
-其他设备执行 `sshm sync`（等同 `sshm cloud sync`），再执行 `sshm connect my-linux`。设备条目走现有 Cloudflare 加密终端中继，不依赖 IP、SSH 端口或 sshd；普通 SSH 服务器继续原配对和 SSH 主机密钥验证。原生客户端与浏览器具有独立的中继角色入口，客户端连接仍需有效账号令牌、保险库签名、在线且已启用的目标。终端帧使用 AES-256-GCM、双向独立密钥与序列计数；preview.26 新代理上的会话无固定总时长上限。账号令牌本身不能打开终端，错误保险库签名被拒绝，撤销设备会关闭连接。
+其他设备执行 `sshm sync`（等同 `hopkit cloud sync`），再执行 `hopkit connect my-linux`。设备条目走现有 Cloudflare 加密终端中继，不依赖 IP、SSH 端口或 sshd；普通 SSH 服务器继续原配对和 SSH 主机密钥验证。原生客户端与浏览器具有独立的中继角色入口，客户端连接仍需有效账号令牌、保险库签名、在线且已启用的目标。终端帧使用 AES-256-GCM、双向独立密钥与序列计数；preview.26 新代理上的会话无固定总时长上限。账号令牌本身不能打开终端，错误保险库签名被拒绝，撤销设备会关闭连接。
 
 此版客户端设备连接提供交互终端；无交互的设备 exec/MCP 尚未接入加密中继。已有 SSH key/agent 自动化继续原路径。添加到列表不等于允许远程终端，也不等于设备永久在线。
 
@@ -292,7 +292,7 @@ rebuild this index. Restart old MCP/agent processes after updating their binarie
 
 ### 默认本地 SSH 与本机信任
 
-`sshm mcp`（默认 `--cloud-auth local`）、CLI 和传输共用本地加密凭据。
+`hopkit mcp`（默认 `--cloud-auth local`）、CLI 和传输共用本地加密凭据。
 新配对和 `gen-key` 自动生成加密口令，先验证凭据可持久恢复，再写加密私钥；不再逐个询问新口令。
 云端只负责可选同步。已经保存的本地凭据不因云端离线、账号令牌过期、MCP 重启或 Agent 的 12 小时期限失效。
 同一用户的多个 Codex/MCP 会话共用同一份受系统保护的存储。
@@ -309,7 +309,7 @@ sshm service status
 旧保险库可能需要原解锁口令一次；已记住的保险库可离线重新导入已接受的凭据。
 设置会尝试原私钥旁已有且权限安全的 `.passphrase` 恢复文件（支持旧注释头），验证密钥后保存到本地加密库。
 缺少或错误的 SSH 口令、无效密钥及不安全的恢复文件会按别名报告并跳过，继续迁移其余连接。
-只有确实知道旧 SSH 口令或密码时才使用 `sshm service setup --ask-passphrases`；空输入或错误的密钥口令会跳过该项。
+只有确实知道旧 SSH 口令或密码时才使用 `hopkit service setup --ask-passphrases`；空输入或错误的密钥口令会跳过该项。
 显式锁定、本地加密库损坏或设备保护失败仍会停止设置。
 只有 Agent 内存里的密钥无法导出成持久凭据。迁移保留源私钥和恢复文件；不可用项会报告。
 之后普通 SSH 无需重复解锁。CLI/MCP 能直接读取受保护凭据，不必等待后台服务或云端同步。
@@ -337,7 +337,7 @@ macOS 官方发布仍要求 CGO，以兼容旧 `keychain:` 项目；新 `keychai
 
 ### 可选 MCP 浏览器批准访问云端凭据
 
-只有 `sshm mcp --cloud-auth browser` 提供 `cloud_unlock(reason)`、`cloud_unlock_status()` 和
+只有 `hopkit mcp --cloud-auth browser` 提供 `cloud_unlock(reason)`、`cloud_unlock_status()` 和
 `cloud_lock(reason)`。AI 请求解锁后，用户在可信浏览器核对返回的验证码，批准
 “MCP credential access”；AI 轮询状态，确认解锁后再执行云端连接操作。
 必须已经配置云账号并固定保险库根公钥；工具不接受密码、私钥、恢复码、公钥覆盖或服务地址覆盖。

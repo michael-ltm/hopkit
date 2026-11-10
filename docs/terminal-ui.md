@@ -1,6 +1,6 @@
 # Terminal workspace
 
-Run `sshm` or `sshm list` in a terminal. A wide window shows the selected
+Run `sshm` or `hopkit list` in a terminal. A wide window shows the selected
 server's connection, group, tags and last observed status beside the list.
 Narrow windows collapse the details pane and keep the selected row in view.
 Status marks describe saved observations, not continuous live monitoring.
@@ -37,8 +37,8 @@ The interface uses standard terminal characters, with ASCII chrome when
 It supports light and dark terminal backgrounds and honors `NO_COLOR`;
 `--no-color` removes styling from the browser. No Nerd Font is required.
 
-`sshm list --json`, MCP and existing noninteractive commands keep their original
-interfaces. `sshm list --plain` prints the existing table. Bare `sshm` outside a
+`hopkit list --json`, MCP and existing noninteractive commands keep their original
+interfaces. `hopkit list --plain` prints the existing table. Bare `sshm` outside a
 terminal prints help rather than opening a UI.
 
 Verification: model tests cover 50-entry scrolling, resizing down to tiny

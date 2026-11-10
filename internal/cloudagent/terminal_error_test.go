@@ -6,7 +6,7 @@ import (
 	"errors"
 	"testing"
 
-	sshpkg "github.com/michael-ltm/sshm/internal/ssh"
+	sshpkg "github.com/michael-ltm/hopkit/internal/ssh"
 	"github.com/stretchr/testify/require"
 )
 

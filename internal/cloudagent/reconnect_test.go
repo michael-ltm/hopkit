@@ -3,7 +3,7 @@ package cloudagent
 import (
 	"context"
 	"github.com/coder/websocket"
-	"github.com/michael-ltm/sshm/internal/cloudsync"
+	"github.com/michael-ltm/hopkit/internal/cloudsync"
 	"github.com/stretchr/testify/require"
 	"net/http"
 	"net/http/httptest"

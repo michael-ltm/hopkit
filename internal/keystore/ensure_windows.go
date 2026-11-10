@@ -5,7 +5,7 @@ package keystore
 import (
 	"context"
 	"errors"
-	sshpkg "github.com/michael-ltm/sshm/internal/ssh"
+	sshpkg "github.com/michael-ltm/hopkit/internal/ssh"
 	"os/exec"
 	"time"
 )

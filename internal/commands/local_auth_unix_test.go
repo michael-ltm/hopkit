@@ -18,9 +18,9 @@ import (
 	"testing"
 
 	markmcp "github.com/mark3labs/mcp-go/mcp"
-	"github.com/michael-ltm/sshm/internal/config"
-	mcppkg "github.com/michael-ltm/sshm/internal/mcp"
-	sshpkg "github.com/michael-ltm/sshm/internal/ssh"
+	"github.com/michael-ltm/hopkit/internal/config"
+	mcppkg "github.com/michael-ltm/hopkit/internal/mcp"
+	sshpkg "github.com/michael-ltm/hopkit/internal/ssh"
 	"github.com/stretchr/testify/require"
 	gssh "golang.org/x/crypto/ssh"
 	"golang.org/x/crypto/ssh/agent"
@@ -146,8 +146,8 @@ func TestLocalCloudCLIWithoutIdentityExplainsLocalUnlock(t *testing.T) {
 	t.Cleanup(func() { flagConfigPath = previous })
 	cmd := newExecCmd()
 	cmd.SetArgs([]string{"local-test", "hostname"})
-	require.ErrorContains(t, cmd.Execute(), "sshm service setup")
-	require.ErrorContains(t, connect("local-test", target, false, path), "sshm service setup")
+	require.ErrorContains(t, cmd.Execute(), "hopkit service setup")
+	require.ErrorContains(t, connect("local-test", target, false, path), "hopkit service setup")
 	require.Zero(t, accepted.Load())
 }
 
@@ -179,8 +179,8 @@ func TestCloudLinkedAgentCLIWithoutSignersExplainsLocalUnlock(t *testing.T) {
 	t.Cleanup(func() { flagConfigPath = previous })
 	cmd := newExecCmd()
 	cmd.SetArgs([]string{"local-test", "hostname"})
-	require.ErrorContains(t, cmd.Execute(), "sshm service setup")
-	require.ErrorContains(t, connect("local-test", target, false, path), "sshm service setup")
+	require.ErrorContains(t, cmd.Execute(), "hopkit service setup")
+	require.ErrorContains(t, connect("local-test", target, false, path), "hopkit service setup")
 	require.Zero(t, accepted.Load())
 }
 
@@ -253,5 +253,5 @@ func TestLocalDefaultMCPExecAndBrowserFailClosedWithExistingAgent(t *testing.T) 
 	encoded, err := json.Marshal(result)
 	require.NoError(t, err)
 	require.Contains(t, string(encoded), "restore the local credential into the Agent")
-	require.NotContains(t, string(encoded), "sshm service setup")
+	require.NotContains(t, string(encoded), "hopkit service setup")
 }

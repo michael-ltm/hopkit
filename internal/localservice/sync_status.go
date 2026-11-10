@@ -6,7 +6,7 @@ import (
 	"os"
 	"time"
 
-	"github.com/michael-ltm/sshm/internal/localstore"
+	"github.com/michael-ltm/hopkit/internal/localstore"
 )
 
 type SyncStatus struct {

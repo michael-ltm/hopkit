@@ -4,7 +4,7 @@ import (
 	"testing"
 	"time"
 
-	mcppkg "github.com/michael-ltm/sshm/internal/mcp"
+	mcppkg "github.com/michael-ltm/hopkit/internal/mcp"
 	"github.com/stretchr/testify/require"
 )
 

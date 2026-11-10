@@ -9,9 +9,9 @@ import (
 
 	"github.com/mark3labs/mcp-go/mcp"
 	"github.com/mark3labs/mcp-go/server"
-	"github.com/michael-ltm/sshm/internal/config"
-	"github.com/michael-ltm/sshm/internal/safety"
-	"github.com/michael-ltm/sshm/internal/wizard"
+	"github.com/michael-ltm/hopkit/internal/config"
+	"github.com/michael-ltm/hopkit/internal/safety"
+	"github.com/michael-ltm/hopkit/internal/wizard"
 )
 
 // requireReason extracts a non-empty "reason" arg. Write tools demand it so

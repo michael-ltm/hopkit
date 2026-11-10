@@ -14,7 +14,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/michael-ltm/sshm/internal/devicekey/testdata/keychainfixture"
+	"github.com/michael-ltm/hopkit/internal/devicekey/testdata/keychainfixture"
 	"github.com/stretchr/testify/require"
 )
 

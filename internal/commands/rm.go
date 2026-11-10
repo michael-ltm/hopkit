@@ -5,7 +5,7 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/michael-ltm/sshm/internal/config"
+	"github.com/michael-ltm/hopkit/internal/config"
 	"github.com/spf13/cobra"
 )
 
@@ -53,13 +53,13 @@ func newRmCmd() *cobra.Command {
 				if err := removeCloudEntry(cmd, alias, srv.CloudEntry); err != nil {
 					return fmt.Errorf("local removal succeeded, but the cloud tombstone failed: %w", err)
 				}
-				fmt.Fprintln(cmd.OutOrStdout(), "Cloud entry marked for deletion; run `sshm cloud sync` to push it.")
+				fmt.Fprintln(cmd.OutOrStdout(), "Cloud entry marked for deletion; run `hopkit cloud sync` to push it.")
 			}
 			return nil
 		},
 	}
 	c.Flags().BoolVarP(&yes, "yes", "y", false, "do not prompt for confirmation")
-	c.Flags().BoolVar(&cloud, "cloud", false, "also tombstone the cloud vault entry (run sshm cloud sync to push)")
+	c.Flags().BoolVar(&cloud, "cloud", false, "also tombstone the cloud vault entry (run hopkit cloud sync to push)")
 	return c
 }
 

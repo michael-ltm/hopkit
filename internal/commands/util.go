@@ -6,8 +6,8 @@ import (
 	"io"
 	"strings"
 
-	"github.com/michael-ltm/sshm/internal/config"
-	"github.com/michael-ltm/sshm/internal/safety"
+	"github.com/michael-ltm/hopkit/internal/config"
+	"github.com/michael-ltm/hopkit/internal/safety"
 )
 
 // configPath returns the active config path: --config override wins,
@@ -34,11 +34,11 @@ func resolveServer(cfg *config.Config, alias string) (*config.Server, error) {
 		alias = cfg.Default
 	}
 	if alias == "" {
-		return nil, fmt.Errorf("no alias given and no default set — try `sshm ls` and pass an alias")
+		return nil, fmt.Errorf("no alias given and no default set — try `hopkit ls` and pass an alias")
 	}
 	s, ok := cfg.Servers[alias]
 	if !ok || s == nil {
-		return nil, fmt.Errorf("unknown server %q (run `sshm ls` to see configured aliases)", alias)
+		return nil, fmt.Errorf("unknown server %q (run `hopkit ls` to see configured aliases)", alias)
 	}
 	return s, nil
 }

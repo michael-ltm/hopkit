@@ -10,9 +10,9 @@ import (
 	"sync"
 	"time"
 
-	"github.com/michael-ltm/sshm/internal/cloudsync"
-	"github.com/michael-ltm/sshm/internal/config"
-	sshpkg "github.com/michael-ltm/sshm/internal/ssh"
+	"github.com/michael-ltm/hopkit/internal/cloudsync"
+	"github.com/michael-ltm/hopkit/internal/config"
+	sshpkg "github.com/michael-ltm/hopkit/internal/ssh"
 	gssh "golang.org/x/crypto/ssh"
 )
 
@@ -185,7 +185,7 @@ func (c *CloudSession) Begin(ctx context.Context) (CloudSessionStatus, error) {
 	}
 	local, err := cloudsync.LoadState(cloudsync.StatePath(c.path))
 	if err != nil || local.Token == "" {
-		return c.status, errors.New("cloud account is not configured or logged out; complete sshm cloud login or browser link on this device first, then use cloud_unlock")
+		return c.status, errors.New("cloud account is not configured or logged out; complete hopkit cloud login or browser link on this device first, then use cloud_unlock")
 	}
 	if cloudsync.ValidateURL(local.URL) != nil {
 		return c.status, errors.New("configured cloud endpoint is invalid; repair local account configuration")

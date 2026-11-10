@@ -6,10 +6,10 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/michael-ltm/sshm/internal/config"
-	"github.com/michael-ltm/sshm/internal/keys"
-	"github.com/michael-ltm/sshm/internal/keystore"
-	sshpkg "github.com/michael-ltm/sshm/internal/ssh"
+	"github.com/michael-ltm/hopkit/internal/config"
+	"github.com/michael-ltm/hopkit/internal/keys"
+	"github.com/michael-ltm/hopkit/internal/keystore"
+	sshpkg "github.com/michael-ltm/hopkit/internal/ssh"
 	"github.com/spf13/cobra"
 	"golang.org/x/term"
 )

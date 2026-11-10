@@ -5,9 +5,9 @@ import (
 	"encoding/json"
 	"fmt"
 	"github.com/charmbracelet/huh"
-	"github.com/michael-ltm/sshm/internal/cloudsync"
-	"github.com/michael-ltm/sshm/internal/ui"
-	"github.com/michael-ltm/sshm/internal/updater"
+	"github.com/michael-ltm/hopkit/internal/cloudsync"
+	"github.com/michael-ltm/hopkit/internal/ui"
+	"github.com/michael-ltm/hopkit/internal/updater"
 	"github.com/spf13/cobra"
 	"os"
 	"os/exec"
@@ -89,7 +89,7 @@ func installRelease(cmd *cobra.Command, release *updater.Release) (string, error
 	refresh.Stdout = cmd.OutOrStdout()
 	refresh.Stderr = cmd.ErrOrStderr()
 	if err = refresh.Run(); err != nil {
-		fmt.Fprintln(cmd.ErrOrStderr(), "Client updated; one or more integrations were retained. Run sshm integrations status.")
+		fmt.Fprintln(cmd.ErrOrStderr(), "Client updated; one or more integrations were retained. Run hopkit integrations status.")
 	}
 	fmt.Fprintln(cmd.OutOrStdout(), "Already-running MCP hosts and cloud agents keep their loaded version; restart them to activate this update.")
 	return target, nil
@@ -101,7 +101,7 @@ type updateCache struct {
 }
 
 func updateHint(cmd *cobra.Command) {
-	if cmd.Name() == "sshm" || cmd.Name() == "menu" {
+	if cmd.Name() == "hopkit" || cmd.Name() == "menu" {
 		return
 	}
 	if flagJSON || !commandHasTerminal(cmd) || os.Getenv("SSHM_NO_UPDATE_CHECK") == "1" {
@@ -135,7 +135,7 @@ func updateHint(cmd *cobra.Command) {
 	if len(cache.Signed) > 0 {
 		if r, e := updater.Verify(cache.Signed, updater.PublicKey, time.Now()); e == nil {
 			if n, e := updater.Compare(r.Version, Version); e == nil && n > 0 {
-				fmt.Fprintf(cmd.ErrOrStderr(), "SSHM %s is available (current %s). Run sshm update to review and install.\n", r.Version, Version)
+				fmt.Fprintf(cmd.ErrOrStderr(), "SSHM %s is available (current %s). Run hopkit update to review and install.\n", r.Version, Version)
 			}
 		}
 	}
@@ -186,7 +186,7 @@ func offerStartupUpdate(cmd *cobra.Command) (bool, error) {
 	target, err := installRelease(cmd, release)
 	if err != nil {
 		fmt.Fprintln(cmd.ErrOrStderr(), "Update could not finish:", err)
-		fmt.Fprintln(cmd.ErrOrStderr(), "Continuing with the running version; retry with sshm update.")
+		fmt.Fprintln(cmd.ErrOrStderr(), "Continuing with the running version; retry with hopkit update.")
 		return false, nil
 	}
 	// Relaunch the updated inventory as a child on every OS, including Windows

@@ -16,10 +16,10 @@ var (
 // NewRoot constructs the cobra root command with all subcommands attached.
 func NewRoot() *cobra.Command {
 	root := &cobra.Command{
-		Use:              "sshm",
+		Use:              "hopkit",
 		Version:          Version,
 		Short:            "SSH connection manager",
-		Long:             "sshm — local SSH and encrypted device connections.\nRun sshm for the interactive home menu.",
+		Long:             "hopkit — local SSH and encrypted device connections.\nRun hopkit for the interactive home menu.",
 		SilenceUsage:     true,
 		SilenceErrors:    true,
 		PersistentPreRun: func(cmd *cobra.Command, _ []string) { updateHint(cmd) },

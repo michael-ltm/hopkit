@@ -4,7 +4,7 @@ import (
 	"context"
 	"encoding/base64"
 	"fmt"
-	"github.com/michael-ltm/sshm/internal/cloudsync"
+	"github.com/michael-ltm/hopkit/internal/cloudsync"
 	"github.com/stretchr/testify/require"
 	"os"
 	"runtime"

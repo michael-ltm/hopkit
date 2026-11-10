@@ -5,8 +5,8 @@ import (
 	"fmt"
 	"os"
 
-	"github.com/michael-ltm/sshm/internal/config"
-	sshpkg "github.com/michael-ltm/sshm/internal/ssh"
+	"github.com/michael-ltm/hopkit/internal/config"
+	sshpkg "github.com/michael-ltm/hopkit/internal/ssh"
 	"github.com/spf13/cobra"
 	"golang.org/x/term"
 )
@@ -48,10 +48,10 @@ func connect(alias string, s *config.Server, insecure bool, activeConfigPath str
 			arg = alias
 		}
 		if arg == "" {
-			return fmt.Errorf("cloud connection index needs rebuilding; run sshm cloud sync to unlock and restore it")
+			return fmt.Errorf("cloud connection index needs rebuilding; run hopkit cloud sync to unlock and restore it")
 		}
 		if !term.IsTerminal(int(os.Stdin.Fd())) {
-			return fmt.Errorf("no local SSH credential is registered; run 'sshm service setup' once in a local terminal")
+			return fmt.Errorf("no local SSH credential is registered; run 'hopkit service setup' once in a local terminal")
 		}
 		return runCloudReference(&cobra.Command{}, s, []string{arg}, false, 0)
 	}
@@ -63,7 +63,7 @@ func connect(alias string, s *config.Server, insecure bool, activeConfigPath str
 	err = c.AttachInteractive()
 	var session *sshpkg.SessionError
 	if errors.As(err, &session) && session.Stage == "pty_request" && session.Code == "pty_denied" {
-		return fmt.Errorf("%w\nSSH authentication succeeded, but the server rejected a terminal request.\nFor a restricted execution account, run an explicitly permitted command with:\n  sshm exec <alias> --raw-environment <command>", err)
+		return fmt.Errorf("%w\nSSH authentication succeeded, but the server rejected a terminal request.\nFor a restricted execution account, run an explicitly permitted command with:\n  hopkit exec <alias> --raw-environment <command>", err)
 	}
 	return err
 }

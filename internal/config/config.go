@@ -7,7 +7,7 @@ package config
 
 import (
 	"fmt"
-	"github.com/michael-ltm/sshm/internal/inventory"
+	"github.com/michael-ltm/hopkit/internal/inventory"
 	"sort"
 	"strings"
 	"time"

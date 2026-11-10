@@ -7,7 +7,7 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/michael-ltm/sshm/internal/config"
+	"github.com/michael-ltm/hopkit/internal/config"
 )
 
 // ProbeRoute opens only the selected transport, without direct fallback. Jump

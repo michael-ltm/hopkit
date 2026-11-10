@@ -1,4 +1,4 @@
-module github.com/michael-ltm/sshm
+module github.com/michael-ltm/hopkit
 
 go 1.25.5
 

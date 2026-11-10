@@ -11,10 +11,10 @@ import (
 
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/huh"
-	"github.com/michael-ltm/sshm/internal/cloudsync"
-	"github.com/michael-ltm/sshm/internal/config"
-	"github.com/michael-ltm/sshm/internal/ui"
-	"github.com/michael-ltm/sshm/internal/updater"
+	"github.com/michael-ltm/hopkit/internal/cloudsync"
+	"github.com/michael-ltm/hopkit/internal/config"
+	"github.com/michael-ltm/hopkit/internal/ui"
+	"github.com/michael-ltm/hopkit/internal/updater"
 	"github.com/spf13/cobra"
 )
 
@@ -76,7 +76,7 @@ func homeRelease(ctx context.Context) ui.ReleaseStatus {
 func newMenuCmd() *cobra.Command {
 	return &cobra.Command{Use: "menu", Aliases: []string{"ui"}, Short: "Open the interactive home menu", Args: cobra.NoArgs, RunE: func(cmd *cobra.Command, _ []string) error {
 		if !commandHasTerminal(cmd) {
-			return errors.New("menu needs an interactive terminal; use sshm --help or sshm list --json")
+			return errors.New("menu needs an interactive terminal; use hopkit --help or hopkit list --json")
 		}
 		return runHome(cmd)
 	}}

@@ -13,8 +13,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/michael-ltm/sshm/internal/config"
-	"github.com/michael-ltm/sshm/internal/localstore"
+	"github.com/michael-ltm/hopkit/internal/config"
+	"github.com/michael-ltm/hopkit/internal/localstore"
 	gssh "golang.org/x/crypto/ssh"
 )
 
@@ -163,7 +163,7 @@ func buildAuth(s *config.Server, opts BuildOpts) ([]gssh.AuthMethod, io.Closer, 
 		}
 		code, message := "local_binding_invalid", "local SSH identity binding is invalid; repair the target credential mapping"
 		if errors.Is(err, os.ErrNotExist) {
-			code, message = "local_credential_missing", "no local SSH credential is registered for this target; run 'sshm service setup' once in a local terminal"
+			code, message = "local_credential_missing", "no local SSH credential is registered for this target; run 'hopkit service setup' once in a local terminal"
 		} else if errors.Is(err, errLocalAgentUnavailable) {
 			code, message = "local_agent_unavailable", "local SSH Agent is unavailable; start the local Agent service"
 		} else if errors.Is(err, errLocalIdentityUnavailable) {

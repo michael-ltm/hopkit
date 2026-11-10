@@ -1,13 +1,15 @@
 # sshm MCP Tool Quick Reference
 
-Terminal-only onboarding: plain `sshm pair` guides alias, address, platform,
+The CLI is `hopkit` (named `sshm` before the rename); the MCP server keeps the name `sshm`.
+
+Terminal-only onboarding: plain `hopkit pair` guides alias, address, platform,
 and metadata, then prints one Windows or POSIX target command. It detects the
 target user and saves only after verified key-authenticated SSH. It is
 intentionally not an MCP tool so its one-time pairing token stays in the user's
-terminals. The advanced form is `sshm pair <alias> --host <host> --target
+terminals. The advanced form is `hopkit pair <alias> --host <host> --target
 windows|posix`.
 
-Inventory maintenance is also terminal-first: `sshm cleanup` guides the user
+Inventory maintenance is also terminal-first: `hopkit cleanup` guides the user
 through idle-record review with protected references, no default selections,
 final confirmation, and a private config backup (`0600` on POSIX; protected
 user ACL on Windows). `--plain` and `--json` are preview-only.

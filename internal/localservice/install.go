@@ -11,7 +11,7 @@ import (
 	"runtime"
 	"strings"
 
-	"github.com/michael-ltm/sshm/internal/localstore"
+	"github.com/michael-ltm/hopkit/internal/localstore"
 )
 
 func validPath(path string) bool {

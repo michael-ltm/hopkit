@@ -6,10 +6,10 @@ import (
 	"sort"
 	"time"
 
-	"github.com/michael-ltm/sshm/internal/config"
-	sshpkg "github.com/michael-ltm/sshm/internal/ssh"
-	"github.com/michael-ltm/sshm/internal/status"
-	"github.com/michael-ltm/sshm/internal/ui"
+	"github.com/michael-ltm/hopkit/internal/config"
+	sshpkg "github.com/michael-ltm/hopkit/internal/ssh"
+	"github.com/michael-ltm/hopkit/internal/status"
+	"github.com/michael-ltm/hopkit/internal/ui"
 	"github.com/spf13/cobra"
 )
 

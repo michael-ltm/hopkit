@@ -9,14 +9,14 @@ import (
 	"testing"
 	"time"
 
-	"github.com/michael-ltm/sshm/internal/config"
+	"github.com/michael-ltm/hopkit/internal/config"
 	"github.com/stretchr/testify/require"
 	gssh "golang.org/x/crypto/ssh"
 )
 
 func TestDialCloudRequiresResolutionBeforeAuth(t *testing.T) {
 	_, err := Dial(&config.Server{Host: "target.invalid", User: "user", Auth: config.AuthCloud}, BuildOpts{ConfigPath: filepath.Join(t.TempDir(), "config.toml")})
-	require.ErrorContains(t, err, "sshm service setup")
+	require.ErrorContains(t, err, "hopkit service setup")
 }
 
 func TestDialExplicitCloudResolverFailureDoesNotFallBackToLocalIdentity(t *testing.T) {

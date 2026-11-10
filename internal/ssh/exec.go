@@ -101,7 +101,7 @@ func (c *Client) Exec(ctx context.Context, cmd string) (*ExecResult, error) {
 }
 
 // StreamExec runs cmd and writes stdout/stderr to the provided writers as
-// they arrive. Useful for `sshm exec` to show real-time output. This path is
+// they arrive. Useful for `hopkit exec` to show real-time output. This path is
 // intentionally unbounded so the CLI can stream large output.
 func (c *Client) StreamExec(ctx context.Context, cmd string, stdout, stderr io.Writer) (int, error) {
 	if c.conn == nil {

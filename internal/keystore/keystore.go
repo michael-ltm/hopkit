@@ -5,7 +5,7 @@ import (
 	"os"
 	"time"
 
-	sshpkg "github.com/michael-ltm/sshm/internal/ssh"
+	sshpkg "github.com/michael-ltm/hopkit/internal/ssh"
 	gssh "golang.org/x/crypto/ssh"
 	"golang.org/x/crypto/ssh/agent"
 )

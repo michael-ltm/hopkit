@@ -9,8 +9,8 @@ import (
 	"os/signal"
 	"syscall"
 
-	"github.com/michael-ltm/sshm/internal/localservice"
-	"github.com/michael-ltm/sshm/internal/localstore"
+	"github.com/michael-ltm/hopkit/internal/localservice"
+	"github.com/michael-ltm/hopkit/internal/localstore"
 	"github.com/spf13/cobra"
 )
 
@@ -34,10 +34,10 @@ func newServiceCmd() *cobra.Command {
 			return e
 		}
 		if e := localservice.Ensure(cmd.Context(), s.ConfigPath); e != nil {
-			fmt.Fprintln(cmd.ErrOrStderr(), "Local credentials are ready. The optional agent could not start; run 'sshm service install' to configure startup.")
+			fmt.Fprintln(cmd.ErrOrStderr(), "Local credentials are ready. The optional agent could not start; run 'hopkit service install' to configure startup.")
 			return nil
 		}
-		fmt.Fprintln(cmd.OutOrStdout(), "Local credential service is ready. Run 'sshm service install' to start it at login.")
+		fmt.Fprintln(cmd.OutOrStdout(), "Local credential service is ready. Run 'hopkit service install' to start it at login.")
 		return nil
 	}}
 	setup.Flags().Bool("ask-passphrases", false, "prompt for known legacy SSH key passphrases or passwords; empty input skips")

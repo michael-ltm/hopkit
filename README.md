@@ -1,32 +1,34 @@
-# sshm
+# hopkit
 
-> A pretty, AI-friendly SSH connection manager.
+> **Give your AI agent safe hands on your servers.**
 >
-> Single binary on Win/Mac/Linux. Pretty `ls` with live status. Wizard `add`. Built-in MCP server for AI assistants (Claude Code, Cursor, Codex, Gemini CLI).
+> hopkit is an SSH manager with a built-in MCP server. Claude Code, Codex, Cursor and Gemini CLI can find the right host by intent, run audited commands, tail logs and move files, while secrets stay masked and dangerous commands stay blocked. For humans it is a single-binary SSH manager for Windows, macOS and Linux with an interactive inventory, one-line pairing and live status.
+
+> **Formerly `sshm`.** Existing installs keep working: the config stays in `~/.config/sshm`, the MCP server keeps the name `sshm`, and installed `sshm` binaries continue to update themselves.
 
 ## Install
 
 | Platform | Command |
 |---|---|
-| macOS / Linux (Homebrew) | `brew install michael-ltm/tap/sshm` |
-| Windows (Scoop) | `scoop bucket add michael-ltm https://github.com/michael-ltm/scoop-bucket && scoop install sshm` |
-| Anywhere (Go) | `go install github.com/michael-ltm/sshm/cmd/sshm@latest` |
-| Direct download | [GitHub Releases](https://github.com/michael-ltm/sshm/releases) — tar.gz / zip per OS+arch |
+| macOS / Linux (Homebrew) | `brew install michael-ltm/tap/hopkit` |
+| Windows (Scoop) | `scoop bucket add michael-ltm https://github.com/michael-ltm/scoop-bucket && scoop install hopkit` |
+| Anywhere (Go) | `go install github.com/michael-ltm/hopkit/cmd/hopkit@latest` |
+| Direct download | [GitHub Releases](https://github.com/michael-ltm/hopkit/releases) — tar.gz / zip per OS+arch |
 
 ## Quickstart
 
 ```
-sshm pair              # guided: alias, address, platform, description, tags
-# Paste the printed one-line command on the target; sshm detects the user and verifies SSH.
-sshm add               # choose automatic pairing or advanced manual entry
-sshm                   # terminal workspace (when run in a terminal)
-sshm list              # searchable inventory + details + safe action menu
-sshm ls --plain        # script-friendly server table
-sshm c my-host         # interactive shell
-sshm exec my-host 'uptime'
-sshm test --all        # parallel reachability check through configured routes
-sshm cleanup           # guided review of unused server records
-sshm download my-host /tmp/app.zip ./app.zip --resume --sha256 <hash>
+hopkit pair              # guided: alias, address, platform, description, tags
+# Paste the printed one-line command on the target; hopkit detects the user and verifies SSH.
+hopkit add               # choose automatic pairing or advanced manual entry
+hopkit                   # terminal workspace (when run in a terminal)
+hopkit list              # searchable inventory + details + safe action menu
+hopkit ls --plain        # script-friendly server table
+hopkit c my-host         # interactive shell
+hopkit exec my-host 'uptime'
+hopkit test --all        # parallel reachability check through configured routes
+hopkit cleanup           # guided review of unused server records
+hopkit download my-host /tmp/app.zip ./app.zip --resume --sha256 <hash>
 ```
 
 ## Optional encrypted cloud sync (preview)
@@ -36,19 +38,19 @@ and a browser console. SSH server metadata, private keys and saved passwords are
 end-to-end encrypted. Existing local commands and MCP keep using local configuration.
 
 ```sh
-sshm cloud register --username your-name --import-local
+hopkit cloud register --username your-name --import-local
 # On another device:
-sshm cloud login --username your-name --import-local
-sshm service setup     # one-time migration of old credentials
-sshm service install   # background local service and optional sync
+hopkit cloud login --username your-name --import-local
+hopkit service setup     # one-time migration of old credentials
+hopkit service install   # background local service and optional sync
 ```
 
 Use the cloud preview client from the console; the existing stable package does
-not include these commands. Use `sshm update` for signed, confirmed updates and `sshm integrations install --app all --mcp` for optional AI setup. See [cloud setup, recovery and limitations](docs/cloud-sync.md).
+not include these commands. Use `hopkit update` for signed, confirmed updates and `hopkit integrations install --app all --mcp` for optional AI setup. See [cloud setup, recovery and limitations](docs/cloud-sync.md).
 
 Migrated credentials work across CLI/MCP processes and service restarts without
 repeated vault unlock. Cloud failures affect synchronization, not local SSH.
-Use `sshm service status` to inspect readiness and `service lock/unlock` for an
+Use `hopkit service status` to inspect readiness and `service lock/unlock` for an
 explicit device lock. See [local trust, migration and platform limits](docs/cloud-sync.md#默认本地-ssh-与本机信任).
 
 ## Features
@@ -67,7 +69,7 @@ explicit device lock. See [local trust, migration and platform limits](docs/clou
   Windows uses the built-in capability by default, then a pinned/hash-verified
   official ZIP fallback; setting offline `SSHM_OPENSSH_ZIP` bypasses the online attempt.
   See [Windows file setup and read-only checks](docs/windows-pairing.md).
-- SSHM-observed successful SSH authentication records last use separately from
+- hopkit-observed successful SSH authentication records last use separately from
   reachability checks (sessions opened by other clients are not visible).
   `cleanup` safely reviews idle records, protects referenced hosts, and
   creates a private backup (`0600` on POSIX, current-user/LocalSystem ACL on Windows) before
@@ -93,12 +95,12 @@ explicit device lock. See [local trust, migration and platform limits](docs/clou
 ## AI integration
 
 ```
-claude plugins marketplace add michael-ltm/sshm
+claude plugins marketplace add michael-ltm/hopkit
 claude plugins install sshm-skill@sshm
 ```
 
 Then ask your assistant to "check the status of my prod server" or "deploy
-the latest code to staging". sshm's MCP tools are audited, mask secrets, and
+the latest code to staging". hopkit's MCP tools are audited, mask secrets, and
 block dangerous commands. See [docs/ai-integration.md](docs/ai-integration.md)
 and [docs/security.md](docs/security.md).
 
@@ -127,4 +129,4 @@ Required repo secrets: `HOMEBREW_TAP_TOKEN`, `SCOOP_BUCKET_TOKEN` — PATs with 
 
 ## License
 
-MIT — see [LICENSE](LICENSE).
+Apache-2.0 — see [LICENSE](LICENSE).

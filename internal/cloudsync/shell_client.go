@@ -56,14 +56,14 @@ func OpenDeviceTerminal(ctx context.Context, s *State, v *Vault, device string) 
 	for _, a := range agents {
 		if a.DeviceID == device {
 			if !a.Continuous {
-				return nil, errors.New("target agent needs an update for continuous terminals: on the target run sshm update, stop the old agent, then sshm cloud enable")
+				return nil, errors.New("target agent needs an update for continuous terminals: on the target run hopkit update, stop the old agent, then hopkit cloud enable")
 			}
 			epoch = a.Epoch
 			break
 		}
 	}
 	if epoch == "" {
-		return nil, errors.New("device is offline or connections are disabled; run sshm cloud enable on the target")
+		return nil, errors.New("device is offline or connections are disabled; run hopkit cloud enable on the target")
 	}
 	r := ShellOpen{Lifetime: "connection", Type: "open", Device: device, Epoch: epoch, Session: RandomID(), Expires: time.Now().Add(2 * time.Minute).UnixMilli()}
 	v.SignShell(&r, s.Username)

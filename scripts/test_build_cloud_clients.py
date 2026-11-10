@@ -11,7 +11,7 @@ import unittest
 
 
 VERSION = '0.8.0-cloud-preview.35'
-SYMBOL = 'github.com/michael-ltm/sshm/internal/commands.Version'
+SYMBOL = 'github.com/michael-ltm/hopkit/internal/commands.Version'
 
 
 class ReleaseBuilderTests(unittest.TestCase):
@@ -56,7 +56,7 @@ else:
         settings = {'GOOS': 'darwin', 'GOARCH': arch, 'CGO_ENABLED': '1',
                     '-ldflags': f'-s -w -X {SYMBOL}={VERSION}'}
         settings.update(overrides)
-        info = {'GoVersion': 'go1.26.1', 'Path': 'github.com/michael-ltm/sshm/cmd/sshm',
+        info = {'GoVersion': 'go1.26.1', 'Path': 'github.com/michael-ltm/hopkit/cmd/hopkit',
                 'Settings': [{'Key': key, 'Value': value} for key, value in settings.items()]}
         (self.native / f'sshm-darwin-{arch}').write_text(json.dumps(info))
 
@@ -133,7 +133,7 @@ else:
                 name = f'sshm-{system}-{arch}' + ('.exe' if system == 'windows' else '')
                 built = json.loads((self.output / name).read_text())
                 self.assertEqual((built['os'], built['arch'], built['cgo']), (system, arch, '0'))
-                self.assertIn('-X github.com/michael-ltm/sshm/internal/commands.Version=0.8.0-cloud-preview.35', built['ldflags'])
+                self.assertIn('-X github.com/michael-ltm/hopkit/internal/commands.Version=0.8.0-cloud-preview.35', built['ldflags'])
         for line in (self.output / 'SHA256SUMS').read_text().splitlines():
             digest, name = line.split('  ')
             self.assertEqual(digest, hashlib.sha256((self.output / name).read_bytes()).hexdigest())

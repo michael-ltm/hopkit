@@ -6,9 +6,9 @@ import (
 	"time"
 
 	"github.com/mark3labs/mcp-go/server"
-	"github.com/michael-ltm/sshm/internal/config"
-	"github.com/michael-ltm/sshm/internal/localservice"
-	mcppkg "github.com/michael-ltm/sshm/internal/mcp"
+	"github.com/michael-ltm/hopkit/internal/config"
+	"github.com/michael-ltm/hopkit/internal/localservice"
+	mcppkg "github.com/michael-ltm/hopkit/internal/mcp"
 	"github.com/spf13/cobra"
 )
 

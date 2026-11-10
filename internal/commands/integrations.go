@@ -3,8 +3,8 @@ package commands
 import (
 	"context"
 	"fmt"
-	"github.com/michael-ltm/sshm/internal/cloudsync"
-	"github.com/michael-ltm/sshm/internal/integrations"
+	"github.com/michael-ltm/hopkit/internal/cloudsync"
+	"github.com/michael-ltm/hopkit/internal/integrations"
 	"github.com/spf13/cobra"
 	"os"
 	"os/exec"

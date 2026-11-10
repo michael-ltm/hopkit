@@ -3,8 +3,8 @@ package cloudsync
 import (
 	"errors"
 	"fmt"
-	"github.com/michael-ltm/sshm/internal/config"
-	"github.com/michael-ltm/sshm/internal/inventory"
+	"github.com/michael-ltm/hopkit/internal/config"
+	"github.com/michael-ltm/hopkit/internal/inventory"
 	gssh "golang.org/x/crypto/ssh"
 	"os"
 	"path/filepath"

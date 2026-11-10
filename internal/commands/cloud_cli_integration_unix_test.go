@@ -18,8 +18,8 @@ import (
 	"time"
 
 	"github.com/creack/pty"
-	"github.com/michael-ltm/sshm/internal/cloudsync"
-	"github.com/michael-ltm/sshm/internal/config"
+	"github.com/michael-ltm/hopkit/internal/cloudsync"
+	"github.com/michael-ltm/hopkit/internal/config"
 	"github.com/stretchr/testify/require"
 	ssh "golang.org/x/crypto/ssh"
 	"golang.org/x/crypto/ssh/knownhosts"

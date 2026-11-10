@@ -12,10 +12,10 @@ import (
 	"time"
 
 	"github.com/creack/pty"
-	"github.com/michael-ltm/sshm/internal/cloudsync"
-	"github.com/michael-ltm/sshm/internal/config"
-	"github.com/michael-ltm/sshm/internal/keys"
-	"github.com/michael-ltm/sshm/internal/localstore"
+	"github.com/michael-ltm/hopkit/internal/cloudsync"
+	"github.com/michael-ltm/hopkit/internal/config"
+	"github.com/michael-ltm/hopkit/internal/keys"
+	"github.com/michael-ltm/hopkit/internal/localstore"
 	"github.com/stretchr/testify/require"
 	"golang.org/x/term"
 )

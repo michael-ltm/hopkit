@@ -12,10 +12,10 @@
   automatically generate strong protection material. The device-protected local
   store saves and verifies recovery before key files are written. No passphrase
   is printed or written to a plaintext sidecar. Legacy import is explicit via
-  `sshm service setup`; source files are retained. Setup tries each configured
+  `hopkit service setup`; source files are retained. Setup tries each configured
   key's existing private `.passphrase` sidecar, including legacy comment headers,
   and verifies the key before saving it. Unsafe or unusable sidecars and missing
-  secrets are reported and skipped. `sshm service setup --ask-passphrases` opts
+  secrets are reported and skipped. `hopkit service setup --ask-passphrases` opts
   into local prompts for known SSH secrets; empty or wrong key passphrases skip
   that identity. A locked, corrupt or unavailable protected store remains an error.
 - Local credentials use a versioned AES-256-GCM envelope. Its data key is protected

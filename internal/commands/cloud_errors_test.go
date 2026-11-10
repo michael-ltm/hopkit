@@ -8,8 +8,8 @@ import (
 	"path/filepath"
 	"testing"
 
-	"github.com/michael-ltm/sshm/internal/cloudsync"
-	"github.com/michael-ltm/sshm/internal/config"
+	"github.com/michael-ltm/hopkit/internal/cloudsync"
+	"github.com/michael-ltm/hopkit/internal/config"
 	"github.com/stretchr/testify/require"
 )
 
@@ -53,7 +53,7 @@ func TestCloudStateErrorsDistinguishMissingAndDamaged(t *testing.T) {
 	require.NoError(t, config.Save(flagConfigPath, cfg))
 	_, _, err := cloudState()
 	require.ErrorIs(t, err, os.ErrNotExist)
-	require.Contains(t, err.Error(), "sshm cloud login")
+	require.Contains(t, err.Error(), "hopkit cloud login")
 	require.NoError(t, os.WriteFile(cloudsync.StatePath(flagConfigPath), []byte("broken"), 0600))
 	_, _, err = cloudState()
 	require.Contains(t, err.Error(), "无法读取")

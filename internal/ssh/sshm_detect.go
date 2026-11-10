@@ -4,7 +4,7 @@ import (
 	"context"
 	"encoding/base64"
 	"encoding/binary"
-	"github.com/michael-ltm/sshm/internal/config"
+	"github.com/michael-ltm/hopkit/internal/config"
 	"regexp"
 	"strings"
 	"time"

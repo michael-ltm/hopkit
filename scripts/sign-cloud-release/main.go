@@ -10,7 +10,7 @@ import (
 	"encoding/json"
 	"flag"
 	"fmt"
-	"github.com/michael-ltm/sshm/internal/updater"
+	"github.com/michael-ltm/hopkit/internal/updater"
 	"os"
 	"path/filepath"
 	"time"

@@ -4,6 +4,16 @@ All notable changes to this project will be documented in this file. Format: [Ke
 
 ## [Unreleased]
 
+### Changed
+- The project is renamed from sshm to **hopkit** to avoid confusion with an
+  unrelated SSH manager of the same name. The binary, Go module path
+  (`github.com/michael-ltm/hopkit`), Homebrew formula and Scoop manifest are
+  now `hopkit`. For compatibility the config directory (`~/.config/sshm`),
+  `SSHM_*` environment variables, the MCP server name `sshm`, remote markers
+  and the signed update feed are unchanged, and installed `sshm` binaries
+  keep updating themselves.
+- Relicensed from MIT to Apache-2.0.
+
 ### Fixed
 - MCP `list_servers`, `find_servers` and `get_server` no longer present a
   recorded `last_status` as live: they expose `last_checked` and mark

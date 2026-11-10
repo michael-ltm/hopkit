@@ -11,7 +11,7 @@ import (
 	"path/filepath"
 	"testing"
 
-	"github.com/michael-ltm/sshm/internal/keys"
+	"github.com/michael-ltm/hopkit/internal/keys"
 	"github.com/stretchr/testify/require"
 	"golang.org/x/crypto/ssh/agent"
 )

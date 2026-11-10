@@ -8,7 +8,7 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/michael-ltm/sshm/internal/desktopsession"
+	"github.com/michael-ltm/hopkit/internal/desktopsession"
 	"github.com/spf13/cobra"
 )
 

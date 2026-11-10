@@ -9,7 +9,7 @@ import (
 	"bytes"
 	"encoding/json"
 
-	"github.com/michael-ltm/sshm/internal/safety"
+	"github.com/michael-ltm/hopkit/internal/safety"
 )
 
 // jsonResult serializes v to an indented JSON string for an MCP text result.

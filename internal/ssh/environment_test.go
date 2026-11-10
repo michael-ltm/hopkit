@@ -140,6 +140,6 @@ func TestDesktopCredentialBridgeKeepsCommandInSSHContext(t *testing.T) {
 	script := loginUserCommand("/bin/zsh", "printf 'user command'")
 	require.Contains(t, script, "Library/Application Support/sshm/desktop/enabled")
 	require.Contains(t, script, "auth git-credential")
-	require.NotContains(t, script, "exec sshm desktop exec")
+	require.NotContains(t, script, "exec hopkit desktop exec")
 	require.NotContains(t, script, "GH_TOKEN=")
 }

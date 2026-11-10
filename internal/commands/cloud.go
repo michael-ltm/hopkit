@@ -6,13 +6,13 @@ import (
 	"errors"
 	"fmt"
 	"github.com/charmbracelet/huh"
-	"github.com/michael-ltm/sshm/internal/cloudsync"
-	"github.com/michael-ltm/sshm/internal/config"
-	"github.com/michael-ltm/sshm/internal/inventory"
-	"github.com/michael-ltm/sshm/internal/localstore"
-	"github.com/michael-ltm/sshm/internal/safety"
-	sshpkg "github.com/michael-ltm/sshm/internal/ssh"
-	"github.com/michael-ltm/sshm/internal/ui"
+	"github.com/michael-ltm/hopkit/internal/cloudsync"
+	"github.com/michael-ltm/hopkit/internal/config"
+	"github.com/michael-ltm/hopkit/internal/inventory"
+	"github.com/michael-ltm/hopkit/internal/localstore"
+	"github.com/michael-ltm/hopkit/internal/safety"
+	sshpkg "github.com/michael-ltm/hopkit/internal/ssh"
+	"github.com/michael-ltm/hopkit/internal/ui"
 	"github.com/spf13/cobra"
 	gssh "golang.org/x/crypto/ssh"
 	"golang.org/x/term"
@@ -130,7 +130,7 @@ func confirmCloudRemoval(cmd *cobra.Command) (bool, error) {
 }
 
 // removeCloudEntry tombstones a cloud vault entry by ID (or alias fallback)
-// and saves the draft locally; sshm cloud sync pushes the deletion.
+// and saves the draft locally; hopkit cloud sync pushes the deletion.
 func removeCloudEntry(cmd *cobra.Command, alias, cloudEntry string) error {
 	s, v, close, err := cloudOpen(cmd)
 	if err != nil {
@@ -287,7 +287,7 @@ func newCloudCmd() *cobra.Command {
 				fmt.Fprintln(cmd.ErrOrStderr(), "Account saved; device heartbeat could not be sent yet.")
 			}
 			if !noSync && !syncLocal {
-				fmt.Fprintln(cmd.ErrOrStderr(), "Login successful. Sync cloud connections into sshm list? Credentials stay encrypted; existing local connections are preserved.")
+				fmt.Fprintln(cmd.ErrOrStderr(), "Login successful. Sync cloud connections into hopkit list? Credentials stay encrypted; existing local connections are preserved.")
 				if importLocal {
 					fmt.Fprintln(cmd.ErrOrStderr(), "This also encrypts and merges local records and configured key files (--import-local).")
 				}
@@ -328,7 +328,7 @@ func newCloudCmd() *cobra.Command {
 				fmt.Fprintf(cmd.OutOrStdout(), "Imported and synced revision %d: %d new connections, %d matched, %d key references; %d agent-only and %d password entries need local credentials. Local configuration preserved.\n", s.Base.Revision, report.Added, report.Existing, report.Keys, report.AgentOnly, report.NeedsPasswords)
 				return nil
 			}
-			fmt.Fprintln(cmd.OutOrStdout(), "Cloud account ready. Sync skipped. Run sshm cloud sync later to add cloud connections to sshm list.")
+			fmt.Fprintln(cmd.OutOrStdout(), "Cloud account ready. Sync skipped. Run hopkit cloud sync later to add cloud connections to hopkit list.")
 			return nil
 		}}
 		c.Flags().BoolVar(&syncLocal, "sync", false, "sync cloud connections into the local list after login")
@@ -765,7 +765,7 @@ func newCloudConnectionCmd(run bool) *cobra.Command {
 		}
 		if cloudsync.DeviceServerID(e.Server) != "" {
 			if run {
-				return errors.New("use sshm connect for an encrypted device terminal; non-interactive device exec is not available yet")
+				return errors.New("use hopkit connect for an encrypted device terminal; non-interactive device exec is not available yet")
 			}
 			return attachDeviceTerminal(cmd, state, v, e)
 		}
@@ -946,7 +946,7 @@ func askCloudSync(cmd *cobra.Command) (bool, error) {
 	case "n", "no":
 		return false, nil
 	default:
-		fmt.Fprintln(cmd.ErrOrStderr(), "Sync skipped; run sshm cloud sync when ready.")
+		fmt.Fprintln(cmd.ErrOrStderr(), "Sync skipped; run hopkit cloud sync when ready.")
 		return false, nil
 	}
 }
@@ -959,7 +959,7 @@ func publishCloudInventory(cmd *cobra.Command, s *cloudsync.State, v *cloudsync.
 	}
 	report, err := cloudsync.PublishInventory(configPath(), s, v.Data)
 	if err != nil {
-		return fmt.Errorf("encrypted sync succeeded, but local list could not be updated: %w; retry sshm cloud sync", err)
+		return fmt.Errorf("encrypted sync succeeded, but local list could not be updated: %w; retry hopkit cloud sync", err)
 	}
 	if store.Enabled() {
 		if _, err := rememberCloudCredentials(cmd.Context(), s, v, configPath()); err != nil {
@@ -981,10 +981,10 @@ func publishCloudInventory(cmd *cobra.Command, s *cloudsync.State, v *cloudsync.
 func runCloudReference(cmd *cobra.Command, server *config.Server, args []string, run bool, timeout int) error {
 	s, err := cloudsync.LoadState(cloudsync.StatePath(configPath()))
 	if err != nil {
-		return errors.New("cloud account unavailable; run sshm cloud login")
+		return errors.New("cloud account unavailable; run hopkit cloud login")
 	}
 	if server.CloudVault != "" && server.CloudVault != cloudsync.InventoryIdentity(s) {
-		return errors.New("this connection belongs to another vault; run sshm cloud sync for the current account")
+		return errors.New("this connection belongs to another vault; run hopkit cloud sync for the current account")
 	}
 	c := newCloudConnectionCmd(run)
 	ctx := cmd.Context()
@@ -1021,7 +1021,7 @@ func newSyncCmd() *cobra.Command {
 		if err = publishCloudInventory(cmd, s, v); err != nil {
 			return err
 		}
-		fmt.Fprintf(cmd.OutOrStdout(), "Synced revision %d. Run sshm list to browse, or sshm connect <alias> to connect.\n", s.Base.Revision)
+		fmt.Fprintf(cmd.OutOrStdout(), "Synced revision %d. Run hopkit list to browse, or hopkit connect <alias> to connect.\n", s.Base.Revision)
 		return nil
 	}}
 	c.Flags().Bool("use-recovery", false, "unlock with a recovery code")

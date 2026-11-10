@@ -6,7 +6,7 @@ import (
 	"sort"
 	"time"
 
-	"github.com/michael-ltm/sshm/internal/config"
+	"github.com/michael-ltm/hopkit/internal/config"
 )
 
 const (

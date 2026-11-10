@@ -9,7 +9,7 @@ import (
 	"github.com/charmbracelet/bubbles/textinput"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
-	"github.com/michael-ltm/sshm/internal/config"
+	"github.com/michael-ltm/hopkit/internal/config"
 )
 
 // Browser is a local inventory view. Only an explicit probe key delegates TCP
@@ -289,11 +289,11 @@ func (m Browser) View() string {
 	if m.Account != "" {
 		account = m.tr("Cloud · ", "云端 · ") + SanitizeTerminalText(m.Account)
 	}
-	left := m.tr("SSHM  /  Servers", "SSHM  /  服务器")
+	left := m.tr("HOPKIT  /  Servers", "HOPKIT  /  服务器")
 	leftWidth := max(1, w-lipgloss.Width(account)-2)
 	header := m.paint(PadRightWidth(left, leftWidth), "brand") + "  " + m.paint(TruncateWidth(account, w-leftWidth-2), "muted")
 	if w < 60 {
-		header = m.paint(m.tr("SSHM  /  Servers", "SSHM  /  服务器"), "brand")
+		header = m.paint(m.tr("HOPKIT  /  Servers", "HOPKIT  /  服务器"), "brand")
 	}
 	group := m.tr("All groups", "全部分组")
 	if m.groups[m.group] != "" {

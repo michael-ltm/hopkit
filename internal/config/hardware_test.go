@@ -1,7 +1,7 @@
 package config
 
 import (
-	"github.com/michael-ltm/sshm/internal/inventory"
+	"github.com/michael-ltm/hopkit/internal/inventory"
 	"github.com/stretchr/testify/require"
 	"path/filepath"
 	"testing"

@@ -5,8 +5,8 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/michael-ltm/sshm/internal/config"
-	mcppkg "github.com/michael-ltm/sshm/internal/mcp"
+	"github.com/michael-ltm/hopkit/internal/config"
+	mcppkg "github.com/michael-ltm/hopkit/internal/mcp"
 	"github.com/spf13/cobra"
 )
 

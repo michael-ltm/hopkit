@@ -32,7 +32,7 @@ func InstalledVersion(ctx context.Context) (string, error) {
 }
 func installedVersionAt(ctx context.Context, path string) (string, error) {
 	info, err := buildinfo.ReadFile(path)
-	if err != nil || info.Path != "github.com/michael-ltm/sshm/cmd/sshm" {
+	if err != nil || info.Path != "github.com/michael-ltm/hopkit/cmd/hopkit" {
 		return "", errors.New("installed SSHM executable could not be identified")
 	}
 	ctx, cancel := context.WithTimeout(ctx, 3*time.Second)

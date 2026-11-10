@@ -3,9 +3,9 @@ package commands
 import (
 	"context"
 	"fmt"
-	"github.com/michael-ltm/sshm/internal/config"
-	"github.com/michael-ltm/sshm/internal/inventory"
-	sshpkg "github.com/michael-ltm/sshm/internal/ssh"
+	"github.com/michael-ltm/hopkit/internal/config"
+	"github.com/michael-ltm/hopkit/internal/inventory"
+	sshpkg "github.com/michael-ltm/hopkit/internal/ssh"
 	"github.com/spf13/cobra"
 	"sort"
 	"sync"

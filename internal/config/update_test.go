@@ -64,7 +64,7 @@ func TestUpdateRejectsNonCooperativeFileChange(t *testing.T) {
 		return os.WriteFile(path, externalBytes, 0o600)
 	})
 	require.Error(t, err)
-	require.Contains(t, err.Error(), "changed outside sshm")
+	require.Contains(t, err.Error(), "changed outside hopkit")
 	after, readErr := os.ReadFile(path)
 	require.NoError(t, readErr)
 	require.Equal(t, externalBytes, after)

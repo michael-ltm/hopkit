@@ -2,13 +2,13 @@ package wizard
 
 import (
 	"errors"
-	"github.com/michael-ltm/sshm/internal/ui"
+	"github.com/michael-ltm/hopkit/internal/ui"
 	"io"
 	"strings"
 
 	"github.com/charmbracelet/bubbles/key"
 	"github.com/charmbracelet/huh"
-	"github.com/michael-ltm/sshm/internal/config"
+	"github.com/michael-ltm/hopkit/internal/config"
 )
 
 // PairInput is the minimal information the controller needs before the target
@@ -36,7 +36,7 @@ func RunPair(existingAliases []string, input io.Reader, output io.Writer) (*Pair
 					}
 					for _, alias := range existingAliases {
 						if alias == value {
-							return errors.New("alias already exists; run `sshm pair <alias>` to repair it")
+							return errors.New("alias already exists; run `hopkit pair <alias>` to repair it")
 						}
 					}
 					return nil

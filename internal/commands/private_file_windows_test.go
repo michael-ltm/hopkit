@@ -6,7 +6,7 @@ import (
 	"path/filepath"
 	"testing"
 
-	"github.com/michael-ltm/sshm/internal/pair"
+	"github.com/michael-ltm/hopkit/internal/pair"
 	"github.com/stretchr/testify/require"
 	"golang.org/x/sys/windows"
 )

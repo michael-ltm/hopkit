@@ -4,7 +4,7 @@ import (
 	"errors"
 	"os"
 
-	"github.com/michael-ltm/sshm/internal/cloudsync"
+	"github.com/michael-ltm/hopkit/internal/cloudsync"
 	"github.com/spf13/cobra"
 )
 
@@ -45,7 +45,7 @@ func wrapCloudErrors(cmd *cobra.Command) {
 
 func cloudStateLoadError(err error) error {
 	if errors.Is(err, os.ErrNotExist) {
-		return &cloudDisplayError{err, textUI("cloud account is not configured; run sshm cloud login, or sshm cloud register to create an account", "尚未配置云端账号，请运行 sshm cloud login 登录；没有账号请运行 sshm cloud register 注册")}
+		return &cloudDisplayError{err, textUI("cloud account is not configured; run hopkit cloud login, or hopkit cloud register to create an account", "尚未配置云端账号，请运行 hopkit cloud login 登录；没有账号请运行 hopkit cloud register 注册")}
 	}
 	return &cloudDisplayError{err, textUI("could not read local cloud account data; check file permissions and preserve the state file before recovery", "无法读取本地云端账号数据，请检查文件权限，并在恢复前保留原有状态文件")}
 }

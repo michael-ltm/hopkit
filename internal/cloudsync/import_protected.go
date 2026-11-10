@@ -7,8 +7,8 @@ import (
 	"errors"
 	"sort"
 
-	"github.com/michael-ltm/sshm/internal/config"
-	"github.com/michael-ltm/sshm/internal/localstore"
+	"github.com/michael-ltm/hopkit/internal/config"
+	"github.com/michael-ltm/hopkit/internal/localstore"
 	gssh "golang.org/x/crypto/ssh"
 )
 

@@ -6,7 +6,7 @@ import (
 	"context"
 	"errors"
 	"github.com/Microsoft/go-winio"
-	"github.com/michael-ltm/sshm/internal/localstore"
+	"github.com/michael-ltm/hopkit/internal/localstore"
 	"golang.org/x/sys/windows"
 	"net"
 	"os"

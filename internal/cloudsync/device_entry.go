@@ -3,7 +3,7 @@ package cloudsync
 import (
 	"encoding/hex"
 	"errors"
-	"github.com/michael-ltm/sshm/internal/config"
+	"github.com/michael-ltm/hopkit/internal/config"
 	"strings"
 )
 

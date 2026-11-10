@@ -11,7 +11,7 @@ import (
 	"strings"
 
 	"github.com/BurntSushi/toml"
-	"github.com/michael-ltm/sshm/internal/safety"
+	"github.com/michael-ltm/hopkit/internal/safety"
 )
 
 // Load reads a Config from path. If the file does not exist, an empty
@@ -118,11 +118,11 @@ func saveUnlockedIfUnchanged(path string, cfg *Config, expected *configSnapshot)
 		current, err := os.ReadFile(path)
 		switch {
 		case err == nil && !expected.exists:
-			return fmt.Errorf("config changed outside sshm during update; retry")
+			return fmt.Errorf("config changed outside hopkit during update; retry")
 		case err == nil && !bytes.Equal(current, expected.data):
-			return fmt.Errorf("config changed outside sshm during update; retry")
+			return fmt.Errorf("config changed outside hopkit during update; retry")
 		case errors.Is(err, os.ErrNotExist) && expected.exists:
-			return fmt.Errorf("config changed outside sshm during update; retry")
+			return fmt.Errorf("config changed outside hopkit during update; retry")
 		case err != nil && !errors.Is(err, os.ErrNotExist):
 			return fmt.Errorf("re-read config before save: %w", err)
 		}

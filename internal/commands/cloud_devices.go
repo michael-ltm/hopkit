@@ -11,9 +11,9 @@ import (
 	"time"
 
 	"github.com/charmbracelet/huh"
-	"github.com/michael-ltm/sshm/internal/cloudsync"
-	"github.com/michael-ltm/sshm/internal/config"
-	"github.com/michael-ltm/sshm/internal/ui"
+	"github.com/michael-ltm/hopkit/internal/cloudsync"
+	"github.com/michael-ltm/hopkit/internal/config"
+	"github.com/michael-ltm/hopkit/internal/ui"
 	"github.com/muesli/cancelreader"
 	"github.com/spf13/cobra"
 	"golang.org/x/term"
@@ -59,7 +59,7 @@ func newCloudAddDeviceCmd(enable bool) *cobra.Command {
 			}
 		}
 		if len(matches) != 1 {
-			return errors.New("device name is missing or ambiguous; use an exact ID from sshm cloud devices")
+			return errors.New("device name is missing or ambiguous; use an exact ID from hopkit cloud devices")
 		}
 		d := matches[0]
 		if d.Platform == "darwin" {
@@ -92,9 +92,9 @@ func newCloudAddDeviceCmd(enable bool) *cobra.Command {
 		if err = publishCloudInventory(cmd, s, v); err != nil {
 			return err
 		}
-		fmt.Fprintf(cmd.OutOrStdout(), "Device %q added to cloud list. Repeated additions update the same device. Other clients: sshm cloud sync, then sshm connect %q.\n", entry.Aliases[0], entry.Aliases[0])
+		fmt.Fprintf(cmd.OutOrStdout(), "Device %q added to cloud list. Repeated additions update the same device. Other clients: hopkit cloud sync, then hopkit connect %q.\n", entry.Aliases[0], entry.Aliases[0])
 		if !enable {
-			fmt.Fprintln(cmd.OutOrStdout(), "To accept connections, run sshm cloud enable on that device. No SSH port or password login is required.")
+			fmt.Fprintln(cmd.OutOrStdout(), "To accept connections, run hopkit cloud enable on that device. No SSH port or password login is required.")
 			return nil
 		}
 		if err = s.Request(cmd.Context(), "POST", "/v1/devices/"+s.DeviceID, map[string]any{"label": name, "group": d.Group, "tags": append([]string{}, d.Tags...), "note": description}, nil); err != nil {
@@ -119,7 +119,7 @@ func newCloudAddDeviceCmd(enable bool) *cobra.Command {
 
 func attachDeviceTerminal(cmd *cobra.Command, s *cloudsync.State, v *cloudsync.Vault, entry cloudsync.Entry) error {
 	if !term.IsTerminal(int(os.Stdin.Fd())) || !term.IsTerminal(int(os.Stdout.Fd())) {
-		return errors.New("device terminal requires an interactive terminal; run sshm connect <device-name>")
+		return errors.New("device terminal requires an interactive terminal; run hopkit connect <device-name>")
 	}
 	ctx, cancel := context.WithCancel(cmd.Context())
 	defer cancel()

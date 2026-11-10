@@ -12,7 +12,7 @@ import (
 	"strings"
 )
 
-var ErrUnavailable = errors.New("device protection unavailable; run 'sshm service setup' in a local terminal to configure this device")
+var ErrUnavailable = errors.New("device protection unavailable; run 'hopkit service setup' in a local terminal to configure this device")
 
 type Protector interface {
 	Seal(context.Context, string, []byte) (string, []byte, error)

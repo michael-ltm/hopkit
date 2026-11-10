@@ -4,7 +4,7 @@ import (
 	"fmt"
 	"os"
 
-	"github.com/michael-ltm/sshm/internal/commands"
+	"github.com/michael-ltm/hopkit/internal/commands"
 )
 
 func main() {
