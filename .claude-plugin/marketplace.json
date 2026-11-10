@@ -4,13 +4,13 @@
     "name": "michael-ltm"
   },
   "description": "hopkit — SSH manager plugins for AI assistants.",
-  "version": "0.8.0",
+  "version": "0.8.1",
   "plugins": [
     {
       "name": "hopkit-skill",
       "source": "./plugins/hopkit-skill",
       "description": "Manage SSH servers with hopkit — list, connect, exec, bootstrap, inspect — from any AI assistant.",
-      "version": "0.8.0",
+      "version": "0.8.1",
       "author": {
         "name": "michael-ltm"
       },
