@@ -119,7 +119,7 @@ func runCleanupWizard(cmd *cobra.Command, defaultDays int, defaultIncludeUnknown
 	confirmed := false
 	confirmForm := huh.NewForm(huh.NewGroup(
 		huh.NewConfirm().
-			Title(fmt.Sprintf("Remove %d SSHM server record(s)?", len(selected))).
+			Title(fmt.Sprintf("Remove %d hopkit server record(s)?", len(selected))).
 			Description(strings.Join(selectedDisplay, ", ") + "\nKeys and remote authorized_keys will not be touched.").
 			Affirmative("Remove records").Negative("Cancel").Value(&confirmed),
 	)).WithInput(cmd.InOrStdin()).WithOutput(cmd.ErrOrStderr()).WithTheme(ui.FormTheme())

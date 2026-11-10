@@ -18,7 +18,7 @@ func DeviceServerID(s config.Server) string {
 
 func (d *Data) AddDevice(device Device, name, description string) (Entry, error) {
 	if !validID(device.ID) || device.Kind == "browser" {
-		return Entry{}, errors.New("select a native SSHM device")
+		return Entry{}, errors.New("select a native hopkit device")
 	}
 	name = strings.TrimSpace(name)
 	if name == "" {

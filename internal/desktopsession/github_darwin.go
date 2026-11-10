@@ -69,7 +69,7 @@ func installGitHubShim(executable string) error {
 			return e
 		}
 		if strings.HasPrefix(gh, dir+string(os.PathSeparator)) {
-			return errors.New("cannot resolve native gh outside the SSHM shim")
+			return errors.New("cannot resolve native gh outside the hopkit shim")
 		}
 		f, e := os.OpenFile(p, os.O_CREATE|os.O_EXCL|os.O_WRONLY, 0600)
 		if e != nil {

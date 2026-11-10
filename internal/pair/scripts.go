@@ -64,10 +64,10 @@ func buildPOSIXOneLiner(script string) (string, error) {
 	}
 	bootstrap := "SSHM_PAIR_B64=" + payload +
 		"; SSHM_PAIR_LEN=" + fmt.Sprintf("%d", len(payload)) +
-		"; pair_corrupt() { echo \"SSHM pairing command is incomplete or corrupted; regenerate it and copy the entire line\" >&2; exit 1; }" +
+		"; pair_corrupt() { echo \"hopkit pairing command is incomplete or corrupted; regenerate it and copy the entire line\" >&2; exit 1; }" +
 		"; [ \"${#SSHM_PAIR_B64}\" -eq \"$SSHM_PAIR_LEN\" ] || pair_corrupt" +
-		"; command -v base64 >/dev/null 2>&1 || { echo \"base64 is required to run the SSHM pairing command\" >&2; exit 1; }" +
-		"; command -v gzip >/dev/null 2>&1 || { echo \"gzip is required to run the SSHM pairing command\" >&2; exit 1; }" +
+		"; command -v base64 >/dev/null 2>&1 || { echo \"base64 is required to run the hopkit pairing command\" >&2; exit 1; }" +
+		"; command -v gzip >/dev/null 2>&1 || { echo \"gzip is required to run the hopkit pairing command\" >&2; exit 1; }" +
 		"; umask 077; SSHM_PAIR_DIR=$(mktemp -d) || exit 1" +
 		"; cleanup() { rm -f \"$SSHM_PAIR_DIR/payload.gz\" \"$SSHM_PAIR_DIR/pair.sh\"; rmdir \"$SSHM_PAIR_DIR\" 2>/dev/null || true; }" +
 		"; trap cleanup 0; trap \"exit 130\" HUP INT TERM" +
@@ -236,9 +236,9 @@ if($pairUrl){
 $form=New-Object 'System.Collections.Generic.Dictionary[string,string]';$form['user']=$reportedUser;$form['hostname']=$env:COMPUTERNAME;$form['platform']='windows'
 $handler=New-Object Net.Http.HttpClientHandler;$handler.UseProxy=$false;$client=New-Object Net.Http.HttpClient($handler);$client.Timeout=[TimeSpan]::FromSeconds(15)
 try {$sent=$false;for($attempt=1;$attempt -le 3 -and -not $sent;$attempt++){$content=New-Object Net.Http.FormUrlEncodedContent($form);$response=$null;try{$response=$client.PostAsync($pairUrl,$content).GetAwaiter().GetResult();if($response.IsSuccessStatusCode){$sent=$true}else{throw "HTTP $([int]$response.StatusCode)"}}catch{if($attempt -eq 3){throw "Pair callback failed: $_"};Start-Sleep -Seconds (2*$attempt)}finally{if($response){$response.Dispose()};$content.Dispose()}};$content=New-Object Net.Http.FormUrlEncodedContent($form);$response=$null;try{$response=$client.PostAsync($pairUrl,$content).GetAwaiter().GetResult();if(-not $response.IsSuccessStatusCode){Write-Warning "Pair callback confirmation returned HTTP $([int]$response.StatusCode)"}}catch{Write-Warning "Pair callback confirmation was not received: $($_.Exception.Message)"}finally{if($response){$response.Dispose()};$content.Dispose()}} finally {$client.Dispose();$handler.Dispose()}
-Write-Host "SSHM pair report sent for $reportedUser@$env:COMPUTERNAME; waiting for controller verification."
+Write-Host "hopkit pair report sent for $reportedUser@$env:COMPUTERNAME; waiting for controller verification."
 } else {
-Write-Host "SSHM pair key installed for $reportedUser@$env:COMPUTERNAME."
+Write-Host "hopkit pair key installed for $reportedUser@$env:COMPUTERNAME."
 }
 `
 
@@ -358,8 +358,8 @@ if command -v curl >/dev/null 2>&1 && retry callback_curl; then CALLBACK_SENT=1;
 if [ "$CALLBACK_SENT" -ne 1 ] && command -v wget >/dev/null 2>&1; then case "$TARGET_USER$HOST_NAME" in *[!A-Za-z0-9._@\\-]*) echo 'Username or hostname contains characters unsupported by the wget callback fallback' >&2;exit 1;;esac;if retry callback_wget;then CALLBACK_SENT=1;CALLBACK_TOOL=wget;fi;fi
 if [ "$CALLBACK_SENT" -ne 1 ]; then echo 'OpenSSH is ready, but the callback failed after curl/wget retries. Check the route to the controller and rerun this command.' >&2;exit 1;fi
 case "$CALLBACK_TOOL" in curl) callback_curl||true;;wget) callback_wget||true;;esac
-echo "SSHM pair report sent for $TARGET_USER@$HOST_NAME; waiting for controller verification."
+echo "hopkit pair report sent for $TARGET_USER@$HOST_NAME; waiting for controller verification."
 else
-echo "SSHM pair key installed for $TARGET_USER@$HOST_NAME."
+echo "hopkit pair key installed for $TARGET_USER@$HOST_NAME."
 fi
 `

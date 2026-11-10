@@ -68,7 +68,7 @@ try {
 const windowsFileFooter = `
 } catch {
   # Avoid PowerShell's default source-line dump, which can contain the callback.
-  [Console]::Error.WriteLine("SSHM failed during ${sshmStage}: $($_.Exception.Message)")
+  [Console]::Error.WriteLine("hopkit failed during ${sshmStage}: $($_.Exception.Message)")
   [Console]::Error.WriteLine('Fix the reported step and retry while the controller is waiting. If it has expired, start a new pairing session with the same alias and key.')
   exit 1
 }
@@ -84,7 +84,7 @@ func windowsFileStages(script string) string {
 		{"$firewallRule=", "Windows Firewall"},
 		{"$handler=New-Object Net.Http.HttpClientHandler", "Controller callback"},
 	} {
-		script = strings.Replace(script, stage.marker, "$sshmStage='"+stage.name+"';Write-Host \"SSHM: $sshmStage\"\n"+stage.marker, 1)
+		script = strings.Replace(script, stage.marker, "$sshmStage='"+stage.name+"';Write-Host \"hopkit: $sshmStage\"\n"+stage.marker, 1)
 	}
 	return script
 }

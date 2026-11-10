@@ -283,7 +283,7 @@ func (m Browser) paint(value, role string) string {
 func (m Browser) View() string {
 	w := max(1, m.width-4)
 	if m.height < 10 || m.width < 28 {
-		return m.fit([]string{"SSHM", m.tr("Terminal too small", "终端太小"), m.tr("Resize to 28 x 10", "请放大至 28 × 10"), m.tr("q quit", "q 退出")})
+		return m.fit([]string{"hopkit", m.tr("Terminal too small", "终端太小"), m.tr("Resize to 28 x 10", "请放大至 28 × 10"), m.tr("q quit", "q 退出")})
 	}
 	account := m.tr("Local only", "本地模式")
 	if m.Account != "" {
@@ -442,7 +442,7 @@ func (m Browser) details(width int) []string {
 	}
 	connection := fmt.Sprintf("%s@%s:%d", s.User, s.Host, s.Port)
 	if config.DeviceConnectionID(s) != "" {
-		connection = m.tr("SSHM client · end-to-end encrypted", "SSHM 客户端 · 端到端加密")
+		connection = m.tr("hopkit client · end-to-end encrypted", "hopkit 客户端 · 端到端加密")
 	}
 	rows := []string{m.paint(text(a), "heading"), m.paint(text(config.EffectiveDescription(s)), "muted"), "", m.paint(m.tr("CONNECTION", "连接"), "muted"), text(connection), text(platformLabel(s.Platform) + " · " + s.Auth), "", m.paint(m.tr("ORGANIZATION", "分组和标签"), "muted"), text(group), text(strings.Join(s.Tags, " · ")), "", m.paint(m.tr("LAST OBSERVED", "最近检测"), "muted"), text(status + m.tr(" · last connection ", " · 上次连接 ") + m.since(s.LastUsed)), text(m.tr("TCP connect: ", "TCP 延迟：") + m.latency(a))}
 	client := s.SSHMVersion
@@ -456,7 +456,7 @@ func (m Browser) details(width int) []string {
 	default:
 		client = m.tr("not checked / unavailable", "未检测 / 无法获取")
 	}
-	rows = append(rows, "", m.paint(m.tr("SSHM CLIENT", "SSHM 客户端"), "muted"), text(client))
+	rows = append(rows, "", m.paint(m.tr("HOPKIT CLIENT", "hopkit 客户端"), "muted"), text(client))
 	return rows
 }
 

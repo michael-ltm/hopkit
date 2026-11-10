@@ -4,6 +4,11 @@ All notable changes to this project will be documented in this file. Format: [Ke
 
 ## [Unreleased]
 
+### Changed
+- Terminal UI, update prompts, pairing output and error messages say
+  hopkit instead of SSHM. Wire markers and Windows firewall rule names are
+  unchanged.
+
 ## [0.8.0] - 2026-11-10
 
 ### Changed

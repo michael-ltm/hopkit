@@ -47,7 +47,7 @@ func Inspect(ctx context.Context) Status {
 
 func Enable(ctx context.Context, executable string) (Status, error) {
 	if !filepath.IsAbs(executable) {
-		return Status{}, errors.New("desktop service requires an absolute SSHM executable path")
+		return Status{}, errors.New("desktop service requires an absolute hopkit executable path")
 	}
 	// Validate the actual owning user's GUI domain; never substitute another
 	// desktop user, sudo, or copy credentials out of a different security session.

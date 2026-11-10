@@ -200,7 +200,7 @@ func homeChoice(cmd *cobra.Command, title string, options []menuOption) (string,
 	return choice, e
 }
 func homePause(cmd *cobra.Command) error {
-	_, e := homeChoice(cmd, "SSHM", []menuOption{{"back", textUI("Return to home", "返回主界面")}})
+	_, e := homeChoice(cmd, "hopkit", []menuOption{{"back", textUI("Return to home", "返回主界面")}})
 	return e
 }
 func homeRun(cmd *cobra.Command, args []string) error {

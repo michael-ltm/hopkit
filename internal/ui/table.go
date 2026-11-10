@@ -41,7 +41,7 @@ func RenderServerTable(servers map[string]*config.Server, ic IconSet, color bool
 		authIcon := authGlyph(s.Auth, ic)
 		host, user := s.Host, s.User
 		if config.DeviceConnectionID(s) != "" {
-			host, user = "SSHM client", "encrypted"
+			host, user = "hopkit client", "encrypted"
 		}
 		row := []string{
 			SanitizeTerminalText(a),

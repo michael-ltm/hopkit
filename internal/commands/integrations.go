@@ -48,7 +48,7 @@ func newIntegrationsCmd() *cobra.Command {
 	for _, operation := range []string{"install", "refresh"} {
 		op := operation
 		var mcp bool
-		c := &cobra.Command{Use: op, Short: op + " SSHM-managed skill documents; preserve edited and plugin-managed files", Args: cobra.NoArgs, RunE: func(cmd *cobra.Command, _ []string) error {
+		c := &cobra.Command{Use: op, Short: op + " hopkit-managed skill documents; preserve edited and plugin-managed files", Args: cobra.NoArgs, RunE: func(cmd *cobra.Command, _ []string) error {
 			// Legacy updaters launch the new binary via integrations refresh.
 			// Report its installation even when the parent remains an old agent.
 			if op == "refresh" {

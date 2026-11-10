@@ -117,7 +117,7 @@ func (m Home) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 func (m Home) View() string {
 	b := Browser{width: m.width, height: m.height, color: m.color, ascii: ResolveIcons(m.Config.UI.Icons).Online == "[OK]"}
 	if m.width < 30 || m.height < 15 {
-		return b.fit([]string{"SSHM", m.tr("Resize terminal to 30 x 15", "请放大终端至 30 × 15"), "q · " + m.tr("quit", "退出")})
+		return b.fit([]string{"hopkit", m.tr("Resize terminal to 30 x 15", "请放大终端至 30 × 15"), "q · " + m.tr("quit", "退出")})
 	}
 	w := max(1, m.width-4)
 	account := m.tr("Local mode · not logged in", "本地模式 · 未登录")
@@ -129,7 +129,7 @@ func (m Home) View() string {
 		counts += fmt.Sprintf(m.tr("  ·  %d need sync", "  ·  待同步关联 %d"), m.Summary.Unlinked)
 	}
 	lines := []string{
-		b.paint("SSHM", "brand") + b.paint("   v"+SanitizeTerminalText(m.Version), "muted") + "   " + b.paint(account, "muted"),
+		b.paint("hopkit", "brand") + b.paint("   v"+SanitizeTerminalText(m.Version), "muted") + "   " + b.paint(account, "muted"),
 		b.paint(counts, "muted"),
 	}
 	if m.Summary.Account != "" {

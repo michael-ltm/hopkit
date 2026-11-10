@@ -33,7 +33,7 @@ func InstalledVersion(ctx context.Context) (string, error) {
 func installedVersionAt(ctx context.Context, path string) (string, error) {
 	info, err := buildinfo.ReadFile(path)
 	if err != nil || info.Path != "github.com/michael-ltm/hopkit/cmd/hopkit" {
-		return "", errors.New("installed SSHM executable could not be identified")
+		return "", errors.New("installed hopkit executable could not be identified")
 	}
 	ctx, cancel := context.WithTimeout(ctx, 3*time.Second)
 	defer cancel()
@@ -42,11 +42,11 @@ func installedVersionAt(ctx context.Context, path string) (string, error) {
 	cmd.Stdout = &out
 	cmd.Env = append(os.Environ(), "SSHM_NO_UPDATE_CHECK=1")
 	if err := cmd.Run(); err != nil {
-		return "", errors.New("installed SSHM version could not be read")
+		return "", errors.New("installed hopkit version could not be read")
 	}
 	v := strings.TrimSpace(out.String())
 	if !clientVersionPattern.MatchString(v) {
-		return "", errors.New("invalid installed SSHM version")
+		return "", errors.New("invalid installed hopkit version")
 	}
 	return v, nil
 }

@@ -135,7 +135,7 @@ func updateHint(cmd *cobra.Command) {
 	if len(cache.Signed) > 0 {
 		if r, e := updater.Verify(cache.Signed, updater.PublicKey, time.Now()); e == nil {
 			if n, e := updater.Compare(r.Version, Version); e == nil && n > 0 {
-				fmt.Fprintf(cmd.ErrOrStderr(), "SSHM %s is available (current %s). Run hopkit update to review and install.\n", r.Version, Version)
+				fmt.Fprintf(cmd.ErrOrStderr(), "hopkit %s is available (current %s). Run hopkit update to review and install.\n", r.Version, Version)
 			}
 		}
 	}
@@ -147,7 +147,7 @@ func confirmUpdate(cmd *cobra.Command, latest string) (bool, error) {
 	}
 	choice := "skip"
 	form := huh.NewForm(huh.NewGroup(huh.NewSelect[string]().
-		Title(textUI("SSHM update available", "SSHM 发现新版本")).
+		Title(textUI("hopkit update available", "hopkit 发现新版本")).
 		Description(fmt.Sprintf("%s → %s · signed release", Version, latest)).
 		Options(huh.NewOption(textUI("Update now", "立即更新"), "update"), huh.NewOption(textUI("Skip for now", "暂时跳过"), "skip")).Value(&choice),
 	)).WithInput(cmd.InOrStdin()).WithOutput(cmd.ErrOrStderr()).WithTheme(ui.FormTheme())

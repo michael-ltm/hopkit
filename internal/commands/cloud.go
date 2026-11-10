@@ -158,7 +158,7 @@ func cloudSaveRecovery(cmd *cobra.Command, path, recovery string) error {
 	if _, err := os.Lstat(path); err == nil {
 		return errors.New("recovery file already exists; choose a new path")
 	}
-	if err := cloudsync.WritePrivate(path, []byte("SSHM recovery code. Store offline in your password manager.\n"+recovery+"\n")); err != nil {
+	if err := cloudsync.WritePrivate(path, []byte("hopkit recovery code. Store offline in your password manager.\n"+recovery+"\n")); err != nil {
 		return err
 	}
 	fmt.Fprintf(cmd.ErrOrStderr(), "Recovery code saved privately to %s. Move it to your password manager.\n", path)
@@ -405,7 +405,7 @@ func newCloudCmd() *cobra.Command {
 		}
 		for _, r := range rows {
 			if r.Device != "" {
-				fmt.Fprintf(cmd.OutOrStdout(), "%s  %s  SSHM client · key-signed, end-to-end encrypted\n", r.ID, safety.MaskSecrets(strings.Join(r.Aliases, ",")))
+				fmt.Fprintf(cmd.OutOrStdout(), "%s  %s  hopkit client · key-signed, end-to-end encrypted\n", r.ID, safety.MaskSecrets(strings.Join(r.Aliases, ",")))
 				continue
 			}
 			fmt.Fprintf(cmd.OutOrStdout(), "%s  %s  %s@%s:%d  %s  (%d credentials)\n", r.ID, safety.MaskSecrets(strings.Join(r.Aliases, ",")), r.User, r.Host, r.Port, r.Auth, r.Credentials)

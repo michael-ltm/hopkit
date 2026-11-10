@@ -315,7 +315,7 @@ func TestBuildScripts_NoCallbackSkipsCallback(t *testing.T) {
 	// The callback is guarded so an empty callback URL installs the key and
 	// exits cleanly instead of failing on the unreachable controller.
 	require.Contains(t, posix, `if [ -n "$PAIR_URL" ]; then`)
-	require.Contains(t, posix, "SSHM pair key installed for")
+	require.Contains(t, posix, "hopkit pair key installed for")
 	require.Contains(t, posix, "callback_curl") // still defined, but only reached when PAIR_URL is set
 
 	syntax := exec.Command("sh", "-n")
@@ -329,7 +329,7 @@ func TestBuildScripts_POSIXAcceptsCapitalizedEffectivePort(t *testing.T) {
 	}
 	output, authorized, err := runGeneratedPOSIXPairCommand(t, "22")
 	require.NoErrorf(t, err, "capitalized sshd -T output was rejected: %s", output)
-	require.Contains(t, output, "SSHM pair key installed for sshmtest@")
+	require.Contains(t, output, "hopkit pair key installed for sshmtest@")
 	contents, err := os.ReadFile(authorized)
 	require.NoError(t, err)
 	publicKey := "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAINOjEfy/RAXMoS+13N6XdSP0008UpgHPhIj6H/MQeheu pair@host"
@@ -502,7 +502,7 @@ func TestWindowsFileContainsReadablePayloadAndStages(t *testing.T) {
 	require.NotContains(t, scripts.WindowsFile, "__SSH_PORT__")
 	require.NotContains(t, scripts.WindowsFile, "Compression.GzipStream")
 	for _, stage := range []string{"Windows login identity", "OpenSSH installation", "OpenSSH configuration", "OpenSSH service startup", "Public key and permissions", "Windows Firewall", "Controller callback"} {
-		require.Contains(t, scripts.WindowsFile, "$sshmStage='"+stage+"';Write-Host \"SSHM: $sshmStage\"\n")
+		require.Contains(t, scripts.WindowsFile, "$sshmStage='"+stage+"';Write-Host \"hopkit: $sshmStage\"\n")
 	}
 	require.Less(t, strings.Index(scripts.WindowsFile, "if($CheckOnly)"), strings.Index(scripts.WindowsFile, "$publicKey="))
 }
@@ -529,6 +529,6 @@ func TestWindowsFileNativeParserAndReadOnlyBranch(t *testing.T) {
 	output, err = cmd.CombinedOutput()
 	require.NoError(t, err, "%s", output)
 	require.Contains(t, string(output), "OpenSSH Server: not installed")
-	require.NotContains(t, string(output), "SSHM: OpenSSH installation")
+	require.NotContains(t, string(output), "hopkit: OpenSSH installation")
 	require.NotContains(t, string(output), "synthetic")
 }
