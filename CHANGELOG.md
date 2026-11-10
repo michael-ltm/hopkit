@@ -4,6 +4,8 @@ All notable changes to this project will be documented in this file. Format: [Ke
 
 ## [Unreleased]
 
+## [0.8.0] - 2026-11-10
+
 ### Changed
 - The project is renamed from sshm to **hopkit** to avoid confusion with an
   unrelated SSH manager of the same name. The binary, Go module path

@@ -3,11 +3,22 @@ version: 2
 project_name: hopkit
 
 builds:
+  # macOS needs cgo for the native Keychain API (local device protection);
+  # the release workflow therefore runs on a macOS runner.
+  - id: hopkit-darwin
+    main: ./cmd/hopkit
+    binary: hopkit
+    env: [CGO_ENABLED=1]
+    goos: [darwin]
+    goarch: [amd64, arm64]
+    ldflags:
+      - -s -w
+      - -X github.com/michael-ltm/hopkit/internal/commands.Version={{.Version}}
   - id: hopkit
     main: ./cmd/hopkit
     binary: hopkit
     env: [CGO_ENABLED=0]
-    goos: [linux, darwin, windows]
+    goos: [linux, windows]
     goarch: [amd64, arm64]
     ldflags:
       - -s -w

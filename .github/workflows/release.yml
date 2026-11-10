@@ -2,13 +2,16 @@ name: release
 on:
   push:
     tags: ["v*.*.*"]
+  # Manual runs build every target as a snapshot and publish nothing.
+  workflow_dispatch:
 
 permissions:
   contents: write
 
 jobs:
   goreleaser:
-    runs-on: ubuntu-latest
+    # macOS: the darwin builds need cgo (Keychain); linux/windows stay pure Go.
+    runs-on: macos-15
     steps:
       - uses: actions/checkout@v4
         with: { fetch-depth: 0 }
@@ -18,8 +21,17 @@ jobs:
         with:
           distribution: goreleaser
           version: latest
-          args: release --clean
+          args: ${{ github.event_name == 'workflow_dispatch' && 'release --snapshot --clean' || 'release --clean' }}
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           HOMEBREW_TAP_TOKEN: ${{ secrets.HOMEBREW_TAP_TOKEN }}
           SCOOP_BUCKET_TOKEN: ${{ secrets.SCOOP_BUCKET_TOKEN }}
+      - name: Verify macOS binaries keep native Keychain support
+        run: |
+          found=0
+          for bin in $(find dist -path '*darwin*' -type f -name hopkit); do
+            found=$((found + 1))
+            go version -m "$bin" | grep -q 'CGO_ENABLED=1' || { echo "$bin was built without cgo"; exit 1; }
+            echo "$bin: CGO_ENABLED=1"
+          done
+          [ "$found" -eq 2 ] || { echo "expected 2 darwin binaries, found $found"; exit 1; }

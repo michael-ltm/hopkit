@@ -45,8 +45,7 @@ hopkit service setup     # one-time migration of old credentials
 hopkit service install   # background local service and optional sync
 ```
 
-Use the cloud preview client from the console; the existing stable package does
-not include these commands. Use `hopkit update` for signed, confirmed updates and `hopkit integrations install --app all --mcp` for optional AI setup. See [cloud setup, recovery and limitations](docs/cloud-sync.md).
+These commands ship in the stable package from v0.8.0. Use `hopkit update` for signed, confirmed updates and `hopkit integrations install --app all --mcp` for optional AI setup. See [cloud setup, recovery and limitations](docs/cloud-sync.md).
 
 Migrated credentials work across CLI/MCP processes and service restarts without
 repeated vault unlock. Cloud failures affect synchronization, not local SSH.

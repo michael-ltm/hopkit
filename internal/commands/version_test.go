@@ -29,7 +29,7 @@ func readJSONFile(t *testing.T, path string, dst any) {
 }
 
 func TestDeclaredVersionsMatch(t *testing.T) {
-	const want = "0.7.1"
+	const want = "0.8.0"
 	root := repositoryRoot(t)
 
 	var pluginManifest struct {

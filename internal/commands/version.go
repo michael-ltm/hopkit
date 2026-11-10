@@ -7,7 +7,7 @@ import (
 )
 
 // Version is set at link time via -ldflags; default tracks the source build.
-var Version = "0.7.1"
+var Version = "0.8.0"
 
 func newVersionCmd() *cobra.Command {
 	return &cobra.Command{
