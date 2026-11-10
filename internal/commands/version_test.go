@@ -35,7 +35,7 @@ func TestDeclaredVersionsMatch(t *testing.T) {
 	var pluginManifest struct {
 		Version string `json:"version"`
 	}
-	readJSONFile(t, filepath.Join(root, "plugins", "sshm-skill", ".claude-plugin", "plugin.json"), &pluginManifest)
+	readJSONFile(t, filepath.Join(root, "plugins", "hopkit-skill", ".claude-plugin", "plugin.json"), &pluginManifest)
 
 	var marketplace struct {
 		Version string `json:"version"`
@@ -48,7 +48,7 @@ func TestDeclaredVersionsMatch(t *testing.T) {
 
 	marketplacePluginVersion := ""
 	for _, plugin := range marketplace.Plugins {
-		if plugin.Name == "sshm-skill" {
+		if plugin.Name == "hopkit-skill" {
 			marketplacePluginVersion = plugin.Version
 			break
 		}

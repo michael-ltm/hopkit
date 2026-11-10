@@ -1,6 +1,6 @@
-# sshm MCP Tool Quick Reference
+# hopkit MCP Tool Quick Reference
 
-The CLI is `hopkit` (named `sshm` before the rename); the MCP server keeps the name `sshm`.
+hopkit was formerly named sshm.
 
 Terminal-only onboarding: plain `hopkit pair` guides alias, address, platform,
 and metadata, then prints one Windows or POSIX target command. It detects the

@@ -1,6 +1,6 @@
 {
   "mcpServers": {
-    "sshm": {
+    "hopkit": {
       "type": "stdio",
       "command": "hopkit",
       "args": ["mcp"]

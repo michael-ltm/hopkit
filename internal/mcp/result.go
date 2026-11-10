@@ -1,4 +1,4 @@
-// Package mcp exposes sshm's functionality as Model Context Protocol tools
+// Package mcp exposes hopkit's functionality as Model Context Protocol tools
 // over stdio so AI assistants can manage servers. Untrusted output and errors
 // pass through safety.MaskSecrets. Validated project-profile success results
 // preserve exact reusable paths and references. Write tools require a reason

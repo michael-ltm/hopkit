@@ -1,6 +1,6 @@
 # Optional cloud sync and updates
 
-Use only with a cloud-enabled SSHM client. `hopkit cloud status` is safe to inspect;
+Use only with a cloud-enabled hopkit client. `hopkit cloud status` is safe to inspect;
 cloud setup and credential entry require the user's own interactive
 terminal. Default MCP uses device-protected local credentials, then existing native keys/Agents. Never ask the user to put account passwords, vault phrases, recovery
 codes, SSH private keys or passwords in chat, tool arguments, environment
@@ -68,7 +68,7 @@ variables or AI-visible logs.
   delete same-name records based only on alias; retain different users/routes.
 - `hopkit update --check` verifies the signed release feed. Installing an update
   needs explicit user intent or the CLI confirmation; do not set `--yes` merely
-  to bypass the question. Existing signed updates may refresh only SSHM-managed
+  to bypass the question. Existing signed updates may refresh only hopkit-managed
   integrations. Plugin-managed or locally edited skill files stay untouched.
 - `hopkit integrations status` inspects setup. Use `integrations install --app
   codex|claude|all` only when requested. MCP registration is a separate `--mcp`

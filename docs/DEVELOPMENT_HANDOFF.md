@@ -14,7 +14,7 @@ The September 28 website update makes local installation the primary path. Cloud
 - Cloudflare account service / relay / jobs: `cloud/src/index.ts`, `relay.ts`, `jobs.ts`.
 - Web UI: `cloud/src/browser/`, `cloud/src/page.ts`, `cloud/src/style.ts`.
 - Platform inventory: `internal/inventory/`.
-- Signed updates / integration documents: `internal/updater/`, `internal/integrations/`, `plugins/sshm-skill/`.
+- Signed updates / integration documents: `internal/updater/`, `internal/integrations/`, `plugins/hopkit-skill/`.
 
 ## Local checks
 

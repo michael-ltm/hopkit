@@ -1,17 +1,17 @@
 # AI Integration
 
-sshm ships an MCP server so AI assistants can manage your servers.
+hopkit (formerly sshm) ships an MCP server so AI assistants can manage your servers.
 
 ## Enabling it
 
 ### Claude Code (plugin)
 
 ```
-claude plugins marketplace add michael-ltm/sshm
-claude plugins install sshm-skill@sshm
+claude plugins marketplace add michael-ltm/hopkit
+claude plugins install hopkit-skill@hopkit
 ```
 
-This registers the `sshm-server-ops` skill and the `sshm` MCP server.
+This registers the `hopkit-server-ops` skill and the `hopkit` MCP server.
 
 ### Any MCP host (manual)
 
@@ -20,14 +20,14 @@ Add to your host's MCP config:
 ```json
 {
   "mcpServers": {
-    "sshm": { "command": "sshm", "args": ["mcp"] }
+    "hopkit": { "command": "hopkit", "args": ["mcp"] }
   }
 }
 ```
 
 ## Tools
 
-See [plugins/sshm-skill/skills/sshm-server-ops/quick-reference.md](../plugins/sshm-skill/skills/sshm-server-ops/quick-reference.md)
+See [plugins/hopkit-skill/skills/hopkit-server-ops/quick-reference.md](../plugins/hopkit-skill/skills/hopkit-server-ops/quick-reference.md)
 for the full tool table.
 
 ## Read-only mode
@@ -59,13 +59,13 @@ to observe but never mutate.
 The standalone cloud preview bundles the same skill Markdown as the plugin.
 `hopkit integrations install --app codex` installs to the official user skill
 location; use `--app claude` or `--app all` for Claude Code. Add `--mcp` only when
-you want the app's native CLI to register a missing `sshm` server. Existing MCP
+you want the app's native CLI to register a missing `hopkit` server (replacing a pre-rename `sshm` entry). Existing MCP
 configuration is retained, and the user configuration is privately backed up
 before adding a new server.
 
-An existing SSHM plugin cache takes precedence: it is kept under the original
+An existing hopkit or sshm plugin cache takes precedence: it is kept under the original
 plugin manager rather than installing duplicate skill names. Only files created
-and recorded by SSHM's integration installer are refreshed during `hopkit update`.
+and recorded by the hopkit integration installer are refreshed during `hopkit update`.
 Changed user files are preserved, and the command reports that manual review is
 needed. `hopkit integrations status` and `hopkit integrations refresh` are available
 for inspection and explicitly managed refreshes.

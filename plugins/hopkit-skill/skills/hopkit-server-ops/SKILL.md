@@ -1,11 +1,11 @@
 ---
-name: sshm-server-ops
-description: "Use sshm MCP for intent-based host discovery, status, commands, deploy/build (including Windows EXE), transfer, services, onboarding, hardening, or authorized remote reverse/dynamic debugging."
+name: hopkit-server-ops
+description: "Use hopkit MCP for intent-based host discovery, status, commands, deploy/build (including Windows EXE), transfer, services, onboarding, hardening, or authorized remote reverse/dynamic debugging."
 ---
 
-# sshm Server Operations
+# hopkit Server Operations
 
-Use sshm MCP, not raw `ssh`, to retain auditing, masking, command filtering,
+Use hopkit MCP, not raw `ssh`, to retain auditing, masking, command filtering,
 and host-key verification.
 
 ## Tool routing

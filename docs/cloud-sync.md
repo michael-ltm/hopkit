@@ -94,7 +94,7 @@ sshm integrations refresh
 
 下载安装二进制**不会直接改动 AI 应用配置**。使用 `integrations install` 可选择 Codex 或 Claude Code 的 Skill；加 `--mcp` 后才调用对应应用的原生 CLI 注册缺少的 `sshm` 服务，已有配置保留，写入前做私有备份。
 
-Codex Skill 路径为 `~/.agents/skills/sshm-server-ops`，Claude Code 为 `~/.claude/skills/sshm-server-ops`。SSHM 管理的文件带所有权与摘要清单；后续程序更新调用新版本的 `integrations refresh`，保留用户自行修改的文件和额外笔记。如果已有 SSHM 插件缓存，则保留插件管理方式，避免重复安装；该插件仍通过原应用的插件管理器更新，不手动改写插件缓存。
+Codex Skill 路径为 `~/.agents/skills/hopkit-server-ops`，Claude Code 为 `~/.claude/skills/hopkit-server-ops`。SSHM 管理的文件带所有权与摘要清单；后续程序更新调用新版本的 `integrations refresh`，保留用户自行修改的文件和额外笔记。如果已有 SSHM 插件缓存，则保留插件管理方式，避免重复安装；该插件仍通过原应用的插件管理器更新，不手动改写插件缓存。
 
 来源：[Codex Skills](https://learn.chatgpt.com/docs/build-skills)、[Codex MCP](https://learn.chatgpt.com/docs/extend/mcp?surface=cli)、[Claude Code Skills](https://code.claude.com/docs/en/skills)、[Claude Code MCP](https://code.claude.com/docs/en/mcp)。
 

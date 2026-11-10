@@ -89,12 +89,19 @@ func newIntegrationsCmd() *cobra.Command {
 			return nil
 		}}
 		if op == "install" {
-			c.Flags().BoolVar(&mcp, "mcp", false, "also register a missing sshm MCP server through the selected app's CLI")
+			c.Flags().BoolVar(&mcp, "mcp", false, "also register a missing hopkit MCP server through the selected app's CLI")
 		}
 		root.AddCommand(c)
 	}
 	return root
 }
+
+const (
+	mcpName = "hopkit"
+	// legacyMCPName is the registration name used before the hopkit rename.
+	legacyMCPName = "sshm"
+)
+
 func registerMCP(cmd *cobra.Command, home, app string) error {
 	binary, e := exec.LookPath(app)
 	if e != nil {
@@ -102,30 +109,54 @@ func registerMCP(cmd *cobra.Command, home, app string) error {
 	}
 	ctx, cancel := context.WithTimeout(cmd.Context(), 15*time.Second)
 	defer cancel()
-	get, e := integrationProcess(ctx, binary, "mcp", "get", "sshm")
+	present, e := mcpRegistered(ctx, binary, mcpName)
 	if e != nil {
 		return e
 	}
+	if present {
+		fmt.Fprintln(cmd.OutOrStdout(), app+": existing hopkit MCP configuration retained")
+	} else if e = addMCP(ctx, binary, home, app); e != nil {
+		return e
+	} else {
+		fmt.Fprintln(cmd.OutOrStdout(), app+": hopkit MCP registered; restart the app to load it")
+	}
+	return removeLegacyMCP(ctx, cmd, binary, app)
+}
+
+// mcpRegistered asks the app CLI whether name is registered. It reports an
+// error when the answer cannot be read reliably.
+func mcpRegistered(ctx context.Context, binary, name string) (bool, error) {
+	get, e := integrationProcess(ctx, binary, "mcp", "get", name)
+	if e != nil {
+		return false, e
+	}
 	output, e := get.CombinedOutput()
 	if e == nil {
-		fmt.Fprintln(cmd.OutOrStdout(), app+": existing sshm MCP configuration retained")
-		return nil
+		return true, nil
 	}
 	if ctx.Err() != nil {
-		return fmt.Errorf("cannot inspect existing MCP configuration")
+		return false, fmt.Errorf("cannot inspect existing MCP configuration")
 	}
 	lower := strings.ToLower(string(output))
 	if !strings.Contains(lower, "not found") && !strings.Contains(lower, "no mcp server") && !strings.Contains(lower, "no server") {
-		return fmt.Errorf("MCP configuration could not be verified; no changes made")
+		return false, fmt.Errorf("MCP configuration could not be verified; no changes made")
 	}
-	path := filepath.Join(home, ".claude.json")
+	return false, nil
+}
+
+func appConfigPath(home, app string) string {
 	if app == "codex" {
 		base := os.Getenv("CODEX_HOME")
 		if base == "" {
 			base = filepath.Join(home, ".codex")
 		}
-		path = filepath.Join(base, "config.toml")
+		return filepath.Join(base, "config.toml")
 	}
+	return filepath.Join(home, ".claude.json")
+}
+
+func addMCP(ctx context.Context, binary, home, app string) error {
+	path := appConfigPath(home, app)
 	if b, e := os.ReadFile(path); e == nil {
 		defer cloudsync.Wipe(b)
 		if e = cloudsync.WritePrivate(fmt.Sprintf("%s.sshm-backup-%d", path, time.Now().UnixNano()), b); e != nil {
@@ -142,9 +173,9 @@ func registerMCP(cmd *cobra.Command, home, app string) error {
 	if e != nil {
 		return e
 	}
-	args := []string{"mcp", "add", "sshm", "--", self, "mcp"}
+	args := []string{"mcp", "add", mcpName, "--", self, "mcp"}
 	if app == "claude" {
-		args = []string{"mcp", "add", "--scope", "user", "sshm", "--", self, "mcp"}
+		args = []string{"mcp", "add", "--scope", "user", mcpName, "--", self, "mcp"}
 	}
 	install, e := integrationProcess(ctx, binary, args...)
 	if e != nil {
@@ -153,13 +184,30 @@ func registerMCP(cmd *cobra.Command, home, app string) error {
 	if _, e = install.CombinedOutput(); e != nil {
 		return fmt.Errorf("app CLI could not register MCP; private configuration backup was retained")
 	}
-	verify, e := integrationProcess(ctx, binary, "mcp", "get", "sshm")
+	if ok, e := mcpRegistered(ctx, binary, mcpName); e != nil || !ok {
+		return fmt.Errorf("MCP registration readback failed")
+	}
+	return nil
+}
+
+// removeLegacyMCP drops the pre-rename "sshm" registration once "hopkit" is in
+// place, so the app does not start two copies of the same tools.
+func removeLegacyMCP(ctx context.Context, cmd *cobra.Command, binary, app string) error {
+	present, e := mcpRegistered(ctx, binary, legacyMCPName)
+	if e != nil || !present {
+		return e
+	}
+	args := []string{"mcp", "remove", legacyMCPName}
+	if app == "claude" {
+		args = []string{"mcp", "remove", "--scope", "user", legacyMCPName}
+	}
+	remove, e := integrationProcess(ctx, binary, args...)
 	if e != nil {
 		return e
 	}
-	if _, e = verify.CombinedOutput(); e != nil {
-		return fmt.Errorf("MCP registration readback failed")
+	if _, e = remove.CombinedOutput(); e != nil {
+		return fmt.Errorf("legacy sshm MCP registration could not be removed; run: %s", strings.Join(append([]string{app}, args...), " "))
 	}
-	fmt.Fprintln(cmd.OutOrStdout(), app+": sshm MCP registered; restart the app to load it")
+	fmt.Fprintln(cmd.OutOrStdout(), app+": legacy sshm MCP removed")
 	return nil
 }

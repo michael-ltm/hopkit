@@ -6,7 +6,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	sshmassets "github.com/michael-ltm/hopkit/plugins/sshm-skill"
+	hopkitassets "github.com/michael-ltm/hopkit/plugins/hopkit-skill"
 	"io/fs"
 	"os"
 	"path/filepath"
@@ -14,6 +14,12 @@ import (
 )
 
 const marker = ".sshm-managed.json"
+
+const (
+	skillName = "hopkit-server-ops"
+	// legacySkillName is where releases before the hopkit rename installed the skill.
+	legacySkillName = "sshm-server-ops"
+)
 
 type Manifest struct {
 	Owner   string            `json:"owner"`
@@ -29,14 +35,83 @@ type Status struct {
 	Exists  bool   `json:"exists"`
 }
 
-func Path(home, app string) (string, error) {
+func skillsDir(home, app string) (string, error) {
 	switch app {
 	case "codex":
-		return filepath.Join(home, ".agents", "skills", "sshm-server-ops"), nil
+		return filepath.Join(home, ".agents", "skills"), nil
 	case "claude":
-		return filepath.Join(home, ".claude", "skills", "sshm-server-ops"), nil
+		return filepath.Join(home, ".claude", "skills"), nil
 	}
 	return "", errors.New("choose codex, claude or all")
+}
+
+func Path(home, app string) (string, error) {
+	dir, e := skillsDir(home, app)
+	if e != nil {
+		return "", e
+	}
+	return filepath.Join(dir, skillName), nil
+}
+
+// backupPath keeps replaced skill directories next to, not inside, the skills
+// directory: agents load every directory under skills/ as a skill, so a backup
+// left there would register a duplicate skill.
+func backupPath(skillPath string) (string, error) {
+	dir := filepath.Join(filepath.Dir(filepath.Dir(skillPath)), "skill-backups")
+	if e := os.MkdirAll(dir, 0700); e != nil {
+		return "", e
+	}
+	return filepath.Join(dir, fmt.Sprintf("%s.backup-%d", filepath.Base(skillPath), time.Now().UnixNano())), nil
+}
+
+// readManaged returns the manifest of a managed skill directory whose files
+// are all unmodified. ok is false for unmanaged or locally edited skills.
+func readManaged(path string) (m Manifest, ok bool, e error) {
+	b, e := os.ReadFile(filepath.Join(path, marker))
+	if e != nil {
+		if os.IsNotExist(e) {
+			return m, false, nil
+		}
+		return m, false, e
+	}
+	if json.Unmarshal(b, &m) != nil || m.Owner != "sshm-managed-v1" {
+		return Manifest{}, false, nil
+	}
+	for name, expected := range m.Files {
+		if !fs.ValidPath(name) {
+			return m, false, errors.New("invalid integration manifest")
+		}
+		b, e := os.ReadFile(filepath.Join(path, filepath.FromSlash(name)))
+		if e != nil || hash(b) != expected {
+			return m, false, nil
+		}
+	}
+	return m, true, nil
+}
+
+// retireLegacy moves an unmodified sshm-era skill out of the skills directory.
+func retireLegacy(home, app string) (string, error) {
+	dir, e := skillsDir(home, app)
+	if e != nil {
+		return "", e
+	}
+	legacy := filepath.Join(dir, legacySkillName)
+	if _, e = os.Stat(legacy); os.IsNotExist(e) {
+		return "", nil
+	}
+	if _, ok, e := readManaged(legacy); e != nil {
+		return "", e
+	} else if !ok {
+		return "; legacy " + legacy + " is not managed or was edited, retained", nil
+	}
+	backup, e := backupPath(legacy)
+	if e != nil {
+		return "", e
+	}
+	if e = os.Rename(legacy, backup); e != nil {
+		return "", e
+	}
+	return "; legacy " + legacySkillName + " moved to " + backup, nil
 }
 func Inspect(home, app string) (Status, error) {
 	path, e := Path(home, app)
@@ -52,12 +127,15 @@ func Inspect(home, app string) (Status, error) {
 		s.Managed = true
 		s.Version = m.Version
 	}
-	cache := filepath.Join(home, ".codex", "plugins", "cache", "sshm")
+	caches := filepath.Join(home, ".codex", "plugins", "cache")
 	if app == "claude" {
-		cache = filepath.Join(home, ".claude", "plugins", "cache", "sshm")
+		caches = filepath.Join(home, ".claude", "plugins", "cache")
 	}
-	_, e = os.Stat(cache)
-	s.Plugin = e == nil
+	for _, name := range []string{"hopkit", "sshm"} {
+		if _, e = os.Stat(filepath.Join(caches, name)); e == nil {
+			s.Plugin = true
+		}
+	}
 	return s, nil
 }
 func hash(b []byte) string { h := sha256.Sum256(b); return hex.EncodeToString(h[:]) }
@@ -67,13 +145,21 @@ func Install(home, app, version string, refresh bool) (string, error) {
 		return "", e
 	}
 	if status.Plugin && !status.Managed {
-		return "plugin-managed installation retained; update the SSHM plugin in the app", nil
+		return "plugin-managed installation retained; update the hopkit plugin in the app", nil
 	}
-	if refresh && !status.Managed {
-		return "not SSHM-managed; skipped", nil
+	dir, e := skillsDir(home, app)
+	if e != nil {
+		return "", e
+	}
+	_, legacyManaged, e := readManaged(filepath.Join(dir, legacySkillName))
+	if e != nil {
+		return "", e
+	}
+	if refresh && !status.Managed && !legacyManaged {
+		return "not hopkit-managed; skipped", nil
 	}
 	if status.Exists && !status.Managed {
-		return "", errors.New("existing skill is not SSHM-managed; retained without changes")
+		return "", errors.New("existing skill is not hopkit-managed; retained without changes")
 	}
 	var previous Manifest
 	if status.Managed {
@@ -98,7 +184,7 @@ func Install(home, app, version string, refresh bool) (string, error) {
 	if e = os.MkdirAll(parent, 0700); e != nil {
 		return "", e
 	}
-	stage, e := os.MkdirTemp(parent, ".sshm-skill-")
+	stage, e := os.MkdirTemp(parent, ".hopkit-skill-")
 	if e != nil {
 		return "", e
 	}
@@ -109,8 +195,8 @@ func Install(home, app, version string, refresh bool) (string, error) {
 		}
 	}
 	current := Manifest{Owner: "sshm-managed-v1", Version: version, Files: map[string]string{}}
-	root := "skills/sshm-server-ops"
-	files, e := fs.ReadDir(sshmassets.Skills, root)
+	root := "skills/hopkit-server-ops"
+	files, e := fs.ReadDir(hopkitassets.Skills, root)
 	if e != nil {
 		return "", e
 	}
@@ -119,7 +205,7 @@ func Install(home, app, version string, refresh bool) (string, error) {
 			continue
 		}
 		name := entry.Name()
-		b, e := sshmassets.Skills.ReadFile(root + "/" + name)
+		b, e := hopkitassets.Skills.ReadFile(root + "/" + name)
 		if e != nil {
 			return "", e
 		}
@@ -144,7 +230,9 @@ func Install(home, app, version string, refresh bool) (string, error) {
 	}
 	backup := ""
 	if status.Exists {
-		backup = status.Path + fmt.Sprintf(".backup-%d", time.Now().UnixNano())
+		if backup, e = backupPath(status.Path); e != nil {
+			return "", e
+		}
 		if e = os.Rename(status.Path, backup); e != nil {
 			return "", e
 		}
@@ -155,5 +243,9 @@ func Install(home, app, version string, refresh bool) (string, error) {
 		}
 		return "", e
 	}
-	return "installed " + status.Path, nil
+	note, e := retireLegacy(home, app)
+	if e != nil {
+		return "installed " + status.Path + "; legacy skill cleanup failed: " + e.Error(), nil
+	}
+	return "installed " + status.Path + note, nil
 }

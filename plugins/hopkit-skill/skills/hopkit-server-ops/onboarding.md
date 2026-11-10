@@ -25,7 +25,7 @@ installation, but must never enter an AI tool call or chat.
      needed. `passphrase_file` is optional for an existing user-managed file.
      Relay `copy_id`'s CLI instruction verbatim, then run one `check_ssh mode=exec`.
    - **All-in-one CLI:** before generating a key, have the user run
-     `sshm provision <alias> --harden`. It generates, installs, tests, and only
+     `hopkit provision <alias> --harden`. It generates, installs, tests, and only
      then disables password login. Do not run it after `gen_key`; it starts by
      generating a new key and will fail when that key path already exists.
 6. `gen_key` verifies encrypted device recovery before writing the new encrypted

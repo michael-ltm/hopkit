@@ -4,7 +4,7 @@
 >
 > hopkit is an SSH manager with a built-in MCP server. Claude Code, Codex, Cursor and Gemini CLI can find the right host by intent, run audited commands, tail logs and move files, while secrets stay masked and dangerous commands stay blocked. For humans it is a single-binary SSH manager for Windows, macOS and Linux with an interactive inventory, one-line pairing and live status.
 
-> **Formerly `sshm`.** Existing installs keep working: the config stays in `~/.config/sshm`, the MCP server keeps the name `sshm`, and installed `sshm` binaries continue to update themselves.
+> **Formerly `sshm`.** Existing installs keep working: the config stays in `~/.config/sshm` and installed `sshm` binaries continue to update themselves. Run `hopkit integrations install --app all --mcp` once to switch Claude Code and Codex from the old `sshm` MCP entry and skill to `hopkit`.
 
 ## Install
 
@@ -95,7 +95,7 @@ explicit device lock. See [local trust, migration and platform limits](docs/clou
 
 ```
 claude plugins marketplace add michael-ltm/hopkit
-claude plugins install sshm-skill@sshm
+claude plugins install hopkit-skill@hopkit
 ```
 
 Then ask your assistant to "check the status of my prod server" or "deploy

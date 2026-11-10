@@ -10,13 +10,20 @@ All notable changes to this project will be documented in this file. Format: [Ke
 - The project is renamed from sshm to **hopkit** to avoid confusion with an
   unrelated SSH manager of the same name. The binary, Go module path
   (`github.com/michael-ltm/hopkit`), Homebrew formula and Scoop manifest are
-  now `hopkit`. For compatibility the config directory (`~/.config/sshm`),
-  `SSHM_*` environment variables, the MCP server name `sshm`, remote markers
-  and the signed update feed are unchanged, and installed `sshm` binaries
-  keep updating themselves.
+  now `hopkit`, and so are the MCP server (`hopkit`, tools appear as
+  `mcp__hopkit__*`), the skill (`hopkit-server-ops`) and the plugin
+  (`hopkit-skill@hopkit`). `integrations install --mcp` replaces an existing
+  `sshm` MCP registration, and installing or refreshing the skill moves an
+  unmodified `sshm-server-ops` skill aside. For compatibility the config
+  directory (`~/.config/sshm`), `SSHM_*` environment variables, remote
+  markers and the signed update feed are unchanged, and installed `sshm`
+  binaries keep updating themselves.
 - Relicensed from MIT to Apache-2.0.
 
 ### Fixed
+- Skill reinstall backups are kept in `skill-backups/` next to the skills
+  directory instead of inside it, where agents loaded them as duplicate
+  skills.
 - MCP `list_servers`, `find_servers` and `get_server` no longer present a
   recorded `last_status` as live: they expose `last_checked` and mark
   observations older than 15 minutes (or of unknown age) with

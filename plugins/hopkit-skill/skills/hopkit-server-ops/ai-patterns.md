@@ -1,4 +1,4 @@
-# sshm Server-Only Patterns
+# hopkit Server-Only Patterns
 
 Use these sequences only when no project profile is involved.
 

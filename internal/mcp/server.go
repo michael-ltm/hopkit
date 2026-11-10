@@ -22,7 +22,7 @@ type Deps struct {
 	LocalStore      *localstore.Store
 }
 
-// NewServer builds the MCP server with every sshm tool registered, and
+// NewServer builds the MCP server with every hopkit tool registered, and
 // returns the registered tool names for verification.
 func NewServer(deps Deps) (*server.MCPServer, []string) {
 	ver := deps.Version
@@ -32,7 +32,7 @@ func NewServer(deps Deps) (*server.MCPServer, []string) {
 	if deps.TransferManager == nil {
 		deps.TransferManager = defaultTransferManager
 	}
-	s := server.NewMCPServer("sshm", ver)
+	s := server.NewMCPServer("hopkit", ver)
 	var names []string
 	names = registerReadTools(s, deps, names)
 	names = registerProjectReadTools(s, deps, names)

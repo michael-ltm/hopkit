@@ -1,7 +1,7 @@
 {
-  "name": "sshm-skill",
+  "name": "hopkit-skill",
   "version": "0.8.0",
-  "description": "Manage SSH servers with sshm — list, connect, exec, bootstrap, inspect — from any AI assistant.",
+  "description": "Manage SSH servers with hopkit — list, connect, exec, bootstrap, inspect — from any AI assistant.",
   "author": {
     "name": "michael-ltm"
   },
