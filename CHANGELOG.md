@@ -4,6 +4,14 @@ All notable changes to this project will be documented in this file. Format: [Ke
 
 ## [Unreleased]
 
+## [0.8.4] - 2026-11-24
+
+### Fixed
+- macOS `service install` over a running service no longer fails
+  intermittently with "could not register local service startup": launchd
+  finishes the bootout asynchronously, so the bootstrap is now retried for up
+  to five seconds.
+
 ## [0.8.3] - 2026-11-24
 
 ### Added
