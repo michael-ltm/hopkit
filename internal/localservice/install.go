@@ -10,6 +10,7 @@ import (
 	"path/filepath"
 	"runtime"
 	"strings"
+	"time"
 
 	"github.com/michael-ltm/hopkit/internal/localstore"
 )
@@ -100,33 +101,49 @@ func Install(configPath, executable string, system bool) error {
 	if e = privateWrite(path, []byte(data)); e != nil {
 		return e
 	}
-	run := func(binary string, args ...string) error {
-		cmd := exec.Command(binary, args...)
-		cmd.Env = environment
-		if e := cmd.Run(); e != nil {
-			return errors.New("could not register local service startup")
+	runner := func(binary string) func(...string) error {
+		return func(args ...string) error {
+			cmd := exec.Command(binary, args...)
+			cmd.Env = environment
+			return cmd.Run()
 		}
-		return nil
 	}
 	if runtime.GOOS == "linux" {
-		for _, step := range systemdRegistration(filepath.Base(path)) {
-			if e = run("systemctl", step.args...); e != nil {
-				return e
-			}
-		}
-		return nil
+		return runRegistration(systemdRegistration(filepath.Base(path)), runner("systemctl"), time.Sleep)
 	}
-	for _, step := range launchdRegistration(os.Getuid(), "sshm-local-"+instance(configPath), path) {
-		if e = run("launchctl", step.args...); e != nil && !step.mayFail {
-			return e
-		}
-	}
-	return nil
+	return runRegistration(launchdRegistration(os.Getuid(), "sshm-local-"+instance(configPath), path), runner("launchctl"), time.Sleep)
 }
 
 type registrationStep struct {
 	args    []string
 	mayFail bool
+	retry   bool
+}
+
+// registrationAttempts bounds a retried step to about five seconds.
+const registrationAttempts = 20
+const registrationRetryDelay = 250 * time.Millisecond
+
+func runRegistration(steps []registrationStep, run func(...string) error, sleep func(time.Duration)) error {
+	for _, step := range steps {
+		attempts := 1
+		if step.retry {
+			attempts = registrationAttempts
+		}
+		var e error
+		for i := 0; i < attempts; i++ {
+			if i > 0 {
+				sleep(registrationRetryDelay)
+			}
+			if e = run(step.args...); e == nil {
+				break
+			}
+		}
+		if e != nil && !step.mayFail {
+			return errors.New("could not register local service startup")
+		}
+	}
+	return nil
 }
 
 // systemdRegistration enables the unit and restarts it, so a reinstall that
@@ -142,11 +159,12 @@ func systemdRegistration(unit string) []registrationStep {
 // launchdRegistration unloads any loaded copy of the job before loading the
 // plist: launchctl bootstrap fails while the label is loaded, and launchd keeps
 // the old ProgramArguments until the job is booted out. The bootout fails
-// harmlessly on a first install.
+// harmlessly on a first install. launchd finishes the bootout asynchronously,
+// so an immediate bootstrap can fail with EIO and is retried briefly.
 func launchdRegistration(uid int, label, plist string) []registrationStep {
 	domain := fmt.Sprintf("gui/%d", uid)
 	return []registrationStep{
 		{args: []string{"bootout", domain + "/" + label}, mayFail: true},
-		{args: []string{"bootstrap", domain, plist}},
+		{args: []string{"bootstrap", domain, plist}, retry: true},
 	}
 }

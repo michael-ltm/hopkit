@@ -2,9 +2,11 @@ package localservice
 
 import (
 	"encoding/xml"
+	"errors"
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/require"
 )
@@ -72,6 +74,46 @@ func TestLaunchdRegistrationReloadsExistingJob(t *testing.T) {
 	if got := strings.Join(steps[1].args, " "); got != "bootstrap gui/501 /Users/u/Library/LaunchAgents/sshm-local-abc.plist" || steps[1].mayFail {
 		t.Fatalf("second step = %+v, want a required bootstrap", steps[1])
 	}
+}
+
+// launchd finishes a bootout asynchronously, so an immediate bootstrap can fail
+// with EIO; the bootstrap step must be retried until the old job is gone.
+func TestRunRegistrationRetriesBootstrapAfterBootout(t *testing.T) {
+	steps := launchdRegistration(501, "sshm-local-abc", "/p.plist")
+	require.True(t, steps[1].retry)
+	var calls []string
+	sleeps := 0
+	failures := 2
+	run := func(args ...string) error {
+		calls = append(calls, args[0])
+		if args[0] == "bootstrap" && failures > 0 {
+			failures--
+			return errors.New("bootstrap failed: 5")
+		}
+		return nil
+	}
+	require.NoError(t, runRegistration(steps, run, func(time.Duration) { sleeps++ }))
+	require.Equal(t, []string{"bootout", "bootstrap", "bootstrap", "bootstrap"}, calls)
+	require.Equal(t, 2, sleeps)
+}
+func TestRunRegistrationGivesUpOnPersistentBootstrapFailure(t *testing.T) {
+	steps := launchdRegistration(501, "sshm-local-abc", "/p.plist")
+	attempts := 0
+	run := func(args ...string) error {
+		if args[0] == "bootstrap" {
+			attempts++
+			return errors.New("bootstrap failed")
+		}
+		return nil
+	}
+	require.Error(t, runRegistration(steps, run, func(time.Duration) {}))
+	require.Equal(t, registrationAttempts, attempts)
+}
+func TestRunRegistrationDoesNotRetryOrdinarySteps(t *testing.T) {
+	attempts := 0
+	run := func(args ...string) error { attempts++; return errors.New("failed") }
+	require.Error(t, runRegistration(systemdRegistration("u.service"), run, func(time.Duration) { t.Fatal("unexpected retry") }))
+	require.Equal(t, 1, attempts)
 }
 
 // enable --now leaves an already-running unit on its old ExecStart, so a
