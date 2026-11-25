@@ -354,6 +354,7 @@ func newCloudCmd() *cobra.Command {
 		return writeJSON(cmd.OutOrStdout(), map[string]any{"username": s.Username, "endpoint": s.URL, "device_id": s.DeviceID, "logged_in": s.Token != "", "revision": s.Base.Revision, "unsynced": s.Dirty, "pending_retry": s.Pending != nil, "session_expired": s.Expires < time.Now().UnixMilli()})
 	}})
 	var withoutKeys bool
+	var restoreDeleted []string
 	imp := &cobra.Command{Use: "import", Short: "Merge local records and configured key files into the encrypted draft", Args: cobra.NoArgs, RunE: func(cmd *cobra.Command, _ []string) error {
 		s, v, close, err := cloudOpen(cmd)
 		if err != nil {
@@ -363,6 +364,20 @@ func newCloudCmd() *cobra.Command {
 		cfg, err := config.Load(configPath())
 		if err != nil {
 			return err
+		}
+		for _, alias := range restoreDeleted {
+			p := cfg.Servers[alias]
+			if p == nil {
+				return fmt.Errorf("unknown server %q", alias)
+			}
+			if p.CloudEntry != "" {
+				return fmt.Errorf("%q is already a cloud connection", alias)
+			}
+			if v.Data.Restore(*p) {
+				fmt.Fprintf(cmd.OutOrStdout(), "restored deleted record for %q\n", alias)
+			} else {
+				fmt.Fprintf(cmd.ErrOrStderr(), "%q has no deleted cloud record\n", alias)
+			}
 		}
 		report, err := v.Data.ImportProtected(cmd.Context(), cfg, s.DeviceID, !withoutKeys, localCredentialStore(configPath()), cloudsync.InventoryIdentity(s))
 		if err != nil {
@@ -375,6 +390,7 @@ func newCloudCmd() *cobra.Command {
 		return nil
 	}}
 	imp.Flags().BoolVar(&withoutKeys, "without-keys", false, "import metadata only")
+	imp.Flags().StringArrayVar(&restoreDeleted, "restore-deleted", nil, "local alias whose deleted cloud record this import re-adds (repeatable)")
 	root.AddCommand(imp)
 	root.AddCommand(newSyncCmd())
 	root.AddCommand(&cobra.Command{Use: "list", Aliases: []string{"ls"}, Short: "List cloud connection variants from the encrypted offline cache", Args: cobra.NoArgs, RunE: func(cmd *cobra.Command, _ []string) error {

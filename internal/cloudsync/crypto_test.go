@@ -107,6 +107,31 @@ func TestDeletedOfflineImportCannotResurrect(t *testing.T) {
 	require.Empty(t, m.Entries)
 	require.True(t, m.Deleted[e.ID])
 }
+func TestRestoreLetsImportReAddDeletedRecordAcrossSync(t *testing.T) {
+	s := config.Server{Host: "example.invalid", Port: 22, User: "root", Auth: "key", KeyPath: "/tmp/k"}
+	id := EntryID(cleanServer(s))
+	base := NewData()
+	base.Deleted[id] = true
+	cfg := config.New()
+	cfg.Servers["server"] = &s
+
+	local := cloneData(base)
+	r, err := local.Import(cfg, "dev", false)
+	require.NoError(t, err)
+	require.Equal(t, 1, r.SkippedDeleted)
+	require.Empty(t, local.Entries)
+
+	require.True(t, local.Restore(s))
+	require.False(t, local.Restore(s))
+	r, err = local.Import(cfg, "dev", false)
+	require.NoError(t, err)
+	require.Equal(t, 1, r.Added)
+
+	merged, err := Merge(base, local, cloneData(base))
+	require.NoError(t, err)
+	require.Contains(t, merged.Entries, id)
+	require.False(t, merged.Deleted[id])
+}
 func TestURLRejectsCredentialRedirectTargets(t *testing.T) {
 	for _, u := range []string{"http://example.com", "https://user:pw@example.com", "https://example.com/path", "https://example.com?key=secret"} {
 		require.Error(t, ValidateURL(u))

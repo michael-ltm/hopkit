@@ -167,6 +167,17 @@ func union(a, b []string) []string {
 
 type ImportReport struct{ Added, Existing, Keys, LockedKeys, AgentOnly, NeedsPasswords, SkippedDeleted int }
 
+// Restore clears the tombstone of one local server so the next Import can add
+// it again. Merge keeps the cleared tombstone because only this side changed it.
+func (d *Data) Restore(s config.Server) bool {
+	id := EntryID(cleanServer(s))
+	if !d.Deleted[id] {
+		return false
+	}
+	delete(d.Deleted, id)
+	return true
+}
+
 // Import reads only the configured key files. It never reads agent key material.
 // Encrypted keys without a recovery sidecar remain encrypted and are reported.
 func (d *Data) Import(cfg *config.Config, device string, includeKeys bool) (ImportReport, error) {
