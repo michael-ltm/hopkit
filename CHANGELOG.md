@@ -4,6 +4,8 @@ All notable changes to this project will be documented in this file. Format: [Ke
 
 ## [Unreleased]
 
+## [0.8.3] - 2026-11-24
+
 ### Added
 - `cloud import --restore-deleted <alias>` (repeatable) re-adds a local
   connection whose cloud record was deleted earlier. Import still skips
