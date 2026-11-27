@@ -4,6 +4,8 @@ All notable changes to this project will be documented in this file. Format: [Ke
 
 ## [Unreleased]
 
+## [0.8.5] - 2026-11-27
+
 ### Added
 - `sync` (including the home menu's Sync) now lists local servers the cloud
   does not have yet and lets you pick which to upload; all are selected by
