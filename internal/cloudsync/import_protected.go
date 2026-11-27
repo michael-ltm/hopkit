@@ -136,6 +136,30 @@ func (d *Data) ImportProtected(ctx context.Context, cfg *config.Config, device s
 	return report, d.Validate()
 }
 
+// ImportCandidates lists local aliases that ImportProtected would add as new
+// cloud entries: not linked, not deleted, not conflicted and not already present.
+func (d Data) ImportCandidates(cfg *config.Config, expectedOwner string) []string {
+	out := []string{}
+	if cfg == nil {
+		return out
+	}
+	for alias, target := range cfg.Servers {
+		if target == nil || target.CloudEntry != "" || (target.CloudVault != "" && target.CloudVault != expectedOwner) || target.Auth == config.AuthCloud {
+			continue
+		}
+		id := EntryID(cleanServer(*target))
+		if _, exists := d.Entries[id]; exists || d.Deleted[id] {
+			continue
+		}
+		if _, conflicted := d.Conflicts[id]; conflicted {
+			continue
+		}
+		out = append(out, alias)
+	}
+	sort.Strings(out)
+	return out
+}
+
 func protectedCredentials(target *config.Server, cs []localstore.Credential) ([]Credential, error) {
 	var imported []Credential
 	success := false

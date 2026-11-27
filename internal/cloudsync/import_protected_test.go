@@ -301,3 +301,29 @@ func TestImportProtectedConflictingSavedPasswordsRequireSelection(t *testing.T) 
 	require.Empty(t, data.Credentials)
 	require.Empty(t, data.Entries)
 }
+
+func TestImportCandidatesListsOnlyServersMissingFromCloud(t *testing.T) {
+	cfg := config.New()
+	server := func(host string) *config.Server {
+		return &config.Server{Host: host, Port: 22, User: "root", Auth: config.AuthAgent}
+	}
+	cfg.Servers["new-b"] = server("10.0.0.2")
+	cfg.Servers["new-a"] = server("10.0.0.1")
+	cfg.Servers["present"] = server("10.0.0.3")
+	cfg.Servers["deleted"] = server("10.0.0.4")
+	cfg.Servers["linked"] = server("10.0.0.5")
+	cfg.Servers["linked"].CloudEntry = "synthetic-entry"
+	cfg.Servers["foreign"] = server("10.0.0.6")
+	cfg.Servers["foreign"].CloudVault = "other-owner"
+	data := NewData()
+	present := config.New()
+	present.Servers["present"] = cfg.Servers["present"]
+	_, err := data.ImportProtected(context.Background(), present, "synthetic-device", false, nil, "owner")
+	require.NoError(t, err)
+	data.Deleted[EntryID(cleanServer(*cfg.Servers["deleted"]))] = true
+	require.Equal(t, []string{"new-a", "new-b"}, data.ImportCandidates(cfg, "owner"))
+
+	_, err = data.ImportProtected(context.Background(), cfg, "synthetic-device", false, nil, "owner")
+	require.NoError(t, err)
+	require.Empty(t, data.ImportCandidates(cfg, "owner"))
+}

@@ -219,7 +219,7 @@ func addWizard(cmd *cobra.Command, cfg *config.Config) error {
 	if in.CopyIDAfter && srv.Auth == config.AuthKey && srv.KeyPath != "" {
 		fmt.Fprintln(cmd.OutOrStdout(), "Next step: run `hopkit copy-id "+in.Alias+"` (it will prompt for the password once)")
 	}
-	return nil
+	return offerCloudUploadAfterAdd(cmd, in.Alias)
 }
 
 func splitTags(s string) []string {

@@ -35,6 +35,8 @@ type State struct {
 	Draft          Snapshot  `json:"draft"`
 	Dirty          bool      `json:"dirty"`
 	Pending        *Snapshot `json:"pending,omitempty"`
+	// Local aliases the user chose not to upload; sync stops offering them.
+	LocalOnly []string `json:"local_only,omitempty"`
 }
 type LoginResult struct {
 	Token    string   `json:"token"`

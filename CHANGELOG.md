@@ -4,6 +4,15 @@ All notable changes to this project will be documented in this file. Format: [Ke
 
 ## [Unreleased]
 
+### Added
+- `sync` (including the home menu's Sync) now lists local servers the cloud
+  does not have yet and lets you pick which to upload; all are selected by
+  default. Unselected servers stay local and are not offered again. Without a
+  terminal, sync prints a hint instead of prompting.
+- The interactive `add` wizard asks, when logged in, whether to upload the new
+  server to the cloud and sync it right away.
+- `cloud import --only <alias>` (repeatable) imports just the named servers.
+
 ## [0.8.4] - 2026-11-24
 
 ### Fixed

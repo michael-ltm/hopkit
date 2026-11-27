@@ -20,6 +20,7 @@ import (
 	"os"
 	"os/signal"
 	"path/filepath"
+	"slices"
 	"sort"
 	"strings"
 	"time"
@@ -355,6 +356,7 @@ func newCloudCmd() *cobra.Command {
 	}})
 	var withoutKeys bool
 	var restoreDeleted []string
+	var only []string
 	imp := &cobra.Command{Use: "import", Short: "Merge local records and configured key files into the encrypted draft", Args: cobra.NoArgs, RunE: func(cmd *cobra.Command, _ []string) error {
 		s, v, close, err := cloudOpen(cmd)
 		if err != nil {
@@ -379,6 +381,15 @@ func newCloudCmd() *cobra.Command {
 				fmt.Fprintf(cmd.ErrOrStderr(), "%q has no deleted cloud record\n", alias)
 			}
 		}
+		if len(only) > 0 {
+			for _, alias := range only {
+				if cfg.Servers[alias] == nil {
+					return fmt.Errorf("unknown server %q", alias)
+				}
+			}
+			cfg = onlyServers(cfg, only)
+			s.LocalOnly = slices.DeleteFunc(s.LocalOnly, func(alias string) bool { return slices.Contains(only, alias) })
+		}
 		report, err := v.Data.ImportProtected(cmd.Context(), cfg, s.DeviceID, !withoutKeys, localCredentialStore(configPath()), cloudsync.InventoryIdentity(s))
 		if err != nil {
 			return err
@@ -390,6 +401,7 @@ func newCloudCmd() *cobra.Command {
 		return nil
 	}}
 	imp.Flags().BoolVar(&withoutKeys, "without-keys", false, "import metadata only")
+	imp.Flags().StringArrayVar(&only, "only", nil, "import only this local alias (repeatable)")
 	imp.Flags().StringArrayVar(&restoreDeleted, "restore-deleted", nil, "local alias whose deleted cloud record this import re-adds (repeatable)")
 	root.AddCommand(imp)
 	root.AddCommand(newSyncCmd())
@@ -1017,28 +1029,7 @@ func runCloudReference(cmd *cobra.Command, server *config.Server, args []string,
 
 func newSyncCmd() *cobra.Command {
 	c := &cobra.Command{Use: "sync", Short: "Sync encrypted connections, device entries and deletions", Args: cobra.NoArgs, RunE: func(cmd *cobra.Command, _ []string) error {
-		s, v, close, err := cloudOpen(cmd)
-		if err != nil {
-			return err
-		}
-		defer close()
-		cfg, err := config.Load(configPath())
-		if err != nil {
-			return err
-		}
-		if v.Data.ImportActivity(cfg) {
-			if err = s.SaveDraft(v, cloudsync.StatePath(configPath())); err != nil {
-				return err
-			}
-		}
-		if err = s.Sync(cmd.Context(), v, cloudsync.StatePath(configPath())); err != nil {
-			return err
-		}
-		if err = publishCloudInventory(cmd, s, v); err != nil {
-			return err
-		}
-		fmt.Fprintf(cmd.OutOrStdout(), "Synced revision %d. Run hopkit list to browse, or hopkit connect <alias> to connect.\n", s.Base.Revision)
-		return nil
+		return runCloudSync(cmd, nil)
 	}}
 	c.Flags().Bool("use-recovery", false, "unlock with a recovery code")
 	wrapCloudErrors(c)
